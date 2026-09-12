@@ -80,3 +80,33 @@ test('links stay local and removing a record removes only the managed copy', asy
   assert.equal(await fs.stat(source).then(() => true), true);
   assert.equal(await fs.stat(managedPath!).then(() => true).catch(() => false), false);
 });
+
+test('previews text and image files only within their owning workspace', async () => {
+  const dir = await tempDir();
+  const textSource = path.join(dir, 'readme.txt');
+  const imageSource = path.join(dir, 'pixel.png');
+  await fs.writeFile(textSource, 'Preview this locally');
+  await fs.writeFile(imageSource, Buffer.from('89504e470d0a1a0a', 'hex'));
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const [textRecord] = await library.importFiles([textSource], 'user-a', 'workspace-a');
+  const [imageRecord] = await library.importFiles([imageSource], 'user-a', 'workspace-a');
+
+  assert.deepEqual(await library.preview(textRecord!.id, 'user-a', 'workspace-a'), { kind: 'text', text: 'Preview this locally', readOnly: false });
+  const imagePreview = await library.preview(imageRecord!.id, 'user-a', 'workspace-a');
+  assert.equal(imagePreview?.kind, 'binary');
+  assert.match((imagePreview as { dataUrl: string }).dataUrl, /^data:image\/png;base64,/);
+  await assert.rejects(() => library.preview(imageRecord!.id, 'user-a', 'workspace-b'), LocalContextLibraryError);
+});
+
+test('saves editable local text and refreshes its Ask index', async () => {
+  const dir = await tempDir();
+  const source = path.join(dir, 'notes.md');
+  await fs.writeFile(source, 'Before');
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
+  const updated = await library.saveText(record!.id, 'user-a', 'workspace-a', '# After\nNew content');
+  assert.equal(updated.sizeBytes, Buffer.byteLength('# After\nNew content'));
+  assert.equal((await library.preview(record!.id, 'user-a', 'workspace-a'))?.kind, 'text');
+  assert.match((await library.contextDocuments('user-a', 'workspace-a'))[0]?.content ?? '', /New content/);
+  await assert.rejects(() => library.saveText(record!.id, 'user-b', 'workspace-a', 'Nope'), LocalContextLibraryError);
+});

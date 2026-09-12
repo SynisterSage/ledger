@@ -222,7 +222,7 @@ export default function TodayScreen() {
   };
 
   const attentionCount = new Set([
-    ...today.today.filter((item) => item.status === 'overdue').map((item) => item.id),
+    ...today.today.filter((item) => item.status === 'overdue' && item.type !== 'focus').map((item) => item.id),
     ...(today.projects ?? []).filter((project) => Boolean(project.attentionReason)).map((project) => project.id),
   ]).size;
   const teamMentionCount = workspaceState.selectedWorkspaceId !== 'all' ? (today.mentions ?? []).length : 0;

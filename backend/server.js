@@ -13849,6 +13849,57 @@ app.get('/api/mobile/workspaces', async (req, res) => {
   }
 });
 
+app.patch('/api/mobile/onboarding/workspace', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const name = String(req.body?.name ?? '').trim().slice(0, 255);
+    const isPersonal = Boolean(req.body?.is_personal);
+
+    if (!name) {
+      return res.status(400).json({ error: 'Workspace name is required' });
+    }
+
+    const existing = await supabase
+      .from('workspaces')
+      .select('id, name, is_personal, owner_id')
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(2);
+    if (existing.error) throw existing.error;
+
+    const onlyWorkspace = existing.data?.length === 1 ? existing.data[0] : null;
+    const isPlaceholder = onlyWorkspace?.name === 'My Work' && onlyWorkspace.is_personal === true;
+    let workspace;
+
+    if (isPlaceholder) {
+      const updated = await supabase
+        .from('workspaces')
+        .update({ name, is_personal: isPersonal, updated_at: new Date().toISOString() })
+        .eq('id', onlyWorkspace.id)
+        .eq('owner_id', user.id)
+        .select('id, name, is_personal')
+        .single();
+      if (updated.error) throw updated.error;
+      workspace = updated.data;
+    } else {
+      const created = await supabase
+        .from('workspaces')
+        .insert({ owner_id: user.id, name, is_personal: isPersonal, color: '#FF5F40' })
+        .select('id, name, is_personal')
+        .single();
+      if (created.error) throw created.error;
+      workspace = created.data;
+    }
+
+    await provisionLedgerTemplates(workspace.id);
+    await provisionWorkspaceStarterContent({ workspaceId: workspace.id, userId: user.id, isPersonal });
+    await setUserActiveWorkspaceId(user.id, workspace.id);
+    res.status(200).json({ workspace_id: workspace.id, workspace });
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
 app.get('/api/mobile/today', async (req, res) => {
   try {
     const user = await requireAuth(req);

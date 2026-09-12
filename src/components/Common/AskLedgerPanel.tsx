@@ -41,11 +41,22 @@ import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
 import { openLocalAISettings } from './LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
-import { deriveAskLedgerConversationState, type AskLedgerConversationState } from '../../types/askLedgerConversationState';
+import {
+  deriveAskLedgerConversationState,
+  type AskLedgerConversationState,
+} from '../../types/askLedgerConversationState';
 import type { AskLedgerAttachment } from '../../types/askLedgerAttachments';
-import { ASK_LEDGER_SKILL_METADATA, type AskLedgerCustomSkill, type AskLedgerSkillRef, type AskLedgerSkillMetadata } from '../../types/askLedgerSkills';
+import {
+  ASK_LEDGER_SKILL_METADATA,
+  type AskLedgerCustomSkill,
+  type AskLedgerSkillRef,
+  type AskLedgerSkillMetadata,
+} from '../../types/askLedgerSkills';
 import { routeAskLedgerMessage } from '../../types/askLedgerResponseMode';
-import type { AskLedgerResponseMode, AskLedgerExecutionMode } from '../../types/askLedgerResponseMode';
+import type {
+  AskLedgerResponseMode,
+  AskLedgerExecutionMode,
+} from '../../types/askLedgerResponseMode';
 import { selectAskLedgerProductKnowledge } from '../../types/askLedgerProductKnowledge';
 import type { AskLedgerAnswerDepth } from '../../types/askLedgerAnswerDepth';
 import { sanitizeAskLedgerOutput } from '../../types/askLedgerOutputGuard';
@@ -102,7 +113,17 @@ export interface AskLedgerSource {
   externalId?: string;
   explicitIntegrationLink?: boolean;
   updatedAt?: string;
-  attachmentSource?: { attachmentId: string; fileName: string; pageNumber?: number; section?: string; paragraph?: number; rowStart?: number; rowEnd?: number; sheetName?: string; headers?: string[] };
+  attachmentSource?: {
+    attachmentId: string;
+    fileName: string;
+    pageNumber?: number;
+    section?: string;
+    paragraph?: number;
+    rowStart?: number;
+    rowEnd?: number;
+    sheetName?: string;
+    headers?: string[];
+  };
 }
 
 export interface AskLedgerResponse {
@@ -127,7 +148,21 @@ export interface AskLedgerMessage {
   executionMode?: AskLedgerExecutionMode;
   productArea?: string;
   productFeature?: string;
-  activity?: { durationMs?: number; steps: Array<{ type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'reasoning' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> }> };
+  activity?: {
+    durationMs?: number;
+    steps: Array<{
+      type:
+        | 'starting_runtime'
+        | 'searching'
+        | 'sources_found'
+        | 'reading_context'
+        | 'preparing_answer'
+        | 'reasoning'
+        | 'generating';
+      count?: number;
+      sources?: Array<Record<string, unknown>>;
+    }>;
+  };
 }
 
 export interface AskLedgerSession {
@@ -168,14 +203,15 @@ type AskLedgerConversationContext = {
   state?: AskLedgerConversationState;
 };
 
-const conversationStateSources = (sources: AskLedgerSource[]) => sources.map((source) => ({
-  resourceType: source.type,
-  resourceId: source.resourceId ?? source.id,
-  title: source.title,
-  projectId: source.projectId,
-  integrationProvider: source.integrationProvider,
-  updatedAt: source.updatedAt,
-}));
+const conversationStateSources = (sources: AskLedgerSource[]) =>
+  sources.map((source) => ({
+    resourceType: source.type,
+    resourceId: source.resourceId ?? source.id,
+    title: source.title,
+    projectId: source.projectId,
+    integrationProvider: source.integrationProvider,
+    updatedAt: source.updatedAt,
+  }));
 
 export type AskLedgerState =
   | { status: 'idle' | 'focused' }
@@ -188,7 +224,13 @@ export type AskLedgerState =
 type LocalAISetupError = 'storage' | 'interrupted' | 'generic';
 type GenerationTier = 'fast' | 'balanced';
 type GenerationMode = 'fast' | 'balanced' | 'thinking';
-type GenerationModelState = 'not_installed' | 'unavailable' | 'downloading' | 'verifying' | 'installed' | 'failed';
+type GenerationModelState =
+  | 'not_installed'
+  | 'unavailable'
+  | 'downloading'
+  | 'verifying'
+  | 'installed'
+  | 'failed';
 type GenerationModelView = {
   id: string;
   tier: GenerationTier;
@@ -214,7 +256,11 @@ type LocalAICapabilityView = {
 };
 
 const generationTierLabels: Record<GenerationTier, string> = { fast: 'Fast', balanced: 'Balanced' };
-const generationModeLabels: Record<GenerationMode, string> = { fast: 'Fast', balanced: 'Balanced', thinking: 'Thinking' };
+const generationModeLabels: Record<GenerationMode, string> = {
+  fast: 'Fast',
+  balanced: 'Balanced',
+  thinking: 'Thinking',
+};
 const generationModeDescriptions: Record<GenerationMode, string> = {
   fast: 'Quickest responses',
   balanced: 'Best for most work',
@@ -222,7 +268,8 @@ const generationModeDescriptions: Record<GenerationMode, string> = {
 };
 const generationModeOrder: GenerationMode[] = ['fast', 'balanced', 'thinking'];
 const generationTierOrder: GenerationTier[] = ['fast', 'balanced'];
-const isGenerationTier = (value: unknown): value is GenerationTier => generationTierOrder.includes(value as GenerationTier);
+const isGenerationTier = (value: unknown): value is GenerationTier =>
+  generationTierOrder.includes(value as GenerationTier);
 
 const sourceType = (value: unknown): AskLedgerSourceType | null =>
   [
@@ -284,7 +331,18 @@ const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
 type AskLedgerStreamEvent = {
   type: 'start' | 'activity' | 'sources' | 'delta' | 'replace' | 'done' | 'error';
   requestId: string;
-  activity?: { type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'reasoning' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> };
+  activity?: {
+    type:
+      | 'starting_runtime'
+      | 'searching'
+      | 'sources_found'
+      | 'reading_context'
+      | 'preparing_answer'
+      | 'reasoning'
+      | 'generating';
+    count?: number;
+    sources?: Array<Record<string, unknown>>;
+  };
   text?: string;
   sources?: Array<Record<string, unknown>>;
   error?: { code?: string; message?: string };
@@ -292,7 +350,12 @@ type AskLedgerStreamEvent = {
   skillResult?: {
     skillId: string;
     sections?: Array<{ title: string; content: string }>;
-    actionProposals?: Array<{ id: string; type: AskLedgerActionType; payload: Record<string, unknown>; sourceMessageId?: string }>;
+    actionProposals?: Array<{
+      id: string;
+      type: AskLedgerActionType;
+      payload: Record<string, unknown>;
+      sourceMessageId?: string;
+    }>;
   };
 };
 
@@ -306,38 +369,84 @@ const askLedgerDocumentScope = (question: string) => {
   // directly related events/tasks afterward; an events-only scope would make
   // explicit note constraints impossible to satisfy.
   if (/\bnotes?\b/.test(value)) return undefined;
-  if (/\bunread\s+(?:notifications?|alerts?)\b|\bnotifications?\b/.test(value)) return 'notifications';
+  if (/\bunread\s+(?:notifications?|alerts?)\b|\bnotifications?\b/.test(value))
+    return 'notifications';
   if (/\bwhat needs my attention\b/.test(value)) return 'attention';
   // A named project milestone request needs the project row as the
   // authoritative seed, plus its milestone records. Returning only the
   // milestones scope would prevent the local orchestrator from discovering
   // the project dependency; returning only projects drops the answer rows.
   if (/\bmilestones?\b/.test(value) && /\bprojects?\b/.test(value)) return undefined;
-  if (/\b(?:what changed|changes|activity|happening|teamspace alerts?)\b/.test(value)) return 'activity';
-  if (/\b(?:teamspaces?|teams?|circle)\b/.test(value) && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|what .* have)\b/.test(value)) return undefined;
-  if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value)) return 'team_members';
+  if (/\b(?:what changed|changes|activity|happening|teamspace alerts?)\b/.test(value))
+    return 'activity';
+  if (
+    /\b(?:teamspaces?|teams?|circle)\b/.test(value) &&
+    /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|what .* have)\b/.test(
+      value
+    )
+  )
+    return undefined;
+  if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value))
+    return 'team_members';
   if (/\b(deadline|deadlines|deadliens|due date|due dates)\b/.test(value)) return 'deadlines';
-  if (/\b(github|git hub|slack|figma|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
-  if (/\b(projects?|portfolio)\b/.test(value) && !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)) return 'projects';
+  if (
+    /\b(github|git hub|slack|figma|integration|integrations|intake|pull requests?|issues?)\b/.test(
+      value
+    )
+  )
+    return 'integration';
+  if (
+    /\b(projects?|portfolio)\b/.test(value) &&
+    !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)
+  )
+    return 'projects';
   if (/\b(reminders?|remind me)\b/.test(value)) return 'reminders';
-  if (/\b(?:tasks?|actions?|milestones?)\b/.test(value) && /\b(?:somewhere|search|find|linked to|belongs to)\b/.test(value)) return undefined;
-  if (/\b(?:meetings?|calls?)\b/.test(value) && /\b(?:next steps?|follow[- ]?ups?|action items?|what should i do)\b/.test(value)) return 'meeting_prep';
-  if (/\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(value) && /\b(meeting|meetings|call|calls)\b/.test(value)) return 'meeting_prep';
-  if (/\b(meetings?|events?)\b/.test(value) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(value)) return 'events';
-  if (/\b(open tasks?|todos?|to dos?|to-do|actions?|things to do|what do i need to do)\b/.test(value)) return 'open_actions';
+  if (
+    /\b(?:tasks?|actions?|milestones?)\b/.test(value) &&
+    /\b(?:somewhere|search|find|linked to|belongs to)\b/.test(value)
+  )
+    return undefined;
+  if (
+    /\b(?:meetings?|calls?)\b/.test(value) &&
+    /\b(?:next steps?|follow[- ]?ups?|action items?|what should i do)\b/.test(value)
+  )
+    return 'meeting_prep';
+  if (
+    /\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(value) &&
+    /\b(meeting|meetings|call|calls)\b/.test(value)
+  )
+    return 'meeting_prep';
+  if (
+    /\b(meetings?|events?)\b/.test(value) ||
+    /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(value)
+  )
+    return 'events';
+  if (
+    /\b(open tasks?|todos?|to dos?|to-do|actions?|things to do|what do i need to do)\b/.test(value)
+  )
+    return 'open_actions';
   if (/\b(tasks?)\b/.test(value)) return 'tasks';
   if (/\b(milestones?|checkpoints?)\b/.test(value)) return 'milestones';
-  if (/\b(follow[- ]?ups?|came from (a )?meeting|meeting actions?)\b/.test(value)) return 'followups';
-  if (/\b(blocked|blocking|stuck|in the way|what is holding|whats holding)\b/.test(value)) return 'blockers';
+  if (/\b(follow[- ]?ups?|came from (a )?meeting|meeting actions?)\b/.test(value))
+    return 'followups';
+  if (/\b(blocked|blocking|stuck|in the way|what is holding|whats holding)\b/.test(value))
+    return 'blockers';
   if (/\b(status|progress|current state)\b/.test(value)) return 'status_context';
-  if (/\b(today|todays|tomorrow|upcoming|planned|plan|this week|next week)\b/.test(value)) return 'time_window';
+  if (/\b(today|todays|tomorrow|upcoming|planned|plan|this week|next week)\b/.test(value))
+    return 'time_window';
   return undefined;
 };
 
 const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
   const value = question.toLowerCase().replace(/[’']/g, '').trim();
-  return /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/.test(value)
-    && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/.test(value);
+  return (
+    /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/.test(
+      value
+    ) &&
+    /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/.test(
+      value
+    )
+  );
 };
 
 const askLedgerDateWindow = (question: string) => {
@@ -365,7 +474,13 @@ const askLedgerProjectReference = (question: string) => {
   if (!/\bprojects?\b/i.test(question)) return undefined;
   const match = question.match(/\bproject\s+([^?.,]+?)(?:\?|$|\s+(?:and|where|that|with)\b)/i);
   const candidate = match?.[1]?.trim();
-  if (!candidate || /^(this|next|last|the)?\s*(week|month|year|calendar|team|workspace)$/i.test(candidate) || /^(?:is|was|that|this|it)\b/i.test(candidate) || /\b(?:linked|belongs|related)\s+to\b/i.test(candidate)) return undefined;
+  if (
+    !candidate ||
+    /^(this|next|last|the)?\s*(week|month|year|calendar|team|workspace)$/i.test(candidate) ||
+    /^(?:is|was|that|this|it)\b/i.test(candidate) ||
+    /\b(?:linked|belongs|related)\s+to\b/i.test(candidate)
+  )
+    return undefined;
   return candidate.length >= 2 && candidate.length <= 100 ? candidate : undefined;
 };
 
@@ -377,7 +492,11 @@ const askLedgerTaskHorizon = (question: string) => {
 };
 
 const askLedgerAssignedToMe = (question: string, scope?: string) => {
-  if (!scope || !['tasks', 'open_actions', 'deadlines', 'time_window', 'milestones'].includes(scope)) return false;
+  if (
+    !scope ||
+    !['tasks', 'open_actions', 'deadlines', 'time_window', 'milestones'].includes(scope)
+  )
+    return false;
   return /\b(my|mine|assigned to me|for me|i have)\b/i.test(question);
 };
 
@@ -392,12 +511,16 @@ const localAIErrorMessage = (code?: string, detail?: string) => {
     return 'Local AI is unavailable right now. Try again.';
   if (code === 'cancelled') return 'Generation cancelled.';
   if (code === 'runtime_start_failed' || code === 'runtime_exited') {
-    return detail?.trim() ? `Local AI could not start: ${detail.trim()}` : 'Local AI could not start. Try again.';
+    return detail?.trim()
+      ? `Local AI could not start: ${detail.trim()}`
+      : 'Local AI could not start. Try again.';
   }
   if (code === 'request_timeout') return 'Local AI took too long to respond. Try again.';
   if (code === 'retrieval_failed') {
     const safeDetail = detail?.trim();
-    return safeDetail ? `Ledger could not complete this request: ${safeDetail}` : "Couldn't search your workspace. Try again.";
+    return safeDetail
+      ? `Ledger could not complete this request: ${safeDetail}`
+      : "Couldn't search your workspace. Try again.";
   }
   if (detail?.trim()) return `Ledger could not answer right now: ${detail.trim()}`;
   return 'Ledger could not answer right now. Try again.';
@@ -437,12 +560,15 @@ const errorMessage = (error: unknown): string => {
 
 const optionalModelDownloadMessage = (message?: unknown, state?: string) => {
   const detail = errorMessage(message);
-  if (state === 'unavailable' || /metadata|unavailable/i.test(detail)) return 'This model is not available yet.';
+  if (state === 'unavailable' || /metadata|unavailable/i.test(detail))
+    return 'This model is not available yet.';
   if (state === 'busy') return 'Another model download is already in progress.';
   if (/disk|space|storage/i.test(detail)) return 'There is not enough space on this device.';
-  if (/checksum|sha-256|verification|expected-size/i.test(detail)) return 'The downloaded model could not be verified.';
+  if (/checksum|sha-256|verification|expected-size/i.test(detail))
+    return 'The downloaded model could not be verified.';
   if (/cancel|abort/i.test(detail)) return 'The download was cancelled.';
-  if (/runtime|llama|model.*load|start/i.test(detail)) return detail || 'The local AI runtime could not start this model.';
+  if (/runtime|llama|model.*load|start/i.test(detail))
+    return detail || 'The local AI runtime could not start this model.';
   return 'The download could not be completed. Try again.';
 };
 
@@ -459,16 +585,32 @@ const formatDownloadedBytes = (bytes?: number) => {
 };
 
 const emptyStateExamples = [
-  { title: 'Review my projects', description: 'See what is moving, blocked, or needs attention.', icon: FolderKanban, prompt: 'Review my projects. See what is moving, blocked, or needs attention.' },
-  { title: 'What changed recently?', description: 'Find important updates across your workspace.', icon: CalendarDays, prompt: 'What changed recently? Find important updates across my workspace.' },
-  { title: 'Prepare me for a meeting', description: 'Pull together relevant notes, tasks, and context.', icon: FileText, prompt: 'Prepare me for a meeting. Pull together relevant notes, tasks, and context.' },
+  {
+    title: 'Review my projects',
+    description: 'See what is moving, blocked, or needs attention.',
+    icon: FolderKanban,
+    prompt: 'Review my projects. See what is moving, blocked, or needs attention.',
+  },
+  {
+    title: 'What changed recently?',
+    description: 'Find important updates across your workspace.',
+    icon: CalendarDays,
+    prompt: 'What changed recently? Find important updates across my workspace.',
+  },
+  {
+    title: 'Prepare me for a meeting',
+    description: 'Pull together relevant notes, tasks, and context.',
+    icon: FileText,
+    prompt: 'Prepare me for a meeting. Pull together relevant notes, tasks, and context.',
+  },
 ];
 const ASK_LEDGER_EXAMPLES_HIDDEN = 'ledger:ask-ledger:examples-hidden:v1';
 
 const deriveSessionTitle = (question: string) => {
   const value = question.trim().replace(/[?!.]+$/, '');
   const lower = value.toLowerCase();
-  if (lower.includes('local ai') && /block|stuck|problem|issue/.test(lower)) return 'Local AI blockers';
+  if (lower.includes('local ai') && /block|stuck|problem|issue/.test(lower))
+    return 'Local AI blockers';
   if (lower.includes('calendar') && lower.includes('sync')) return 'Calendar sync';
   if (lower.includes('focus') && /week|today|next/.test(lower)) return "This week's focus";
   const words = value.split(/\s+/).slice(0, 5);
@@ -488,85 +630,253 @@ const escapeAnswerRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/
 const looksLikeAnswerEntity = (value: string) => {
   const text = value.trim();
   if (text.length < 3 || text.length > 80 || /[.!?]$/.test(text)) return false;
-  if (/^(?:today|tomorrow|yesterday|open|completed|complete|overdue|upcoming|high|medium|low|not started|in progress|planned)$/i.test(text)) return false;
-  if (/^\d|\b(?:am|pm)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(text)) return false;
+  if (
+    /^(?:today|tomorrow|yesterday|open|completed|complete|overdue|upcoming|high|medium|low|not started|in progress|planned)$/i.test(
+      text
+    )
+  )
+    return false;
+  if (/^\d|\b(?:am|pm)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(text))
+    return false;
   return /^[A-ZÀ-ÖØ-Þ0-9]/.test(text);
 };
 
-const renderAnswerText = (value: string, keyPrefix: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => {
+const renderAnswerText = (
+  value: string,
+  keyPrefix: string,
+  context?: AskLedgerAnswerRenderContext
+): ReactNode[] => {
   const sources = (context?.sources ?? [])
     .filter((source) => source.title.trim().length >= 3)
     .sort((left, right) => right.title.length - left.title.length);
-  if (!sources.length || !context?.onOpenSource) return [<span key={`${keyPrefix}-text`}>{value}</span>];
+  if (!sources.length || !context?.onOpenSource)
+    return [<span key={`${keyPrefix}-text`}>{value}</span>];
 
-  const sourceByTitle = new Map(sources.map((source) => [source.title.trim().toLocaleLowerCase(), source]));
-  const matcher = new RegExp(`(${sources.map((source) => escapeAnswerRegExp(source.title.trim())).join('|')})`, 'gi');
-  return value.split(matcher).filter(Boolean).map((part, index) => {
-    const source = sourceByTitle.get(part.toLocaleLowerCase());
-    if (!source) return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
-    return <button key={`${keyPrefix}-mention-${index}`} type="button" onClick={() => context.onOpenSource?.(source)} className="ask-ledger-answer__mention" title={`Open ${source.title}`}>{part}</button>;
-  });
+  const sourceByTitle = new Map(
+    sources.map((source) => [source.title.trim().toLocaleLowerCase(), source])
+  );
+  const matcher = new RegExp(
+    `(${sources.map((source) => escapeAnswerRegExp(source.title.trim())).join('|')})`,
+    'gi'
+  );
+  return value
+    .split(matcher)
+    .filter(Boolean)
+    .map((part, index) => {
+      const source = sourceByTitle.get(part.toLocaleLowerCase());
+      if (!source) return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
+      return (
+        <button
+          key={`${keyPrefix}-mention-${index}`}
+          type="button"
+          onClick={() => context.onOpenSource?.(source)}
+          className="ask-ledger-answer__mention"
+          title={`Open ${source.title}`}
+        >
+          {part}
+        </button>
+      );
+    });
 };
 
-const renderInlineAnswer = (value: string, keyPrefix: string, context?: AskLedgerAnswerRenderContext): ReactNode[] =>
-  value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g).filter(Boolean).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      const boldText = part.slice(2, -2);
-      return <strong key={`${keyPrefix}-bold-${index}`} className={`font-semibold text-[var(--ledger-text-primary)] ${looksLikeAnswerEntity(boldText) ? 'ask-ledger-answer__entity-fallback' : ''}`}>{renderAnswerText(boldText, `${keyPrefix}-bold-${index}`, context)}</strong>;
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      const code = part.slice(1, -1);
-      const isFileType = /^\.[a-z0-9]{1,8}$/i.test(code);
-      return <code key={`${keyPrefix}-code-${index}`} className={`rounded px-1 py-0.5 text-[0.9em] text-[var(--ledger-text-primary)] ${isFileType ? 'ask-ledger-answer__file-type' : 'bg-[var(--ledger-surface-muted)]'}`}>{code}</code>;
-    }
-    const link = part.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
-    if (link) {
-      const [, label, href] = link;
-      const safeHref = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : '#';
-      return <a key={`${keyPrefix}-link-${index}`} href={safeHref} target={/^https?:/i.test(safeHref) ? '_blank' : undefined} rel={/^https?:/i.test(safeHref) ? 'noreferrer' : undefined} className="ask-ledger-answer__link">{label}</a>;
-    }
-    return <span key={`${keyPrefix}-text-${index}`}>{renderAnswerText(part, `${keyPrefix}-text-${index}`, context)}</span>;
-  });
+const renderInlineAnswer = (
+  value: string,
+  keyPrefix: string,
+  context?: AskLedgerAnswerRenderContext
+): ReactNode[] =>
+  value
+    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g)
+    .filter(Boolean)
+    .map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        const boldText = part.slice(2, -2);
+        return (
+          <strong
+            key={`${keyPrefix}-bold-${index}`}
+            className={`font-semibold text-[var(--ledger-text-primary)] ${
+              looksLikeAnswerEntity(boldText) ? 'ask-ledger-answer__entity-fallback' : ''
+            }`}
+          >
+            {renderAnswerText(boldText, `${keyPrefix}-bold-${index}`, context)}
+          </strong>
+        );
+      }
+      if (part.startsWith('`') && part.endsWith('`')) {
+        const code = part.slice(1, -1);
+        const isFileType = /^\.[a-z0-9]{1,8}$/i.test(code);
+        return (
+          <code
+            key={`${keyPrefix}-code-${index}`}
+            className={`rounded px-1 py-0.5 text-[0.9em] text-[var(--ledger-text-primary)] ${
+              isFileType ? 'ask-ledger-answer__file-type' : 'bg-[var(--ledger-surface-muted)]'
+            }`}
+          >
+            {code}
+          </code>
+        );
+      }
+      const link = part.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
+      if (link) {
+        const [, label, href] = link;
+        const safeHref = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : '#';
+        return (
+          <a
+            key={`${keyPrefix}-link-${index}`}
+            href={safeHref}
+            target={/^https?:/i.test(safeHref) ? '_blank' : undefined}
+            rel={/^https?:/i.test(safeHref) ? 'noreferrer' : undefined}
+            className="ask-ledger-answer__link"
+          >
+            {label}
+          </a>
+        );
+      }
+      return (
+        <span key={`${keyPrefix}-text-${index}`}>
+          {renderAnswerText(part, `${keyPrefix}-text-${index}`, context)}
+        </span>
+      );
+    });
 
-const renderAnswerContent = (content: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => {
+const renderAnswerContent = (
+  content: string,
+  context?: AskLedgerAnswerRenderContext
+): ReactNode[] => {
   // Models sometimes put a heading directly above a list with only one
   // newline. Split those headings into their own render block so the markdown
   // marker never leaks into the visible answer.
-  const normalizedContent = content.trim()
+  const normalizedContent = content
+    .trim()
     .replace(/\n(?=#{1,3}\s+)/g, '\n\n')
     .replace(/(#{1,3}\s+[^\n]+)(?=\n|$)/g, '$1\n\n');
-  return normalizedContent.split(/\n{2,}/).filter(Boolean).map((block, blockIndex) => {
-  const lines = block.split('\n');
-  const isBulleted = lines.every((line) => context?.streaming ? /^\s*[-*](?:\s+.*)?$/.test(line) : /^\s*[-*]\s+/.test(line));
-  const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
-  const heading = lines.length === 1 ? lines[0].match(/^(#{1,3})\s+(.+)$/) : null;
-  const fencedCode = block.match(/^```(?:[\w+-]+)?\n?([\s\S]*?)(?:\n```)?$/);
-  const isBlockquote = lines.every((line) => /^\s*>\s?/.test(line));
-  const tableSeparator = lines.length >= 2 && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[1]);
-  const isTable = lines.length >= 2 && lines.every((line) => /^\s*\|?.+\|.+\|?\s*$/.test(line)) && tableSeparator;
-  if (heading) {
-    const level = heading[1].length;
-    const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
-    const headingText = heading[2].replace(/^⚠(?!️)/u, '⚠️');
-    return <Tag key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__heading ask-ledger-answer__heading--${level}`}><span className="ask-ledger-answer__heading-text">{renderInlineAnswer(headingText, `answer-${blockIndex}`, context)}</span></Tag>;
-  }
-  if (fencedCode) {
-    return <pre key={`answer-block-${blockIndex}`} className="ask-ledger-answer__code"><code>{fencedCode[1]}</code></pre>;
-  }
-  if (isTable) {
-    const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
-    const headers = cells(lines[0]);
-    return <div key={`answer-block-${blockIndex}`} className="ask-ledger-answer__table-wrap"><table className="ask-ledger-answer__table"><thead><tr>{headers.map((cell, index) => <th key={`answer-table-head-${index}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-head-${index}`, context)}</th>)}</tr></thead><tbody>{lines.slice(2).map((line, rowIndex) => <tr key={`answer-table-row-${rowIndex}`}>{cells(line).map((cell, cellIndex) => <td key={`answer-table-cell-${rowIndex}-${cellIndex}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-${rowIndex}-${cellIndex}`, context)}</td>)}</tr>)}</tbody></table></div>;
-  }
-  if (isBlockquote) {
-    return <blockquote key={`answer-block-${blockIndex}`} className="ask-ledger-answer__blockquote">{lines.map((line, lineIndex) => <span key={`answer-quote-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line.replace(/^\s*>\s?/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</span>)}</blockquote>;
-  }
-  if (isBulleted || isNumbered) {
-    const List = isBulleted ? 'ul' : 'ol';
-    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])(?:\s+|$)/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</li>)}</List>;
-  }
-  return <p key={`answer-block-${blockIndex}`}>{lines.map((line, lineIndex) => <span key={`answer-line-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`, context)}</span>)}</p>;
-  });
+  return normalizedContent
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map((block, blockIndex) => {
+      const lines = block.split('\n');
+      const isBulleted = lines.every((line) =>
+        context?.streaming ? /^\s*[-*](?:\s+.*)?$/.test(line) : /^\s*[-*]\s+/.test(line)
+      );
+      const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
+      const heading = lines.length === 1 ? lines[0].match(/^(#{1,3})\s+(.+)$/) : null;
+      const fencedCode = block.match(/^```(?:[\w+-]+)?\n?([\s\S]*?)(?:\n```)?$/);
+      const isBlockquote = lines.every((line) => /^\s*>\s?/.test(line));
+      const tableSeparator =
+        lines.length >= 2 && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[1]);
+      const isTable =
+        lines.length >= 2 &&
+        lines.every((line) => /^\s*\|?.+\|.+\|?\s*$/.test(line)) &&
+        tableSeparator;
+      if (heading) {
+        const level = heading[1].length;
+        const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
+        const headingText = heading[2].replace(/^⚠(?!️)/u, '⚠️');
+        return (
+          <Tag
+            key={`answer-block-${blockIndex}`}
+            className={`ask-ledger-answer__heading ask-ledger-answer__heading--${level}`}
+          >
+            <span className="ask-ledger-answer__heading-text">
+              {renderInlineAnswer(headingText, `answer-${blockIndex}`, context)}
+            </span>
+          </Tag>
+        );
+      }
+      if (fencedCode) {
+        return (
+          <pre key={`answer-block-${blockIndex}`} className="ask-ledger-answer__code">
+            <code>{fencedCode[1]}</code>
+          </pre>
+        );
+      }
+      if (isTable) {
+        const cells = (line: string) =>
+          line
+            .trim()
+            .replace(/^\|/, '')
+            .replace(/\|$/, '')
+            .split('|')
+            .map((cell) => cell.trim());
+        const headers = cells(lines[0]);
+        return (
+          <div key={`answer-block-${blockIndex}`} className="ask-ledger-answer__table-wrap">
+            <table className="ask-ledger-answer__table">
+              <thead>
+                <tr>
+                  {headers.map((cell, index) => (
+                    <th key={`answer-table-head-${index}`}>
+                      {renderInlineAnswer(cell, `answer-${blockIndex}-head-${index}`, context)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {lines.slice(2).map((line, rowIndex) => (
+                  <tr key={`answer-table-row-${rowIndex}`}>
+                    {cells(line).map((cell, cellIndex) => (
+                      <td key={`answer-table-cell-${rowIndex}-${cellIndex}`}>
+                        {renderInlineAnswer(
+                          cell,
+                          `answer-${blockIndex}-${rowIndex}-${cellIndex}`,
+                          context
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      if (isBlockquote) {
+        return (
+          <blockquote key={`answer-block-${blockIndex}`} className="ask-ledger-answer__blockquote">
+            {lines.map((line, lineIndex) => (
+              <span key={`answer-quote-${lineIndex}`}>
+                {lineIndex > 0 && <br />}
+                {renderInlineAnswer(
+                  line.replace(/^\s*>\s?/, ''),
+                  `answer-${blockIndex}-${lineIndex}`,
+                  context
+                )}
+              </span>
+            ))}
+          </blockquote>
+        );
+      }
+      if (isBulleted || isNumbered) {
+        const List = isBulleted ? 'ul' : 'ol';
+        return (
+          <List
+            key={`answer-block-${blockIndex}`}
+            className={`ask-ledger-answer__list ${
+              isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'
+            }`}
+          >
+            {lines.map((line, lineIndex) => (
+              <li key={`answer-line-${lineIndex}`}>
+                {renderInlineAnswer(
+                  line.replace(/^\s*(?:[-*]|\d+[.)])(?:\s+|$)/, ''),
+                  `answer-${blockIndex}-${lineIndex}`,
+                  context
+                )}
+              </li>
+            ))}
+          </List>
+        );
+      }
+      return (
+        <p key={`answer-block-${blockIndex}`}>
+          {lines.map((line, lineIndex) => (
+            <span key={`answer-line-${lineIndex}`}>
+              {lineIndex > 0 && <br />}
+              {renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`, context)}
+            </span>
+          ))}
+        </p>
+      );
+    });
 };
 
 const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
@@ -621,7 +931,8 @@ const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) =
   if (value.type === 'starting_runtime') return 'Getting Ledger ready on this device.';
   if (value.type === 'searching') return 'Searching your workspace for relevant context.';
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources.`;
-  if (value.type === 'reading_context') return `Reviewed ${value.count ?? 0} sources relevant to this question.`;
+  if (value.type === 'reading_context')
+    return `Reviewed ${value.count ?? 0} sources relevant to this question.`;
   if (value.type === 'preparing_answer') return 'Organizing the selected context into an answer.';
   if (value.type === 'reasoning') return 'Working through the evidence before writing the answer.';
   if (value.type === 'generating') return 'Generating the response on this device.';
@@ -630,23 +941,82 @@ const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) =
 
 const formatAskLedgerDuration = (durationMs: number) => Math.max(0, Math.round(durationMs / 1000));
 
-const AskLedgerActivityTrace = ({ steps, durationMs, active, expanded, onToggle, generationPhrase }: { steps: NonNullable<AskLedgerStreamEvent['activity']>[]; durationMs?: number | null; active?: boolean; expanded: boolean; onToggle: () => void; generationPhrase?: string }) => {
+const AskLedgerActivityTrace = ({
+  steps,
+  durationMs,
+  active,
+  expanded,
+  onToggle,
+  generationPhrase,
+}: {
+  steps: NonNullable<AskLedgerStreamEvent['activity']>[];
+  durationMs?: number | null;
+  active?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  generationPhrase?: string;
+}) => {
   const current = steps[steps.length - 1];
-  const label = active ? generationPhrase ?? 'Working…' : `Worked for ${formatAskLedgerDuration(durationMs ?? 0)} seconds`;
-  if (active && !steps.length) return <div className="ask-ledger-activity" aria-live="polite"><p className="px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating">{label}</p></div>;
-  return <div className="ask-ledger-activity" aria-live={active ? 'polite' : undefined}>
-    <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)]">
-      <span className={active ? 'ledger-ask-generating' : undefined}>{label}</span><ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
-    </button>
-    {active && current && !expanded ? <p className="mt-2 pl-1 text-xs text-[var(--ledger-text-secondary)]">{askLedgerActivityLabel(current)}</p> : null}
-    {expanded && <div className="mt-2 space-y-3 pl-3">
-      {steps.map((step, index) => <div key={`${step.type}-${index}`} className="relative border-l border-[color:var(--ledger-border-subtle)] pl-3">
-        <p className="text-xs text-[var(--ledger-text-secondary)]">{askLedgerActivityLabel(step)}</p>
-        <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">{askLedgerActivityDescription(step)}</p>
-        {step.sources?.length ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--ledger-text-muted)]">{step.sources.slice(0, 3).map((source) => <span key={`${String(source.resourceType)}:${String(source.resourceId)}`} className="max-w-[190px] truncate">{String(source.title ?? 'Untitled')}</span>)}{(step.count ?? 0) > step.sources.length ? <span>+{(step.count ?? 0) - step.sources.length} more</span> : null}</div> : null}
-      </div>)}
-    </div>}
-  </div>;
+  const label = active
+    ? generationPhrase ?? 'Working…'
+    : `Worked for ${formatAskLedgerDuration(durationMs ?? 0)} seconds`;
+  if (active && !steps.length)
+    return (
+      <div className="ask-ledger-activity" aria-live="polite">
+        <p className="px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating">
+          {label}
+        </p>
+      </div>
+    );
+  return (
+    <div className="ask-ledger-activity" aria-live={active ? 'polite' : undefined}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)]"
+      >
+        <span className={active ? 'ledger-ask-generating' : undefined}>{label}</span>
+        <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {active && current && !expanded ? (
+        <p className="mt-2 pl-1 text-xs text-[var(--ledger-text-secondary)]">
+          {askLedgerActivityLabel(current)}
+        </p>
+      ) : null}
+      {expanded && (
+        <div className="mt-2 space-y-3 pl-3">
+          {steps.map((step, index) => (
+            <div
+              key={`${step.type}-${index}`}
+              className="relative border-l border-[color:var(--ledger-border-subtle)] pl-3"
+            >
+              <p className="text-xs text-[var(--ledger-text-secondary)]">
+                {askLedgerActivityLabel(step)}
+              </p>
+              <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                {askLedgerActivityDescription(step)}
+              </p>
+              {step.sources?.length ? (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--ledger-text-muted)]">
+                  {step.sources.slice(0, 3).map((source) => (
+                    <span
+                      key={`${String(source.resourceType)}:${String(source.resourceId)}`}
+                      className="max-w-[190px] truncate"
+                    >
+                      {String(source.title ?? 'Untitled')}
+                    </span>
+                  ))}
+                  {(step.count ?? 0) > step.sources.length ? (
+                    <span>+{(step.count ?? 0) - step.sources.length} more</span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const skillIconMap = { ListChecks, FolderKanban, CalendarDays, FileText };
@@ -668,8 +1038,33 @@ const skillRequirementLabel = (skill: AskLedgerSkillMetadata) => {
 const normalizeSkillMetadata = (value: unknown): AskLedgerSkillMetadata | null => {
   if (!value || typeof value !== 'object') return null;
   const item = value as Record<string, unknown>;
-  if (typeof item.id !== 'string' || !item.id.trim() || typeof item.name !== 'string' || typeof item.description !== 'string' || typeof item.icon !== 'string' || typeof item.requiresContext !== 'boolean' || !Array.isArray(item.supportedContextTypes) || !Array.isArray(item.allowedActions)) return null;
-  return { id: item.id, name: item.name, description: item.description, icon: item.icon, requiresContext: item.requiresContext, supportedContextTypes: item.supportedContextTypes as AskLedgerSkillMetadata['supportedContextTypes'], allowedActions: item.allowedActions as AskLedgerSkillMetadata['allowedActions'], ...(item.isCustom === true ? { isCustom: true, instructions: typeof item.instructions === 'string' ? item.instructions : undefined } : {}) };
+  if (
+    typeof item.id !== 'string' ||
+    !item.id.trim() ||
+    typeof item.name !== 'string' ||
+    typeof item.description !== 'string' ||
+    typeof item.icon !== 'string' ||
+    typeof item.requiresContext !== 'boolean' ||
+    !Array.isArray(item.supportedContextTypes) ||
+    !Array.isArray(item.allowedActions)
+  )
+    return null;
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    icon: item.icon,
+    requiresContext: item.requiresContext,
+    supportedContextTypes:
+      item.supportedContextTypes as AskLedgerSkillMetadata['supportedContextTypes'],
+    allowedActions: item.allowedActions as AskLedgerSkillMetadata['allowedActions'],
+    ...(item.isCustom === true
+      ? {
+          isCustom: true,
+          instructions: typeof item.instructions === 'string' ? item.instructions : undefined,
+        }
+      : {}),
+  };
 };
 
 const newAskLedgerConversationId = () => `ask-ledger-${crypto.randomUUID()}`;
@@ -677,9 +1072,48 @@ const newAskLedgerMessageId = () => `ask-${crypto.randomUUID()}`;
 
 const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.extension.toUpperCase();
 
-const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
+const attachmentDisplayName = (name: string) =>
+  name.length > 28
+    ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}`
+    : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, preferredGenerationTier, compact = false, meetingChat = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; preferredGenerationTier?: GenerationTier; compact?: boolean; meetingChat?: boolean }) => {
+export const AskLedgerPanel = ({
+  workspaceId,
+  resetKey,
+  initialSession,
+  initialContext,
+  skillId,
+  customSkills = [],
+  onEditCustomSkill,
+  onConversationChange,
+  onSessionTitleChange,
+  onSessionPersisted,
+  onSessionIdChange,
+  onQuestionChange,
+  onQuestionSubmitted,
+  onGenerationActiveChange,
+  preferredGenerationTier,
+  compact = false,
+  meetingChat = false,
+}: {
+  workspaceId?: string | null;
+  resetKey?: number;
+  initialSession?: AskLedgerSession | null;
+  initialContext?: AskLedgerInitialContext | null;
+  skillId?: AskLedgerSkillRef;
+  customSkills?: AskLedgerCustomSkill[];
+  onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void;
+  onConversationChange?: (active: boolean) => void;
+  onSessionTitleChange?: (title: string) => void;
+  onSessionPersisted?: () => void;
+  onSessionIdChange?: (id: string | null) => void;
+  onQuestionChange?: (question: string) => void;
+  onQuestionSubmitted?: (question: string) => void;
+  onGenerationActiveChange?: (active: boolean) => void;
+  preferredGenerationTier?: GenerationTier;
+  compact?: boolean;
+  meetingChat?: boolean;
+}) => {
   const api = useApi();
   const { user } = useAuthContext();
   const platform = usePlatform();
@@ -698,7 +1132,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const stateRef = useRef<AskLedgerState>({ status: 'idle' });
   const completedRequestIdRef = useRef<string | null>(null);
   const liveResponseRef = useRef<AskLedgerResponse>({ answer: '', sources: [] });
-  const [activitySteps, setActivitySteps] = useState<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
+  const [activitySteps, setActivitySteps] = useState<
+    NonNullable<AskLedgerStreamEvent['activity']>[]
+  >([]);
   const [activityExpanded, setActivityExpanded] = useState(true);
   const [activityDurationMs, setActivityDurationMs] = useState<number | null>(null);
   const [requestWatchdogStatus, setRequestWatchdogStatus] = useState<'slow' | null>(null);
@@ -711,8 +1147,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [expandedActivity, setExpandedActivity] = useState<Record<string, boolean>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [activeInitialContext, setActiveInitialContext] = useState<AskLedgerInitialContext | null>(initialContext ?? null);
-  const [actionReview, setActionReview] = useState<{ actions: AskLedgerActionProposal[]; title: string } | null>(null);
+  const [activeInitialContext, setActiveInitialContext] = useState<AskLedgerInitialContext | null>(
+    initialContext ?? null
+  );
+  const [actionReview, setActionReview] = useState<{
+    actions: AskLedgerActionProposal[];
+    title: string;
+  } | null>(null);
   const [actionDraft, setActionDraft] = useState<AskLedgerActionProposal | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -746,16 +1187,29 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   } | null>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [generationModels, setGenerationModels] = useState<GenerationModelView[]>([]);
-  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>(preferredGenerationTier ?? 'balanced');
-  const [generationMode, setGenerationMode] = useState<GenerationMode>(preferredGenerationTier ?? 'balanced');
+  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>(
+    preferredGenerationTier ?? 'balanced'
+  );
+  const [generationMode, setGenerationMode] = useState<GenerationMode>(
+    preferredGenerationTier ?? 'balanced'
+  );
   const [reasoningMode, setReasoningMode] = useState<'off' | 'thinking'>('off');
-  const [generationRuntimeState, setGenerationRuntimeState] = useState<{ selectedTier?: GenerationTier; loadedTier?: GenerationTier | null; switching?: boolean; targetTier?: GenerationTier | null; ready?: boolean; failure?: unknown } | null>(null);
+  const [generationRuntimeState, setGenerationRuntimeState] = useState<{
+    selectedTier?: GenerationTier;
+    loadedTier?: GenerationTier | null;
+    switching?: boolean;
+    targetTier?: GenerationTier | null;
+    ready?: boolean;
+    failure?: unknown;
+  } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tierSwitchError, setTierSwitchError] = useState<string | null>(null);
   const [switchingTier, setSwitchingTier] = useState<GenerationTier | null>(null);
   const [downloadTier, setDownloadTier] = useState<GenerationTier | null>(null);
-  const [downloadPhase, setDownloadPhase] = useState<'confirm' | 'downloading' | 'preparing' | 'error'>('confirm');
+  const [downloadPhase, setDownloadPhase] = useState<
+    'confirm' | 'downloading' | 'preparing' | 'error'
+  >('confirm');
   const [downloadMinimized, setDownloadMinimized] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const downloadDismissedRef = useRef(false);
@@ -772,15 +1226,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [resourcePickerOptions, setResourcePickerOptions] = useState<AskLedgerSource[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentIndexing, setAttachmentIndexing] = useState(false);
-  const [attachmentIndexingPhrase, setAttachmentIndexingPhrase] = useState<string>(ATTACHMENT_INDEXING_PHRASES[0]);
+  const [attachmentIndexingPhrase, setAttachmentIndexingPhrase] = useState<string>(
+    ATTACHMENT_INDEXING_PHRASES[0]
+  );
   const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedSkillId, setSelectedSkillId] = useState<AskLedgerSkillRef | null>(skillId ?? null);
-  const [skillCatalog, setSkillCatalog] = useState<AskLedgerSkillMetadata[]>(ASK_LEDGER_SKILL_METADATA);
+  const [skillCatalog, setSkillCatalog] =
+    useState<AskLedgerSkillMetadata[]>(ASK_LEDGER_SKILL_METADATA);
   const setupCancelRequestedRef = useRef(false);
   const skillPickerRef = useRef<HTMLDivElement | null>(null);
   const skillButtonRef = useRef<HTMLButtonElement | null>(null);
   const skillPopupRef = useRef<HTMLDivElement | null>(null);
-  const [skillPopupPosition, setSkillPopupPosition] = useState<{ left: number; top: number; maxHeight?: number; transform?: string } | null>(null);
+  const [skillPopupPosition, setSkillPopupPosition] = useState<{
+    left: number;
+    top: number;
+    maxHeight?: number;
+    transform?: string;
+  } | null>(null);
   const skillOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const advancedButtonRef = useRef<HTMLButtonElement | null>(null);
   const advancedPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -798,9 +1260,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const sessionIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef(initialSession?.id ?? newAskLedgerConversationId());
   const sessionCreatedAtRef = useRef(initialSession?.createdAt ?? new Date().toISOString());
-  const sessionPrivacyScopeRef = useRef<'device' | 'synced'>(initialSession?.privacyScope ?? 'synced');
+  const sessionPrivacyScopeRef = useRef<'device' | 'synced'>(
+    initialSession?.privacyScope ?? 'synced'
+  );
   const sessionTitleRef = useRef('Ask Ledger');
-  const sessionSkillIdRef = useRef<AskLedgerSkillRef | undefined>(initialSession?.skillId ?? skillId);
+  const sessionSkillIdRef = useRef<AskLedgerSkillRef | undefined>(
+    initialSession?.skillId ?? skillId
+  );
   const pendingSkillIdRef = useRef<AskLedgerSkillRef | undefined>(skillId);
   const initialContextRef = useRef<AskLedgerInitialContext | null>(initialContext ?? null);
   const autoSubmittedContextRef = useRef<string | null>(null);
@@ -812,15 +1278,21 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   workspaceIdRef.current = workspaceId;
 
   const clearRequestWatchdog = () => {
-    if (requestWatchdogTimerRef.current !== null) window.clearTimeout(requestWatchdogTimerRef.current);
+    if (requestWatchdogTimerRef.current !== null)
+      window.clearTimeout(requestWatchdogTimerRef.current);
     requestWatchdogTimerRef.current = null;
   };
 
   const conversationActive = messages.length > 0;
-  const selectedSkill = selectedSkillId ? skillCatalog.find((skill) => skill.id === selectedSkillId) : undefined;
+  const selectedSkill = selectedSkillId
+    ? skillCatalog.find((skill) => skill.id === selectedSkillId)
+    : undefined;
 
   const selectSkill = (skill: AskLedgerSkillMetadata) => {
-    const hasValidContext = Boolean(activeInitialContext && skill.supportedContextTypes.includes(activeInitialContext.resourceType));
+    const hasValidContext = Boolean(
+      activeInitialContext &&
+        skill.supportedContextTypes.includes(activeInitialContext.resourceType)
+    );
     if (skill.requiresContext && !hasValidContext) {
       setContextPickerSkill(skill);
       setContextPickerSearch('');
@@ -829,17 +1301,30 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         setContextPickerOptions([]);
         setContextPickerLoading(false);
       } else {
-        void api.getAskLedgerDocuments(workspaceId).then((payload) => {
-          const documents = Array.isArray((payload as { documents?: unknown[] })?.documents) ? (payload as { documents: unknown[] }).documents : [];
-          setContextPickerOptions(documents.map((item) => {
-            if (!item || typeof item !== 'object') return null;
-            const record = item as Record<string, unknown>;
-            const resourceType = String(record.resourceType ?? '') as AskLedgerInitialContext['resourceType'];
-            const resourceId = String(record.resourceId ?? '');
-            if (!skill.supportedContextTypes.includes(resourceType) || !resourceId) return null;
-            return { resourceType, resourceId, title: String(record.title ?? 'Untitled') };
-          }).filter((item): item is AskLedgerInitialContext => Boolean(item)));
-        }).catch(() => setContextPickerOptions([])).finally(() => setContextPickerLoading(false));
+        void api
+          .getAskLedgerDocuments(workspaceId)
+          .then((payload) => {
+            const documents = Array.isArray((payload as { documents?: unknown[] })?.documents)
+              ? (payload as { documents: unknown[] }).documents
+              : [];
+            setContextPickerOptions(
+              documents
+                .map((item) => {
+                  if (!item || typeof item !== 'object') return null;
+                  const record = item as Record<string, unknown>;
+                  const resourceType = String(
+                    record.resourceType ?? ''
+                  ) as AskLedgerInitialContext['resourceType'];
+                  const resourceId = String(record.resourceId ?? '');
+                  if (!skill.supportedContextTypes.includes(resourceType) || !resourceId)
+                    return null;
+                  return { resourceType, resourceId, title: String(record.title ?? 'Untitled') };
+                })
+                .filter((item): item is AskLedgerInitialContext => Boolean(item))
+            );
+          })
+          .catch(() => setContextPickerOptions([]))
+          .finally(() => setContextPickerLoading(false));
       }
       return;
     }
@@ -875,7 +1360,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   const uploadAttachments = async () => {
     if (!workspaceId || !window.askLedger?.selectAttachments) return;
-    const files = composerAttachments.filter((item): item is Extract<AskLedgerMessageAttachment, { kind: 'file' }> => item.kind === 'file');
+    const files = composerAttachments.filter(
+      (item): item is Extract<AskLedgerMessageAttachment, { kind: 'file' }> => item.kind === 'file'
+    );
     const existingSizeBytes = files.reduce((total, item) => total + item.attachment.sizeBytes, 0);
     setAttachmentError(null);
     setAttachmentIndexing(true);
@@ -883,18 +1370,37 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       let localRetention: 'conversation_only' | '30_days' | 'until_removed' = 'until_removed';
       try {
         const storedRetention = window.localStorage.getItem('ledger.local-ask.retention');
-        if (storedRetention === 'conversation_only' || storedRetention === '30_days') localRetention = storedRetention;
+        if (storedRetention === 'conversation_only' || storedRetention === '30_days')
+          localRetention = storedRetention;
       } catch {}
-      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, ownerUserId: user?.id, localRetention, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
-      const attachments = Array.isArray(result?.attachments) ? result.attachments.filter((attachment) => attachment?.id) : [];
-      const failed = attachments.find((attachment) => attachment.status === 'failed' || attachment.status === 'unsupported');
+      const result = (await window.askLedger.selectAttachments({
+        workspaceId,
+        conversationId: conversationIdRef.current,
+        ownerUserId: user?.id,
+        localRetention,
+        existingCount: files.length,
+        existingSizeBytes,
+      })) as { attachments?: AskLedgerAttachment[] };
+      const attachments = Array.isArray(result?.attachments)
+        ? result.attachments.filter((attachment) => attachment?.id)
+        : [];
+      const failed = attachments.find(
+        (attachment) => attachment.status === 'failed' || attachment.status === 'unsupported'
+      );
       if (failed) setAttachmentError(failed.error || `Couldn't read ${failed.name}.`);
-      const usable = attachments.filter((attachment) => attachment.status === 'ready' || attachment.status === 'processing');
-      setComposerAttachments((current) => [...current, ...usable.map((attachment) => ({ kind: 'file' as const, attachment }))]);
+      const usable = attachments.filter(
+        (attachment) => attachment.status === 'ready' || attachment.status === 'processing'
+      );
+      setComposerAttachments((current) => [
+        ...current,
+        ...usable.map((attachment) => ({ kind: 'file' as const, attachment })),
+      ]);
       setAttachmentMenuOpen(false);
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : 'Could not add that attachment.');
-    } finally { setAttachmentIndexing(false); }
+    } finally {
+      setAttachmentIndexing(false);
+    }
   };
 
   const openResourcePicker = async () => {
@@ -903,12 +1409,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setResourcePickerOpen(true);
     setResourcePickerLoading(true);
     try {
-      const payload = await api.getAskLedgerDocuments(workspaceId) as { documents?: Array<Record<string, unknown>> };
-      const resources = (payload.documents ?? []).map((item) => {
-        const type = sourceType(item.resourceType);
-        if (!type) return null;
-        return { id: String(item.resourceId ?? ''), resourceId: String(item.resourceId ?? ''), title: String(item.title ?? 'Untitled'), type, sourceLabel: sourceTypeLabels[type], projectId: item.projectId ? String(item.projectId) : undefined } as AskLedgerSource;
-      }).filter((item): item is AskLedgerSource => Boolean(item?.resourceId));
+      const payload = (await api.getAskLedgerDocuments(workspaceId)) as {
+        documents?: Array<Record<string, unknown>>;
+      };
+      const resources = (payload.documents ?? [])
+        .map((item) => {
+          const type = sourceType(item.resourceType);
+          if (!type) return null;
+          return {
+            id: String(item.resourceId ?? ''),
+            resourceId: String(item.resourceId ?? ''),
+            title: String(item.title ?? 'Untitled'),
+            type,
+            sourceLabel: sourceTypeLabels[type],
+            projectId: item.projectId ? String(item.projectId) : undefined,
+          } as AskLedgerSource;
+        })
+        .filter((item): item is AskLedgerSource => Boolean(item?.resourceId));
       setResourcePickerOptions(resources.slice(0, 50));
     } catch {
       setResourcePickerOptions([]);
@@ -919,13 +1436,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   const addResourceAttachment = (resource: AskLedgerSource) => {
-    setComposerAttachments((current) => current.some((item) => item.kind === 'resource' && item.resource.resourceId === resource.resourceId) ? current : [...current, { kind: 'resource', resource }]);
+    setComposerAttachments((current) =>
+      current.some(
+        (item) => item.kind === 'resource' && item.resource.resourceId === resource.resourceId
+      )
+        ? current
+        : [...current, { kind: 'resource', resource }]
+    );
     setResourcePickerOpen(false);
     setAttachmentMenuOpen(false);
   };
 
   const removeComposerAttachment = (attachment: AskLedgerMessageAttachment) => {
-    if (attachment.kind === 'file') void window.askLedger?.removeAttachments({ conversationId: conversationIdRef.current, attachmentIds: [attachment.attachment.id] });
+    if (attachment.kind === 'file')
+      void window.askLedger?.removeAttachments({
+        conversationId: conversationIdRef.current,
+        attachmentIds: [attachment.attachment.id],
+      });
     setComposerAttachments((current) => current.filter((item) => item !== attachment));
   };
 
@@ -937,16 +1464,28 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     let cancelled = false;
     const loadCustomSkills = async () => {
       try {
-        const payload = await api.getAskLedgerSkills(workspaceId) as { skills?: unknown[] };
+        const payload = (await api.getAskLedgerSkills(workspaceId)) as { skills?: unknown[] };
         if (cancelled) return;
         const skills = Array.isArray(payload?.skills) ? payload.skills : [];
-        setLoadedCustomSkills(skills.filter((skill): skill is AskLedgerCustomSkill => Boolean(skill && typeof skill === 'object' && typeof (skill as Record<string, unknown>).id === 'string' && typeof (skill as Record<string, unknown>).name === 'string' && typeof (skill as Record<string, unknown>).instructions === 'string')));
+        setLoadedCustomSkills(
+          skills.filter((skill): skill is AskLedgerCustomSkill =>
+            Boolean(
+              skill &&
+                typeof skill === 'object' &&
+                typeof (skill as Record<string, unknown>).id === 'string' &&
+                typeof (skill as Record<string, unknown>).name === 'string' &&
+                typeof (skill as Record<string, unknown>).instructions === 'string'
+            )
+          )
+        );
       } catch {
         if (!cancelled) setLoadedCustomSkills([]);
       }
     };
     void loadCustomSkills();
-    const handleSkillsUpdated = () => { void loadCustomSkills(); };
+    const handleSkillsUpdated = () => {
+      void loadCustomSkills();
+    };
     window.addEventListener('ledger:ask-ledger-skills-updated', handleSkillsUpdated);
     return () => {
       cancelled = true;
@@ -955,7 +1494,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   }, [api, workspaceId]);
 
   const availableCustomSkills = useMemo(
-    () => [...new Map([...loadedCustomSkills, ...customSkills].map((skill) => [skill.id, skill])).values()],
+    () => [
+      ...new Map(
+        [...loadedCustomSkills, ...customSkills].map((skill) => [skill.id, skill])
+      ).values(),
+    ],
     [customSkills, loadedCustomSkills]
   );
 
@@ -966,40 +1509,76 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       description: skill.description ?? 'A custom Ledger workflow.',
       icon: skill.icon ?? 'Boxes',
       requiresContext: false,
-      supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'],
+      supportedContextTypes: [
+        'project',
+        'task',
+        'milestone',
+        'note',
+        'event',
+        'reminder',
+        'transcript',
+        'intake',
+        'person',
+        'team',
+        'external',
+      ],
       allowedActions: [],
       isCustom: true,
       instructions: skill.instructions,
     }));
-    setSkillCatalog((current) => [...current.filter((skill) => !skill.isCustom), ...customMetadata]);
+    setSkillCatalog((current) => [
+      ...current.filter((skill) => !skill.isCustom),
+      ...customMetadata,
+    ]);
   }, [availableCustomSkills]);
 
   useEffect(() => {
-    if (!actionReview?.actions.some((action) => action.type === 'create_task') || !workspaceId) return;
-    void api.getProjects({ includeCompleted: false }).then((value) => {
-      if (!Array.isArray(value)) return;
-      setProjectOptions(value.map((project) => {
-        const item = project as Record<string, unknown>;
-        return { id: String(item.id ?? ''), name: String(item.name ?? item.title ?? 'Untitled project') };
-      }).filter((project) => project.id));
-    }).catch(() => setProjectOptions([]));
+    if (!actionReview?.actions.some((action) => action.type === 'create_task') || !workspaceId)
+      return;
+    void api
+      .getProjects({ includeCompleted: false })
+      .then((value) => {
+        if (!Array.isArray(value)) return;
+        setProjectOptions(
+          value
+            .map((project) => {
+              const item = project as Record<string, unknown>;
+              return {
+                id: String(item.id ?? ''),
+                name: String(item.name ?? item.title ?? 'Untitled project'),
+              };
+            })
+            .filter((project) => project.id)
+        );
+      })
+      .catch(() => setProjectOptions([]));
   }, [actionReview, api, workspaceId]);
 
   useEffect(() => {
     if (!window.askLedger?.listSkills) return;
-    void window.askLedger.listSkills().then((skills) => {
-      const normalized = skills.map(normalizeSkillMetadata).filter((skill): skill is AskLedgerSkillMetadata => Boolean(skill));
-      if (normalized.length) setSkillCatalog((current) => [...normalized, ...current.filter((skill) => skill.isCustom)]);
-    }).catch(() => {
-      // Keep the shared safe metadata fallback available in the browser/runtime.
-    });
+    void window.askLedger
+      .listSkills()
+      .then((skills) => {
+        const normalized = skills
+          .map(normalizeSkillMetadata)
+          .filter((skill): skill is AskLedgerSkillMetadata => Boolean(skill));
+        if (normalized.length)
+          setSkillCatalog((current) => [
+            ...normalized,
+            ...current.filter((skill) => skill.isCustom),
+          ]);
+      })
+      .catch(() => {
+        // Keep the shared safe metadata fallback available in the browser/runtime.
+      });
   }, []);
 
   useEffect(() => {
     if (!skillPickerOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!skillPickerRef.current?.contains(target) && !skillPopupRef.current?.contains(target)) setSkillPickerOpen(false);
+      if (!skillPickerRef.current?.contains(target) && !skillPopupRef.current?.contains(target))
+        setSkillPickerOpen(false);
     };
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
@@ -1039,8 +1618,16 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   useEffect(() => {
     if (resetKey === undefined) return;
-    const discardedAttachmentIds = messagesRef.current.flatMap((message) => (message.attachments ?? []).flatMap((attachment) => attachment.kind === 'file' ? [attachment.attachment.id] : []));
-    if (discardedAttachmentIds.length) void window.askLedger?.removeAttachments({ conversationId: conversationIdRef.current, attachmentIds: discardedAttachmentIds });
+    const discardedAttachmentIds = messagesRef.current.flatMap((message) =>
+      (message.attachments ?? []).flatMap((attachment) =>
+        attachment.kind === 'file' ? [attachment.attachment.id] : []
+      )
+    );
+    if (discardedAttachmentIds.length)
+      void window.askLedger?.removeAttachments({
+        conversationId: conversationIdRef.current,
+        attachmentIds: discardedAttachmentIds,
+      });
     requestIdRef.current += 1;
     if (activeRequestIdRef.current) void window.askLedger?.cancel(activeRequestIdRef.current);
     activeRequestIdRef.current = null;
@@ -1081,7 +1668,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     messagesRef.current = restoredMessages;
     sessionIdRef.current = initialSession.id;
     sessionCreatedAtRef.current = initialSession.createdAt;
-    sessionPrivacyScopeRef.current = initialSession.privacyScope ?? (initialSession.messages.some((message) => message.attachments?.some((attachment) => attachment.kind === 'file')) ? 'device' : 'synced');
+    sessionPrivacyScopeRef.current =
+      initialSession.privacyScope ??
+      (initialSession.messages.some((message) =>
+        message.attachments?.some((attachment) => attachment.kind === 'file')
+      )
+        ? 'device'
+        : 'synced');
     onSessionIdChange?.(initialSession.id);
     conversationIdRef.current = initialSession.id;
     sessionSkillIdRef.current = initialSession.skillId;
@@ -1094,15 +1687,45 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     recentTurnsRef.current = restoredMessages
       .reduce<AskLedgerConversationTurn[]>((turns, message, index) => {
         if (message.role !== 'assistant') return turns;
-        const questionMessage = restoredMessages.slice(0, index).reverse().find((item) => item.role === 'user');
+        const questionMessage = restoredMessages
+          .slice(0, index)
+          .reverse()
+          .find((item) => item.role === 'user');
         if (!questionMessage) return turns;
-        return [...turns, { question: questionMessage.content, answer: message.content, sources: message.sources ?? [], executionMode: questionMessage.executionMode ?? message.executionMode, productArea: questionMessage.productArea ?? message.productArea, productFeature: questionMessage.productFeature ?? message.productFeature }];
+        return [
+          ...turns,
+          {
+            question: questionMessage.content,
+            answer: message.content,
+            sources: message.sources ?? [],
+            executionMode: questionMessage.executionMode ?? message.executionMode,
+            productArea: questionMessage.productArea ?? message.productArea,
+            productFeature: questionMessage.productFeature ?? message.productFeature,
+          },
+        ];
       }, [])
       .slice(-2);
     const lastTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
-    const restoredState = lastTurn ? deriveAskLedgerConversationState(workspaceIdRef.current ?? '', lastTurn.question, conversationStateSources(lastTurn.sources) as never) : undefined;
+    const restoredState = lastTurn
+      ? deriveAskLedgerConversationState(
+          workspaceIdRef.current ?? '',
+          lastTurn.question,
+          conversationStateSources(lastTurn.sources) as never
+        )
+      : undefined;
     conversationRef.current = lastTurn
-      ? { id: conversationIdRef.current, previousQuestion: lastTurn.question, previousAnswer: lastTurn.answer, previousSources: lastTurn.sources, previousExecutionMode: lastTurn.executionMode, productArea: lastTurn.productArea, productFeature: lastTurn.productFeature, recentExchanges: recentTurnsRef.current, initialContext: initialContextRef.current ?? undefined, state: restoredState }
+      ? {
+          id: conversationIdRef.current,
+          previousQuestion: lastTurn.question,
+          previousAnswer: lastTurn.answer,
+          previousSources: lastTurn.sources,
+          previousExecutionMode: lastTurn.executionMode,
+          productArea: lastTurn.productArea,
+          productFeature: lastTurn.productFeature,
+          recentExchanges: recentTurnsRef.current,
+          initialContext: initialContextRef.current ?? undefined,
+          state: restoredState,
+        }
       : null;
     onSessionTitleChange?.(sessionTitleRef.current);
     setQuestion('');
@@ -1118,33 +1741,52 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     conversationRef.current = conversationRef.current
       ? { ...conversationRef.current, initialContext: initialContextRef.current ?? undefined }
       : initialContextRef.current
-        ? { id: conversationIdRef.current, previousQuestion: '', previousAnswer: '', previousSources: [], recentExchanges: [], initialContext: initialContextRef.current }
-        : null;
+      ? {
+          id: conversationIdRef.current,
+          previousQuestion: '',
+          previousAnswer: '',
+          previousSources: [],
+          recentExchanges: [],
+          initialContext: initialContextRef.current,
+        }
+      : null;
   }, [initialContext, initialSession]);
 
   useEffect(() => {
     inputRef.current?.focus();
     const unsubscribe =
       window.askLedger?.onStream((value) => {
-        if (!isAskLedgerStreamEvent(value))
-          return;
+        if (!isAskLedgerStreamEvent(value)) return;
         // Fast responses such as greetings can arrive before the IPC promise
         // resolves with the request id. Adopt that id while this request is
         // still initializing so the delta and done events are not discarded.
         if (value.requestId !== activeRequestIdRef.current) {
-          if (requestInitializingRef.current && !activeRequestIdRef.current) activeRequestIdRef.current = value.requestId;
+          if (requestInitializingRef.current && !activeRequestIdRef.current)
+            activeRequestIdRef.current = value.requestId;
           else return;
         }
         if (value.type === 'activity') {
           const nextActivity = value.activity ?? null;
-          const activeRequest = stateRef.current.status === 'submitting' || stateRef.current.status === 'streaming' ? stateRef.current.request : null;
+          const activeRequest =
+            stateRef.current.status === 'submitting' || stateRef.current.status === 'streaming'
+              ? stateRef.current.request
+              : null;
           // Conversational turns still stream through the local model. Keep
           // the lightweight runtime/generation state visible, while hiding
           // workspace-only stages such as search and source reading.
-          if (nextActivity && activeRequest?.retrievalRequired === false && !['starting_runtime', 'reasoning', 'generating'].includes(nextActivity.type)) return;
+          if (
+            nextActivity &&
+            activeRequest?.retrievalRequired === false &&
+            !['starting_runtime', 'reasoning', 'generating'].includes(nextActivity.type)
+          )
+            return;
           if (nextActivity) {
             setActivitySteps((current) => {
-              const next = current.some((step) => step.type === nextActivity.type && step.count === nextActivity.count) ? current : [...current, nextActivity];
+              const next = current.some(
+                (step) => step.type === nextActivity.type && step.count === nextActivity.count
+              )
+                ? current
+                : [...current, nextActivity];
               activityStepsRef.current = next;
               return next;
             });
@@ -1167,12 +1809,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     type,
                     route: source.route as string | Record<string, unknown> | undefined,
                     sourceLabel: source.sourceLabel ? String(source.sourceLabel) : undefined,
-                    integrationProvider: source.integrationProvider ? String(source.integrationProvider) : undefined,
-                    integrationResourceType: source.integrationResourceType ? String(source.integrationResourceType) : undefined,
+                    integrationProvider: source.integrationProvider
+                      ? String(source.integrationProvider)
+                      : undefined,
+                    integrationResourceType: source.integrationResourceType
+                      ? String(source.integrationResourceType)
+                      : undefined,
                     externalId: source.externalId ? String(source.externalId) : undefined,
                     explicitIntegrationLink: source.explicitIntegrationLink === true,
                     updatedAt: source.updatedAt ? String(source.updatedAt) : undefined,
-                    attachmentSource: source.attachmentSource as AskLedgerSource['attachmentSource'],
+                    attachmentSource:
+                      source.attachmentSource as AskLedgerSource['attachmentSource'],
                   }
                 : null;
             })
@@ -1183,7 +1830,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         if (value.type === 'delta' && typeof value.text === 'string') {
           clearRequestWatchdog();
           setRequestWatchdogStatus(null);
-          if (rendererFirstDeltaAtRef.current === null) rendererFirstDeltaAtRef.current = Date.now();
+          if (rendererFirstDeltaAtRef.current === null)
+            rendererFirstDeltaAtRef.current = Date.now();
           liveResponseRef.current = {
             answer: `${liveResponseRef.current.answer}${value.text}`,
             sources: sourceItemsRef.current,
@@ -1204,7 +1852,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           liveResponseRef.current = { answer: value.text, sources: sourceItemsRef.current };
           setState((current) => {
             if (current.status !== 'submitting' && current.status !== 'streaming') return current;
-            return { status: 'streaming', request: current.request, response: { answer: value.text ?? '', sources: sourceItemsRef.current } };
+            return {
+              status: 'streaming',
+              request: current.request,
+              response: { answer: value.text ?? '', sources: sourceItemsRef.current },
+            };
           });
           return;
         }
@@ -1213,16 +1865,24 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           setRequestWatchdogStatus(null);
           if (completedRequestIdRef.current === value.requestId) return;
           const completedState = stateRef.current;
-          if (completedState.status !== 'submitting' && completedState.status !== 'streaming') return;
+          if (completedState.status !== 'submitting' && completedState.status !== 'streaming')
+            return;
           completedRequestIdRef.current = value.requestId;
-          const durationMs = value.metrics?.totalMs ?? (activityStartedAtRef.current ? Date.now() - activityStartedAtRef.current : 0);
+          const durationMs =
+            value.metrics?.totalMs ??
+            (activityStartedAtRef.current ? Date.now() - activityStartedAtRef.current : 0);
           const rendererDoneReceivedAt = Date.now();
           console.info('[local-ai] Ask Ledger renderer performance', {
             requestId: value.requestId,
             rendererDoneReceivedAt,
             rendererFirstDeltaAt: rendererFirstDeltaAtRef.current,
-            firstRendererDeltaMs: rendererFirstDeltaAtRef.current && activityStartedAtRef.current ? rendererFirstDeltaAtRef.current - activityStartedAtRef.current : undefined,
-            rendererDoneMs: activityStartedAtRef.current ? rendererDoneReceivedAt - activityStartedAtRef.current : undefined,
+            firstRendererDeltaMs:
+              rendererFirstDeltaAtRef.current && activityStartedAtRef.current
+                ? rendererFirstDeltaAtRef.current - activityStartedAtRef.current
+                : undefined,
+            rendererDoneMs: activityStartedAtRef.current
+              ? rendererDoneReceivedAt - activityStartedAtRef.current
+              : undefined,
             performance: value.metrics?.performance,
           });
           const completedActivity = activityStepsRef.current;
@@ -1232,13 +1892,16 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           // authoritative live response for same-tick completion.
           const completedResponse = liveResponseRef.current;
           setActivityDurationMs(durationMs);
-          const isAbstention = Boolean(completedState.request.retrievalRequired)
-            && /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(completedResponse.answer);
+          const isAbstention =
+            Boolean(completedState.request.retrievalRequired) &&
+            /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(
+              completedResponse.answer
+            );
           const answer = isAbstention
             ? "I don't have enough Ledger context to answer that."
             : completedResponse.answer.trim()
-              ? completedResponse.answer
-              : 'I couldn’t produce a visible answer. Try again or switch to Balanced for this question.';
+            ? completedResponse.answer
+            : 'I couldn’t produce a visible answer. Try again or switch to Balanced for this question.';
           const assistantMessage: AskLedgerMessage = {
             id: newAskLedgerMessageId(),
             role: 'assistant',
@@ -1246,47 +1909,98 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             createdAt: new Date().toISOString(),
             sources: completedResponse.sources,
             executionMode: completedState.request.executionMode,
-            ...(completedState.request.executionMode === 'ledger_product_help' ? { productArea: completedState.request.productArea, productFeature: completedState.request.productFeature } : {}),
-            ...(completedActivity.length ? { activity: { durationMs, steps: completedActivity } } : {}),
-            ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId, sections: value.skillResult.sections } } : {}),
+            ...(completedState.request.executionMode === 'ledger_product_help'
+              ? {
+                  productArea: completedState.request.productArea,
+                  productFeature: completedState.request.productFeature,
+                }
+              : {}),
+            ...(completedActivity.length
+              ? { activity: { durationMs, steps: completedActivity } }
+              : {}),
+            ...(value.skillResult?.sections?.length && value.skillResult.skillId
+              ? {
+                  structured: {
+                    skillId: value.skillResult.skillId,
+                    sections: value.skillResult.sections,
+                  },
+                }
+              : {}),
           };
           const previousTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
-          const skillDefinition = value.skillResult?.skillId ? skillCatalog.find((skill) => skill.id === value.skillResult?.skillId) : undefined;
-          const proposedActions = value.skillResult?.actionProposals?.filter((action) => skillDefinition?.allowedActions.includes(action.type)).map((action, index) => ({
-            id: `${assistantMessage.id}-skill-action-${index}`,
-            type: action.type,
-            payload: action.payload,
-            sourceMessageId: assistantMessage.id,
-            status: 'pending' as const,
-          })) ?? (completedState.request.responseMode === 'conversational' ? [] : proposeAskLedgerActions({
-            question: completedState.request.question,
-            answer,
-            previousAnswer: previousTurn?.answer,
-            initialContext: initialContextRef.current,
-            sourceMessageId: assistantMessage.id,
-          }));
+          const skillDefinition = value.skillResult?.skillId
+            ? skillCatalog.find((skill) => skill.id === value.skillResult?.skillId)
+            : undefined;
+          const proposedActions =
+            value.skillResult?.actionProposals
+              ?.filter((action) => skillDefinition?.allowedActions.includes(action.type))
+              .map((action, index) => ({
+                id: `${assistantMessage.id}-skill-action-${index}`,
+                type: action.type,
+                payload: action.payload,
+                sourceMessageId: assistantMessage.id,
+                status: 'pending' as const,
+              })) ??
+            (completedState.request.responseMode === 'conversational'
+              ? []
+              : proposeAskLedgerActions({
+                  question: completedState.request.question,
+                  answer,
+                  previousAnswer: previousTurn?.answer,
+                  initialContext: initialContextRef.current,
+                  sourceMessageId: assistantMessage.id,
+                }));
           if (proposedActions.length) assistantMessage.actions = proposedActions;
           const nextMessages = [...messagesRef.current, assistantMessage];
           messagesRef.current = nextMessages;
           setMessages(nextMessages);
           queueSessionSave(nextMessages);
-          const completedTurn: AskLedgerConversationTurn = { question: completedState.request.question, answer, sources: completedResponse.sources, executionMode: completedState.request.executionMode, productArea: completedState.request.productArea, productFeature: completedState.request.productFeature };
+          const completedTurn: AskLedgerConversationTurn = {
+            question: completedState.request.question,
+            answer,
+            sources: completedResponse.sources,
+            executionMode: completedState.request.executionMode,
+            productArea: completedState.request.productArea,
+            productFeature: completedState.request.productFeature,
+          };
           recentTurnsRef.current = [...recentTurnsRef.current, completedTurn].slice(-2);
-          const conversationState = deriveAskLedgerConversationState(workspaceIdRef.current ?? '', completedState.request.question, conversationStateSources(completedResponse.sources) as never, conversationRef.current?.state);
+          const conversationState = deriveAskLedgerConversationState(
+            workspaceIdRef.current ?? '',
+            completedState.request.question,
+            conversationStateSources(completedResponse.sources) as never,
+            conversationRef.current?.state
+          );
           conversationRef.current = {
             id: conversationIdRef.current,
             previousQuestion: completedState.request.question,
             previousAnswer: answer,
             previousSources: completedResponse.sources,
             previousExecutionMode: completedState.request.executionMode,
-            ...(completedState.request.executionMode === 'ledger_product_help' ? { productArea: completedState.request.productArea, productFeature: completedState.request.productFeature } : {}),
-            ...(completedState.request.executionMode === 'skills' ? { previousSkill: completedState.request.skillId } : {}),
-            ...(completedState.request.executionMode !== 'ledger_product_help' ? { resolvedWorkspaceEntities: conversationStateSources(completedResponse.sources) } : {}),
+            ...(completedState.request.executionMode === 'ledger_product_help'
+              ? {
+                  productArea: completedState.request.productArea,
+                  productFeature: completedState.request.productFeature,
+                }
+              : {}),
+            ...(completedState.request.executionMode === 'skills'
+              ? { previousSkill: completedState.request.skillId }
+              : {}),
+            ...(completedState.request.executionMode !== 'ledger_product_help'
+              ? { resolvedWorkspaceEntities: conversationStateSources(completedResponse.sources) }
+              : {}),
             recentExchanges: recentTurnsRef.current,
             initialContext: initialContextRef.current ?? undefined,
             state: conversationState,
           };
-          setState(isAbstention ? { status: 'no-answer', request: completedState.request } : { status: 'answer', request: completedState.request, response: { answer, sources: completedResponse.sources } });
+          setState(
+            isAbstention
+              ? { status: 'no-answer', request: completedState.request }
+              : {
+                  status: 'answer',
+                  request: completedState.request,
+                  response: { answer, sources: completedResponse.sources },
+                }
+          );
           activeRequestIdRef.current = null;
           return;
         }
@@ -1298,9 +2012,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             if (current.status === 'streaming' || current.status === 'submitting') {
               const currentResponse = liveResponseRef.current;
               const interruptedMessage: AskLedgerMessage = {
-                id: newAskLedgerMessageId(), role: 'assistant',
+                id: newAskLedgerMessageId(),
+                role: 'assistant',
                 content: currentResponse.answer.trim() || 'No response was completed.',
-                createdAt: new Date().toISOString(), sources: currentResponse.sources, interrupted: true,
+                createdAt: new Date().toISOString(),
+                sources: currentResponse.sources,
+                interrupted: true,
                 activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
               };
               const nextMessages = [...messagesRef.current, interruptedMessage];
@@ -1314,12 +2031,18 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           }
           const partialResponse = liveResponseRef.current;
           const currentState = stateRef.current;
-          if ((currentState.status === 'streaming' || currentState.status === 'submitting') && partialResponse.answer.trim()) {
+          if (
+            (currentState.status === 'streaming' || currentState.status === 'submitting') &&
+            partialResponse.answer.trim()
+          ) {
             const timedOut = value.error?.code === 'request_timeout';
             const partialMessage: AskLedgerMessage = {
-              id: newAskLedgerMessageId(), role: 'assistant',
-              content: partialResponse.answer.trim(), createdAt: new Date().toISOString(),
-              sources: partialResponse.sources, ...(timedOut ? {} : { interrupted: true }),
+              id: newAskLedgerMessageId(),
+              role: 'assistant',
+              content: partialResponse.answer.trim(),
+              createdAt: new Date().toISOString(),
+              sources: partialResponse.sources,
+              ...(timedOut ? {} : { interrupted: true }),
               activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
             };
             const nextMessages = [...messagesRef.current, partialMessage];
@@ -1335,7 +2058,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               current.status === 'streaming' || current.status === 'submitting'
                 ? current.request
                 : { question: questionRef.current.trim(), workspaceId: workspaceIdRef.current };
-            return { status: 'error', request, message: localAIErrorMessage(value.error?.code, value.error?.message) };
+            return {
+              status: 'error',
+              request,
+              message: localAIErrorMessage(value.error?.code, value.error?.message),
+            };
           });
           activeRequestIdRef.current = null;
         }
@@ -1356,19 +2083,29 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       if (isGenerationTier(next?.selectedGenerationTier)) {
         const tier = next.selectedGenerationTier;
         setSelectedGenerationTier(tier);
-        setGenerationMode((current) => current === 'thinking' && tier === 'balanced' ? 'thinking' : tier);
+        setGenerationMode((current) =>
+          current === 'thinking' && tier === 'balanced' ? 'thinking' : tier
+        );
       }
       if (next?.generationModels) setGenerationModels(Object.values(next.generationModels));
-      else if (next?.generation?.tier && next.generation.id) setGenerationModels([{ id: next.generation.id, tier: next.generation.tier, ...next.generation }]);
+      else if (next?.generation?.tier && next.generation.id)
+        setGenerationModels([
+          { id: next.generation.id, tier: next.generation.tier, ...next.generation },
+        ]);
 
       // The download is owned by Electron, not this panel. Remember the
       // requested tier so a tab remount can reconnect to an active download.
       try {
         const rememberedTier = localStorage.getItem(optionalDownloadStorageKey);
-        const rememberedModel = rememberedTier && next?.generationModels
-          ? Object.values(next.generationModels).find((model) => model.tier === rememberedTier)
-          : undefined;
-        if (rememberedModel?.downloading && !downloadDismissedRef.current && isGenerationTier(rememberedTier)) {
+        const rememberedModel =
+          rememberedTier && next?.generationModels
+            ? Object.values(next.generationModels).find((model) => model.tier === rememberedTier)
+            : undefined;
+        if (
+          rememberedModel?.downloading &&
+          !downloadDismissedRef.current &&
+          isGenerationTier(rememberedTier)
+        ) {
           setDownloadTier(rememberedTier);
           setDownloadPhase('downloading');
           setDownloadMinimized(false);
@@ -1379,12 +2116,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         // Browser storage can be unavailable in restricted renderer contexts.
       }
     };
-    void window.askLedger
-      .localAIStatus()
-      .then(applyLocalAIStatus);
-    return window.askLedger.onLocalAIStatus((value) =>
-      applyLocalAIStatus(value)
-    );
+    void window.askLedger.localAIStatus().then(applyLocalAIStatus);
+    return window.askLedger.onLocalAIStatus((value) => applyLocalAIStatus(value));
   }, []);
 
   useEffect(() => {
@@ -1395,7 +2128,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       if (isGenerationTier(next?.selectedTier)) {
         const tier = next.selectedTier;
         setSelectedGenerationTier(tier);
-        setGenerationMode((current) => current === 'thinking' && tier === 'balanced' ? 'thinking' : tier);
+        setGenerationMode((current) =>
+          current === 'thinking' && tier === 'balanced' ? 'thinking' : tier
+        );
       }
     });
     if (!window.askLedger.onGenerationRuntimeState) return;
@@ -1417,11 +2152,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (!workspaceId || !user?.id) return;
     sessionSaveChainRef.current = sessionSaveChainRef.current
       .then(async () => {
-        const hasLocalFile = nextMessages.some((message) => message.attachments?.some((attachment) => attachment.kind === 'file'));
+        const hasLocalFile = nextMessages.some((message) =>
+          message.attachments?.some((attachment) => attachment.kind === 'file')
+        );
         const isDeviceOnly = sessionPrivacyScopeRef.current === 'device' || hasLocalFile;
         if (isDeviceOnly) {
           sessionPrivacyScopeRef.current = 'device';
-          if (!window.localAskSessions) throw new Error('Local Ask Ledger session storage is unavailable.');
+          if (!window.localAskSessions)
+            throw new Error('Local Ask Ledger session storage is unavailable.');
           const sessionId = sessionIdRef.current ?? conversationIdRef.current;
           sessionIdRef.current = sessionId;
           onSessionIdChange?.(sessionId);
@@ -1442,13 +2180,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         }
         let sessionId = sessionIdRef.current;
         if (!sessionId) {
-          const created = await api.createAskLedgerSession(workspaceId, { title, messages: nextMessages, initialContext: initialContextRef.current, skillId: sessionSkillIdRef.current }) as { session?: AskLedgerSession };
+          const created = (await api.createAskLedgerSession(workspaceId, {
+            title,
+            messages: nextMessages,
+            initialContext: initialContextRef.current,
+            skillId: sessionSkillIdRef.current,
+          })) as { session?: AskLedgerSession };
           sessionId = created.session?.id ?? null;
           sessionIdRef.current = sessionId;
           onSessionIdChange?.(sessionId);
         }
         if (!sessionId) return;
-        await api.updateAskLedgerSession(workspaceId, sessionId, { title, messages: nextMessages, initialContext: initialContextRef.current, skillId: sessionSkillIdRef.current });
+        await api.updateAskLedgerSession(workspaceId, sessionId, {
+          title,
+          messages: nextMessages,
+          initialContext: initialContextRef.current,
+          skillId: sessionSkillIdRef.current,
+        });
         onSessionPersisted?.();
       })
       .catch(() => {
@@ -1459,20 +2207,55 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const uiSubmitStartedAt = Date.now();
     const trimmedQuestion = (questionOverride ?? question).trim();
     const selectedSkillForRequest = pendingSkillIdRef.current;
-    if ((!trimmedQuestion && !selectedSkillForRequest) || !localAIReady || requestInitializingRef.current || activeRequestIdRef.current) return;
+    if (
+      (!trimmedQuestion && !selectedSkillForRequest) ||
+      !localAIReady ||
+      requestInitializingRef.current ||
+      activeRequestIdRef.current
+    )
+      return;
 
-    const effectiveQuestion = trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
+    const effectiveQuestion =
+      trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
     onQuestionSubmitted?.(effectiveQuestion);
     const submittedAttachments = composerAttachments;
-    const submittedInitialContext = activeInitialContext ?? initialContextRef.current ?? (!conversationActive ? initialContext : null);
+    const submittedInitialContext =
+      activeInitialContext ??
+      initialContextRef.current ??
+      (!conversationActive ? initialContext : null);
     const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
-      ? [...submittedAttachments, { kind: 'resource', resource: { id: submittedInitialContext.resourceId, resourceId: submittedInitialContext.resourceId, title: submittedInitialContext.title, type: submittedInitialContext.resourceType, sourceLabel: sourceTypeLabels[submittedInitialContext.resourceType] } }]
+      ? [
+          ...submittedAttachments,
+          {
+            kind: 'resource',
+            resource: {
+              id: submittedInitialContext.resourceId,
+              resourceId: submittedInitialContext.resourceId,
+              title: submittedInitialContext.title,
+              type: submittedInitialContext.resourceType,
+              sourceLabel: sourceTypeLabels[submittedInitialContext.resourceType],
+            },
+          },
+        ]
       : submittedAttachments;
-    const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);
+    const attachmentIds = submittedAttachments.flatMap((item) =>
+      item.kind === 'file' ? [item.attachment.id] : []
+    );
 
     const customSkill = availableCustomSkills.find((skill) => skill.id === selectedSkillForRequest);
-    const submittedContext = activeInitialContext ?? initialContextRef.current ?? (!conversationActive ? initialContext ?? undefined : undefined);
-    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: submittedContext, attachmentIds, reasoningMode };
+    const submittedContext =
+      activeInitialContext ??
+      initialContextRef.current ??
+      (!conversationActive ? initialContext ?? undefined : undefined);
+    const request: AskLedgerRequest = {
+      question: effectiveQuestion,
+      workspaceId,
+      skillId: selectedSkillForRequest,
+      customSkill,
+      explicitContext: submittedContext,
+      attachmentIds,
+      reasoningMode,
+    };
     const route = routeAskLedgerMessage(effectiveQuestion, {
       previousQuestion: conversationRef.current?.previousQuestion,
       previousAnswer: conversationRef.current?.previousAnswer,
@@ -1500,7 +2283,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     // A meeting handoff is an anchored workspace question, not a generic
     // conversational embed. Load the bounded meeting evidence before asking
     // the local model so the first question cannot run with empty documents.
-    request.retrievalRequired = route.retrievalRequired || submittedContext?.contextType === 'meeting';
+    request.retrievalRequired =
+      route.retrievalRequired || submittedContext?.contextType === 'meeting';
     request.answerDepth = route.answerDepth;
     pendingSkillIdRef.current = undefined;
     setSelectedSkillId(null);
@@ -1514,9 +2298,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     // and replaces it with the "no visible answer" fallback.
     activeRequestIdRef.current = performanceRequestId;
     rendererFirstDeltaAtRef.current = null;
-    const nextTitle = messagesRef.current.length === 0 && appendUserMessage
-      ? (trimmedQuestion ? deriveSessionTitle(trimmedQuestion) : skillCatalog.find((skill) => skill.id === selectedSkillForRequest)?.name ?? 'Ask Ledger')
-      : sessionTitleRef.current;
+    const nextTitle =
+      messagesRef.current.length === 0 && appendUserMessage
+        ? trimmedQuestion
+          ? deriveSessionTitle(trimmedQuestion)
+          : skillCatalog.find((skill) => skill.id === selectedSkillForRequest)?.name ?? 'Ask Ledger'
+        : sessionTitleRef.current;
     if (messagesRef.current.length === 0 && appendUserMessage) {
       sessionTitleRef.current = nextTitle;
       onSessionTitleChange?.(nextTitle);
@@ -1530,7 +2317,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         createdAt: new Date().toISOString(),
         skillId: selectedSkillForRequest,
         executionMode: route.executionMode,
-        ...(route.executionMode === 'ledger_product_help' ? { productArea: request.productArea, productFeature: request.productFeature } : {}),
+        ...(route.executionMode === 'ledger_product_help'
+          ? { productArea: request.productArea, productFeature: request.productFeature }
+          : {}),
         attachments: submittedMessageAttachments,
       };
       nextMessages = [...messagesRef.current, userMessage];
@@ -1545,11 +2334,22 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     activityStartedAtRef.current = Date.now();
     clearRequestWatchdog();
     setRequestWatchdogStatus(null);
-    const watchdogMs = selectedSkillForRequest || route.answerDepth === 'detailed' || /\b(deep|analy[sz]e|compare|trade-offs?)\b/i.test(effectiveQuestion) ? 90_000 : 30_000;
+    const watchdogMs =
+      selectedSkillForRequest ||
+      route.answerDepth === 'detailed' ||
+      /\b(deep|analy[sz]e|compare|trade-offs?)\b/i.test(effectiveQuestion)
+        ? 90_000
+        : 30_000;
     requestWatchdogTimerRef.current = window.setTimeout(() => {
       requestWatchdogTimerRef.current = null;
       setRequestWatchdogStatus('slow');
-      console.warn('[local-ai] Ask Ledger request watchdog', { requestId: performanceRequestId, watchdogMs, requestDepth: route.answerDepth, skillId: selectedSkillForRequest, action: 'cancel_or_retry_available' });
+      console.warn('[local-ai] Ask Ledger request watchdog', {
+        requestId: performanceRequestId,
+        watchdogMs,
+        requestDepth: route.answerDepth,
+        skillId: selectedSkillForRequest,
+        action: 'cancel_or_retry_available',
+      });
     }, watchdogMs);
     activityStepsRef.current = [];
     setActivitySteps([]);
@@ -1573,35 +2373,50 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     requestInitializingRef.current = true;
     const preflightStartedAt = Date.now();
     const projectAnchoredRequest = submittedContext?.resourceType === 'project';
-    const relatedWorkspaceRequest = projectAnchoredRequest || askLedgerNeedsRelatedWorkspaceContext(effectiveQuestion);
+    const relatedWorkspaceRequest =
+      projectAnchoredRequest || askLedgerNeedsRelatedWorkspaceContext(effectiveQuestion);
     const projectRequestOptions = relatedWorkspaceRequest
       ? {
-        // A project handoff needs its exact work records, not just the
-        // project row. Do not apply the question's meeting date window to
-        // tasks/milestones that may be undated or due outside that meeting.
-        scope: 'all',
-        project: submittedContext?.title,
-        integrationQuery: effectiveQuestion,
-      }
+          // A project handoff needs its exact work records, not just the
+          // project row. Do not apply the question's meeting date window to
+          // tasks/milestones that may be undated or due outside that meeting.
+          scope: 'all',
+          project: submittedContext?.title,
+          integrationQuery: effectiveQuestion,
+        }
       : {
-        scope: askLedgerDocumentScope(effectiveQuestion),
-        ...askLedgerDateWindow(effectiveQuestion),
-        openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion),
-        project: askLedgerProjectReference(effectiveQuestion),
-        taskHorizon: askLedgerTaskHorizon(effectiveQuestion),
-        assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)),
-        integrationQuery: effectiveQuestion,
-      };
-    void Promise.all(route.retrievalRequired ? [
-      api.getAskLedgerDocuments(workspaceId, projectRequestOptions) as Promise<{
-        workspaceId?: string;
-        documents?: Array<Record<string, unknown>>;
-      }>,
-      effectiveQuestion ? api.searchWorkspace(workspaceId, effectiveQuestion) as Promise<Array<Record<string, unknown>>> : Promise.resolve([]),
-      (api.getSections().catch(() => []) as Promise<Array<Record<string, unknown>> | { sections?: Array<Record<string, unknown>> }>),
-      ] : [Promise.resolve({ documents: [] }), Promise.resolve([]), Promise.resolve([])] as const)
+          scope: askLedgerDocumentScope(effectiveQuestion),
+          ...askLedgerDateWindow(effectiveQuestion),
+          openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion),
+          project: askLedgerProjectReference(effectiveQuestion),
+          taskHorizon: askLedgerTaskHorizon(effectiveQuestion),
+          assignedToMe: askLedgerAssignedToMe(
+            effectiveQuestion,
+            askLedgerDocumentScope(effectiveQuestion)
+          ),
+          integrationQuery: effectiveQuestion,
+        };
+    void Promise.all(
+      route.retrievalRequired
+        ? [
+            api.getAskLedgerDocuments(workspaceId, projectRequestOptions) as Promise<{
+              workspaceId?: string;
+              documents?: Array<Record<string, unknown>>;
+            }>,
+            effectiveQuestion
+              ? (api.searchWorkspace(workspaceId, effectiveQuestion) as Promise<
+                  Array<Record<string, unknown>>
+                >)
+              : Promise.resolve([]),
+            api.getSections().catch(() => []) as Promise<
+              Array<Record<string, unknown>> | { sections?: Array<Record<string, unknown>> }
+            >,
+          ]
+        : ([Promise.resolve({ documents: [] }), Promise.resolve([]), Promise.resolve([])] as const)
+    )
       .then(([documentPayload, lexicalResults, sectionPayload]) => {
-        if (requestId !== requestIdRef.current || !requestInitializingRef.current) return { requestId: '' };
+        if (requestId !== requestIdRef.current || !requestInitializingRef.current)
+          return { requestId: '' };
         const sectionRows = Array.isArray(sectionPayload)
           ? sectionPayload
           : Array.isArray(sectionPayload?.sections)
@@ -1615,26 +2430,42 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           })
         );
         const documents: Array<Record<string, unknown>> = [...(documentPayload.documents ?? [])]
-          .filter((item, index, all) => all.findIndex((candidate) => candidate.resourceType === item.resourceType && candidate.resourceId === item.resourceId) === index)
-          .map(
-          (item) => {
+          .filter(
+            (item, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.resourceType === item.resourceType &&
+                  candidate.resourceId === item.resourceId
+              ) === index
+          )
+          .map((item) => {
             if (item.resourceType !== 'note' || item.containerName || item.sectionName) {
               return { ...item, workspaceId };
             }
             const sectionId = String(item.section_id ?? item.sectionId ?? '').trim();
             const sectionName = sectionNameById.get(sectionId);
-            return sectionName ? { ...item, workspaceId, containerName: sectionName } : { ...item, workspaceId };
-          }
-        );
-        sourceItemsRef.current = [...documents
-          .map((item) => {
-            const type = sourceType(item.resourceType);
-            return type
-              ? { id: String(item.resourceId), title: String(item.title ?? 'Untitled'), type }
-              : null;
-          })
-          .filter((item): item is AskLedgerSource => Boolean(item))
-        ].filter((item, index, all) => all.findIndex((candidate) => candidate.type === item.type && candidate.resourceId === item.resourceId) === index).slice(0, 8);
+            return sectionName
+              ? { ...item, workspaceId, containerName: sectionName }
+              : { ...item, workspaceId };
+          });
+        sourceItemsRef.current = [
+          ...documents
+            .map((item) => {
+              const type = sourceType(item.resourceType);
+              return type
+                ? { id: String(item.resourceId), title: String(item.title ?? 'Untitled'), type }
+                : null;
+            })
+            .filter((item): item is AskLedgerSource => Boolean(item)),
+        ]
+          .filter(
+            (item, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.type === item.type && candidate.resourceId === item.resourceId
+              ) === index
+          )
+          .slice(0, 8);
         const startResult = window.askLedger!.start({
           requestId: performanceRequestId,
           question: effectiveQuestion,
@@ -1642,7 +2473,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ownerUserId: user?.id,
           documents,
           lexicalResults,
-          conversation: conversationRef.current ?? { id: conversationIdRef.current, previousQuestion: '', previousAnswer: '', previousSources: [], recentExchanges: [] },
+          conversation: conversationRef.current ?? {
+            id: conversationIdRef.current,
+            previousQuestion: '',
+            previousAnswer: '',
+            previousSources: [],
+            recentExchanges: [],
+          },
           skillId: request.skillId,
           customSkill: request.customSkill,
           explicitContext: submittedContext,
@@ -1651,7 +2488,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           timeFormat: (() => {
             try {
-              const preferences = JSON.parse(window.localStorage.getItem('ledger:settings:v1') || '{}') as { timeFormat?: unknown };
+              const preferences = JSON.parse(
+                window.localStorage.getItem('ledger:settings:v1') || '{}'
+              ) as { timeFormat?: unknown };
               return preferences.timeFormat === '24h' ? '24h' : '12h';
             } catch {
               return '12h';
@@ -1685,7 +2524,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   useEffect(() => {
     const handleSeedQuestion = (event: Event) => {
-      const detail = (event as CustomEvent<{ question?: string; submit?: boolean; source?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{ question?: string; submit?: boolean; source?: string }>
+      ).detail;
       if (compact && detail?.source === 'fullscreen') return;
       const seededQuestion = detail?.question?.trim();
       if (!seededQuestion) return;
@@ -1703,12 +2544,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     clearRequestWatchdog();
     setRequestWatchdogStatus(null);
     requestIdRef.current += 1;
-    console.info('[local-ai] Ask Ledger renderer cancellation', { requestId: activeRequestIdRef.current ?? performanceRequestIdRef.current, requestIdAvailable: Boolean(activeRequestIdRef.current), cancelledAt: Date.now() });
+    console.info('[local-ai] Ask Ledger renderer cancellation', {
+      requestId: activeRequestIdRef.current ?? performanceRequestIdRef.current,
+      requestIdAvailable: Boolean(activeRequestIdRef.current),
+      cancelledAt: Date.now(),
+    });
     if (activeRequestIdRef.current) void window.askLedger?.cancel(activeRequestIdRef.current);
     activeRequestIdRef.current = null;
     requestInitializingRef.current = false;
     if (state.status === 'streaming' || state.status === 'submitting') {
-      const currentResponse = state.status === 'streaming' ? state.response : { answer: '', sources: [] };
+      const currentResponse =
+        state.status === 'streaming' ? state.response : { answer: '', sources: [] };
       const interruptedMessage: AskLedgerMessage = {
         id: newAskLedgerMessageId(),
         role: 'assistant',
@@ -1734,7 +2580,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const copyableAnswer = (message: AskLedgerMessage) => {
     if (message.structured?.sections?.length) {
       return message.structured.sections
-        .map((section) => `## ${section.title}\n\n${sanitizeAskLedgerOutput(section.content).answer}`)
+        .map(
+          (section) => `## ${section.title}\n\n${sanitizeAskLedgerOutput(section.content).answer}`
+        )
         .join('\n\n')
         .trim();
     }
@@ -1745,7 +2593,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     try {
       await navigator.clipboard?.writeText(copyableAnswer(message));
       setCopiedMessageId(message.id);
-      window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1400);
+      window.setTimeout(
+        () => setCopiedMessageId((current) => (current === message.id ? null : current)),
+        1400
+      );
     } catch {
       // Clipboard access is optional in some desktop/web contexts.
     }
@@ -1755,11 +2606,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setupCancelRequestedRef.current = false;
     setSetupStarted(true);
     setSetupError(null);
-    void window.askLedger?.downloadLocalAI('generation').then(() => window.askLedger?.downloadLocalAI('embedding')).catch((error) => {
-      if (setupCancelRequestedRef.current) return;
-      setSetupStarted(false);
-      setSetupError(localAISetupErrorMessage(error));
-    });
+    void window.askLedger
+      ?.downloadLocalAI('generation')
+      .then(() => window.askLedger?.downloadLocalAI('embedding'))
+      .catch((error) => {
+        if (setupCancelRequestedRef.current) return;
+        setSetupStarted(false);
+        setSetupError(localAISetupErrorMessage(error));
+      });
   };
 
   const cancelLocalAISetup = () => {
@@ -1776,14 +2630,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setSetupError(null);
   };
 
-  const modelForTier = (tier: GenerationTier) => generationModels.find((model) => model.tier === tier);
+  const modelForTier = (tier: GenerationTier) =>
+    generationModels.find((model) => model.tier === tier);
   const downloadModelView = downloadTier ? modelForTier(downloadTier) : undefined;
   const tierSwitchInProgress = Boolean(switchingTier || generationRuntimeState?.switching);
   const tierWarning = (tier: GenerationTier) => localAICapability?.warnings?.[tier];
-  const tierWarningNeedsAcknowledgement = (tier: GenerationTier) => Boolean(tierWarning(tier) && !localAICapability?.acknowledgedTiers?.includes(tier));
+  const tierWarningNeedsAcknowledgement = (tier: GenerationTier) =>
+    Boolean(tierWarning(tier) && !localAICapability?.acknowledgedTiers?.includes(tier));
 
   const switchToTier = async (tier: GenerationTier): Promise<boolean> => {
-    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress || isSubmitting) return false;
+    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress || isSubmitting)
+      return false;
     const model = modelForTier(tier);
     if (!model) {
       setTierSwitchError(`${generationTierLabels[tier]} is not available yet.`);
@@ -1807,7 +2664,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     }
     setTierSwitchError(null);
     setSwitchingTier(tier);
-    const result = await window.askLedger.switchGenerationTier(tier) as { ok?: boolean; state?: string; tier?: GenerationTier; error?: unknown };
+    const result = (await window.askLedger.switchGenerationTier(tier)) as {
+      ok?: boolean;
+      state?: string;
+      tier?: GenerationTier;
+      error?: unknown;
+    };
     setSwitchingTier(null);
     if (result?.ok && (result.state === 'ready' || result.state === 'noop')) {
       setSelectedGenerationTier(tier);
@@ -1821,14 +2683,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       return false;
     }
     const detail = errorMessage(result?.error);
-    setTierSwitchError(detail ? `Couldn't switch to ${generationTierLabels[tier]}: ${detail}` : `Couldn't switch to ${generationTierLabels[tier]}.`);
+    setTierSwitchError(
+      detail
+        ? `Couldn't switch to ${generationTierLabels[tier]}: ${detail}`
+        : `Couldn't switch to ${generationTierLabels[tier]}.`
+    );
     return false;
   };
 
   useEffect(() => {
     if (!preferredGenerationTier || selectedGenerationTier === preferredGenerationTier) return;
     const model = modelForTier(preferredGenerationTier);
-    const ready = Boolean(model?.installed && model.state !== 'failed' && model.state !== 'unavailable' && model.available !== false);
+    const ready = Boolean(
+      model?.installed &&
+        model.state !== 'failed' &&
+        model.state !== 'unavailable' &&
+        model.available !== false
+    );
     if (ready) void switchToTier(preferredGenerationTier);
   }, [generationModels, preferredGenerationTier, selectedGenerationTier]);
 
@@ -1837,16 +2708,24 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setTierSwitchError(null);
     const selectedTier = mode === 'thinking' ? 'balanced' : mode;
     const selectedModel = modelForTier(selectedTier);
-    const selectedModelReady = Boolean(selectedModel?.installed && selectedModel.state !== 'failed' && selectedModel.state !== 'unavailable' && selectedModel.available !== false);
+    const selectedModelReady = Boolean(
+      selectedModel?.installed &&
+        selectedModel.state !== 'failed' &&
+        selectedModel.state !== 'unavailable' &&
+        selectedModel.available !== false
+    );
     if (mode === 'thinking') {
-      const ready = selectedGenerationTier === 'balanced' && selectedModelReady || await switchToTier('balanced');
+      const ready =
+        (selectedGenerationTier === 'balanced' && selectedModelReady) ||
+        (await switchToTier('balanced'));
       if (!ready) return;
       setGenerationMode('thinking');
       setReasoningMode('thinking');
       setAdvancedOpen(false);
       return;
     }
-    const ready = selectedGenerationTier === mode && selectedModelReady || await switchToTier(mode);
+    const ready =
+      (selectedGenerationTier === mode && selectedModelReady) || (await switchToTier(mode));
     if (!ready) return;
     setGenerationMode(mode);
     setReasoningMode('off');
@@ -1859,26 +2738,47 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const model = modelForTier(tier);
     if (!model) return;
     downloadDismissedRef.current = false;
-    try { localStorage.setItem(optionalDownloadStorageKey, tier); } catch { /* best effort */ }
+    try {
+      localStorage.setItem(optionalDownloadStorageKey, tier);
+    } catch {
+      /* best effort */
+    }
     setDownloadPhase('downloading');
     setDownloadMinimized(false);
     setDownloadError(null);
     try {
       if (tierWarningNeedsAcknowledgement(tier) && window.askLedger.acknowledgeLocalAITier) {
-        const capability = await window.askLedger.acknowledgeLocalAITier(tier) as LocalAICapabilityView;
+        const capability = (await window.askLedger.acknowledgeLocalAITier(
+          tier
+        )) as LocalAICapabilityView;
         setLocalAICapability(capability);
       }
-      const result = await window.askLedger.downloadGenerationModel(model.id) as { ok?: boolean; status?: { generationModels?: Record<string, { error?: string | null; state?: string }> }; error?: string; state?: string };
+      const result = (await window.askLedger.downloadGenerationModel(model.id)) as {
+        ok?: boolean;
+        status?: { generationModels?: Record<string, { error?: string | null; state?: string }> };
+        error?: string;
+        state?: string;
+      };
       if (!result?.ok) {
         const status = result.status?.generationModels?.[model.id];
-        setDownloadError(optionalModelDownloadMessage(result?.error || status?.error || undefined, result?.state || status?.state));
+        setDownloadError(
+          optionalModelDownloadMessage(
+            result?.error || status?.error || undefined,
+            result?.state || status?.state
+          )
+        );
         setDownloadPhase('error');
         return;
       }
       setDownloadPhase('preparing');
       setDownloadMinimized(false);
-      if (!window.askLedger.switchGenerationTier) throw new Error('Model switching is unavailable.');
-      const switchResult = await window.askLedger.switchGenerationTier(tier) as { ok?: boolean; state?: string; error?: unknown };
+      if (!window.askLedger.switchGenerationTier)
+        throw new Error('Model switching is unavailable.');
+      const switchResult = (await window.askLedger.switchGenerationTier(tier)) as {
+        ok?: boolean;
+        state?: string;
+        error?: unknown;
+      };
       if (!switchResult?.ok || !['ready', 'noop'].includes(String(switchResult.state))) {
         const detail = errorMessage(switchResult?.error);
         throw new Error(detail || `Couldn't switch to ${generationTierLabels[tier]}.`);
@@ -1889,18 +2789,30 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       setDownloadTier(null);
       setDownloadPhase('confirm');
       setAdvancedOpen(false);
-      try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
+      try {
+        localStorage.removeItem(optionalDownloadStorageKey);
+      } catch {
+        /* best effort */
+      }
     } catch (error) {
       setDownloadError(optionalModelDownloadMessage(error));
       setDownloadPhase('error');
-      try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
+      try {
+        localStorage.removeItem(optionalDownloadStorageKey);
+      } catch {
+        /* best effort */
+      }
     }
   };
 
   const cancelOptionalDownload = () => {
     const model = downloadTier ? modelForTier(downloadTier) : undefined;
     if (model && model.downloading) void window.askLedger?.cancelGenerationModelDownload(model.id);
-    try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
+    try {
+      localStorage.removeItem(optionalDownloadStorageKey);
+    } catch {
+      /* best effort */
+    }
     downloadDismissedRef.current = true;
     setDownloadTier(null);
     setDownloadPhase('confirm');
@@ -1911,17 +2823,27 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (!advancedOpen) return undefined;
     const closeOnOutside = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!advancedPopoverRef.current?.contains(target) && !advancedButtonRef.current?.contains(target)) {
+      if (
+        !advancedPopoverRef.current?.contains(target) &&
+        !advancedButtonRef.current?.contains(target)
+      ) {
         setAdvancedOpen(false);
         advancedButtonRef.current?.focus();
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); setAdvancedOpen(false); advancedButtonRef.current?.focus(); }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setAdvancedOpen(false);
+        advancedButtonRef.current?.focus();
+      }
     };
     window.addEventListener('pointerdown', closeOnOutside);
     window.addEventListener('keydown', closeOnEscape);
-    return () => { window.removeEventListener('pointerdown', closeOnOutside); window.removeEventListener('keydown', closeOnEscape); };
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutside);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
   }, [advancedOpen]);
 
   useEffect(() => {
@@ -1929,20 +2851,37 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const focusTimer = window.setTimeout(() => downloadPrimaryButtonRef.current?.focus(), 0);
     const trapFocus = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !downloadModalRef.current) return;
-      const focusable = Array.from(downloadModalRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'));
+      const focusable = Array.from(
+        downloadModalRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'
+        )
+      );
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', trapFocus);
-    return () => { window.clearTimeout(focusTimer); document.removeEventListener('keydown', trapFocus); advancedButtonRef.current?.focus(); };
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', trapFocus);
+      advancedButtonRef.current?.focus();
+    };
   }, [downloadTier]);
 
   const openAttachment = (attachment: AskLedgerAttachment) => {
     if (user?.id && workspaceId && attachment.localFileId && window.localContext) {
-      void window.localContext.open({ ownerUserId: user.id, workspaceId, fileId: attachment.localFileId });
+      void window.localContext.open({
+        ownerUserId: user.id,
+        workspaceId,
+        fileId: attachment.localFileId,
+      });
       return;
     }
     void window.askLedger?.openAttachment(attachment.id);
@@ -1964,7 +2903,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         return;
       case 'milestone':
         if (source.route) {
-          platform.navigation.openRoute(source.route as Parameters<typeof platform.navigation.openRoute>[0]);
+          platform.navigation.openRoute(
+            source.route as Parameters<typeof platform.navigation.openRoute>[0]
+          );
         }
         return;
       case 'note':
@@ -1987,14 +2928,44 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         return;
       case 'person':
         if (source.route) {
-          platform.navigation.openRoute(source.route as Parameters<typeof platform.navigation.openRoute>[0]);
+          platform.navigation.openRoute(
+            source.route as Parameters<typeof platform.navigation.openRoute>[0]
+          );
         }
         return;
       case 'attachment':
-        if (source.attachmentSource?.attachmentId) void window.askLedger?.openAttachment(source.attachmentSource.attachmentId);
-        else if (user?.id && window.localContext && source.route && typeof source.route === 'object' && source.route.kind === 'local-context-file' && typeof source.route.fileId === 'string') {
-          void window.localContext.open({ ownerUserId: user.id, workspaceId, fileId: source.route.fileId });
-        }
+        if (
+          user?.id &&
+          window.desktopWindow?.openModule &&
+          source.route &&
+          typeof source.route === 'object' &&
+          source.route.kind === 'local-context-file' &&
+          typeof source.route.fileId === 'string'
+        ) {
+          const anchor = typeof source.route.pageNumber === 'number' ? `:page:${source.route.pageNumber}` : typeof source.route.sheetName === 'string' ? `:sheet:${encodeURIComponent(source.route.sheetName)}${typeof source.route.rowStart === 'number' ? `:row:${source.route.rowStart}` : ''}` : '';
+          void window.desktopWindow.openModule('files', {
+            kind: 'files',
+            focusContext: `focus-file:${source.route.fileId}${anchor}`,
+          });
+        } else if (source.attachmentSource?.attachmentId)
+          void window.askLedger?.openAttachment(source.attachmentSource.attachmentId);
+        else if (
+          user?.id &&
+          window.localContext &&
+          source.route &&
+          typeof source.route === 'object' &&
+          source.route.kind === 'local-context-file' &&
+          typeof source.route.fileId === 'string'
+        )
+          void window.localContext.open({
+            ownerUserId: user.id,
+            workspaceId,
+            fileId: source.route.fileId,
+          });
+        return;
+      case 'external':
+        if (source.route && typeof source.route === 'string' && /^https?:/i.test(source.route))
+          void platform.externalLinks.open(source.route);
         return;
       default:
         return;
@@ -2007,24 +2978,30 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (sessionIdRef.current && messagesRef.current.length) queueSessionSave(messagesRef.current);
   };
 
-  const actionLabel = (type: AskLedgerActionType) => ({
-    create_task: 'Create task',
-    create_note: 'Create note',
-    create_reminder: 'Create reminder',
-    update_task_status: 'Update task',
-  })[type];
+  const actionLabel = (type: AskLedgerActionType) =>
+    ({
+      create_task: 'Create task',
+      create_note: 'Create note',
+      create_reminder: 'Create reminder',
+      update_task_status: 'Update task',
+    }[type]);
 
-  const updateMessageActions = (messageId: string, update: (action: AskLedgerActionProposal) => AskLedgerActionProposal) => {
-    const nextMessages = messagesRef.current.map((message) => message.id === messageId
-      ? { ...message, actions: message.actions?.map(update) }
-      : message);
+  const updateMessageActions = (
+    messageId: string,
+    update: (action: AskLedgerActionProposal) => AskLedgerActionProposal
+  ) => {
+    const nextMessages = messagesRef.current.map((message) =>
+      message.id === messageId ? { ...message, actions: message.actions?.map(update) } : message
+    );
     messagesRef.current = nextMessages;
     setMessages(nextMessages);
     queueSessionSave(nextMessages);
   };
 
   const rejectAction = (action: AskLedgerActionProposal) => {
-    updateMessageActions(action.sourceMessageId, (current) => current.id === action.id ? { ...current, status: 'rejected', error: undefined } : current);
+    updateMessageActions(action.sourceMessageId, (current) =>
+      current.id === action.id ? { ...current, status: 'rejected', error: undefined } : current
+    );
   };
 
   const executeAction = async (action: AskLedgerActionProposal) => {
@@ -2032,31 +3009,51 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const title = String(payload.title ?? '').trim();
     if (action.type === 'create_task' && !title) throw new Error('A task title is required.');
     if (action.type === 'create_note' && !title) throw new Error('A note title is required.');
-    if (action.type === 'create_reminder' && (!title || !String(payload.remind_at ?? '').trim())) throw new Error('A reminder title and date are required.');
-    if (action.type === 'update_task_status' && (!String(payload.task_id ?? '').trim() || !['todo', 'in_progress', 'completed'].includes(String(payload.status)))) throw new Error('This task update is no longer valid.');
+    if (action.type === 'create_reminder' && (!title || !String(payload.remind_at ?? '').trim()))
+      throw new Error('A reminder title and date are required.');
+    if (
+      action.type === 'update_task_status' &&
+      (!String(payload.task_id ?? '').trim() ||
+        !['todo', 'in_progress', 'completed'].includes(String(payload.status)))
+    )
+      throw new Error('This task update is no longer valid.');
     let created: Record<string, unknown> | null = null;
     if (action.type === 'create_task') {
-      created = await api.createTask({
+      created = (await api.createTask({
         title,
         project_id: payload.project_id ? String(payload.project_id) : null,
         status: String(payload.status ?? 'todo'),
         due_date: payload.due_date ? String(payload.due_date) : null,
         priority: payload.priority ? String(payload.priority) : undefined,
-      }) as Record<string, unknown>;
+      })) as Record<string, unknown>;
     } else if (action.type === 'create_note') {
-      created = await api.createNote(title || 'Ask Ledger notes', String(payload.content ?? '')) as Record<string, unknown>;
+      created = (await api.createNote(
+        title || 'Ask Ledger notes',
+        String(payload.content ?? '')
+      )) as Record<string, unknown>;
     } else if (action.type === 'create_reminder') {
       const remindAt = String(payload.remind_at ?? '').trim();
       if (!remindAt) throw new Error('Choose a reminder date before creating it.');
-      created = await api.createReminder({ title, remind_at: remindAt, project_id: payload.project_id ? String(payload.project_id) : null }) as Record<string, unknown>;
+      created = (await api.createReminder({
+        title,
+        remind_at: remindAt,
+        project_id: payload.project_id ? String(payload.project_id) : null,
+      })) as Record<string, unknown>;
     } else if (action.type === 'update_task_status') {
-      created = await api.updateTask(String(payload.task_id), { status: String(payload.status) }) as Record<string, unknown>;
+      created = (await api.updateTask(String(payload.task_id), {
+        status: String(payload.status),
+      })) as Record<string, unknown>;
     }
     const nestedId = (key: string) => {
       const value = created?.[key];
-      return value && typeof value === 'object' && 'id' in value ? String((value as { id?: unknown }).id ?? '') : '';
+      return value && typeof value === 'object' && 'id' in value
+        ? String((value as { id?: unknown }).id ?? '')
+        : '';
     };
-    const id = String(created?.id ?? (nestedId('task') || nestedId('note') || nestedId('reminder') || payload.task_id || ''));
+    const id = String(
+      created?.id ??
+        (nestedId('task') || nestedId('note') || nestedId('reminder') || payload.task_id || '')
+    );
     return { id, title: String(payload.title ?? created?.title ?? 'Task') };
   };
 
@@ -2069,13 +3066,29 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         if (action.status === 'created') continue;
         try {
           const result = await executeAction(action);
-          updateMessageActions(action.sourceMessageId, (current) => current.id === action.id
-            ? { ...current, ...action, status: 'created', resultResourceId: result.id, resultTitle: result.title, error: undefined }
-            : current);
+          updateMessageActions(action.sourceMessageId, (current) =>
+            current.id === action.id
+              ? {
+                  ...current,
+                  ...action,
+                  status: 'created',
+                  resultResourceId: result.id,
+                  resultTitle: result.title,
+                  error: undefined,
+                }
+              : current
+          );
         } catch (error) {
-          updateMessageActions(action.sourceMessageId, (current) => current.id === action.id
-            ? { ...current, ...action, status: 'failed', error: error instanceof Error ? error.message : 'Could not complete this action.' }
-            : current);
+          updateMessageActions(action.sourceMessageId, (current) =>
+            current.id === action.id
+              ? {
+                  ...current,
+                  ...action,
+                  status: 'failed',
+                  error: error instanceof Error ? error.message : 'Could not complete this action.',
+                }
+              : current
+          );
         }
       }
     } finally {
@@ -2088,12 +3101,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   const openActionResult = (action: AskLedgerActionProposal) => {
     if (!action.resultResourceId || !workspaceId) return;
-    const type = action.type === 'create_note' ? 'note' : action.type === 'create_reminder' ? 'reminder' : 'task';
-    openSource({ id: action.resultResourceId, resourceId: action.resultResourceId, title: action.resultTitle ?? 'Created resource', type });
+    const type =
+      action.type === 'create_note'
+        ? 'note'
+        : action.type === 'create_reminder'
+        ? 'reminder'
+        : 'task';
+    openSource({
+      id: action.resultResourceId,
+      resourceId: action.resultResourceId,
+      title: action.resultTitle ?? 'Created resource',
+      type,
+    });
   };
 
   const isSubmitting = state.status === 'submitting' || state.status === 'streaming';
-  const generationActive = state.status === 'submitting' || (state.status === 'streaming' && !state.response.answer);
+  const generationActive =
+    state.status === 'submitting' || (state.status === 'streaming' && !state.response.answer);
 
   useEffect(() => {
     onGenerationActiveChange?.(generationActive);
@@ -2131,16 +3155,27 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const embedding = localAIStatus?.embedding;
   const localAIReady = Boolean(generation?.installed && embedding?.installed);
   const localAIUnavailable = Boolean(window.askLedger && localAIStatus && !localAIReady);
-  const localAITotalBytes = (generation?.expectedSize ?? 0) + (embedding?.expectedSize ?? 0) || generation?.expectedSize;
-  const localAIBytesDownloaded = (generation?.bytesDownloaded ?? 0) + (embedding?.bytesDownloaded ?? 0);
+  const localAITotalBytes =
+    (generation?.expectedSize ?? 0) + (embedding?.expectedSize ?? 0) || generation?.expectedSize;
+  const localAIBytesDownloaded =
+    (generation?.bytesDownloaded ?? 0) + (embedding?.bytesDownloaded ?? 0);
   const localAIProgress = localAITotalBytes
     ? Math.min(100, Math.round((localAIBytesDownloaded / localAITotalBytes) * 100))
     : 0;
-  const localAISettingUp = Boolean(generation?.downloading || embedding?.downloading || (setupStarted && !localAIReady));
+  const localAISettingUp = Boolean(
+    generation?.downloading || embedding?.downloading || (setupStarted && !localAIReady)
+  );
 
   useEffect(() => {
     const context = activeInitialContext;
-    if (initialSession || !context?.initialQuestion?.trim() || !localAIReady || requestInitializingRef.current || activeRequestIdRef.current) return;
+    if (
+      initialSession ||
+      !context?.initialQuestion?.trim() ||
+      !localAIReady ||
+      requestInitializingRef.current ||
+      activeRequestIdRef.current
+    )
+      return;
     const key = `${context.resourceType}:${context.resourceId}:${context.initialQuestion}`;
     if (autoSubmittedContextRef.current === key) return;
     const timer = window.setTimeout(() => {
@@ -2151,7 +3186,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     return () => window.clearTimeout(timer);
   }, [activeInitialContext, initialSession, localAIReady, submit]);
   const localAIVerifying = Boolean(
-    setupStarted && !generation?.downloading && !embedding?.downloading && !localAIReady && !setupError
+    setupStarted &&
+      !generation?.downloading &&
+      !embedding?.downloading &&
+      !localAIReady &&
+      !setupError
   );
   const displayedRequest =
     state.status === 'answer' ||
@@ -2170,7 +3209,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   useEffect(() => {
     if (!localAIReady || !window.askLedger?.localAICapability) return;
-    void window.askLedger.localAICapability().then((value) => setLocalAICapability(value as LocalAICapabilityView));
+    void window.askLedger
+      .localAICapability()
+      .then((value) => setLocalAICapability(value as LocalAICapabilityView));
   }, [localAIReady]);
 
   useEffect(() => {
@@ -2179,7 +3220,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     return () => window.clearInterval(timer);
   }, [isSubmitting]);
 
-  const liveActivityDurationMs = activityDurationMs ?? (activityStartedAtRef.current ? activityNow - activityStartedAtRef.current : 0);
+  const liveActivityDurationMs =
+    activityDurationMs ??
+    (activityStartedAtRef.current ? activityNow - activityStartedAtRef.current : 0);
 
   useEffect(() => {
     if (!conversationActive || !['answer', 'no-answer', 'error'].includes(state.status)) return;
@@ -2190,72 +3233,284 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
     if (!conversationActive || latestMessage?.role !== 'user') return;
-    const scrollTimer = window.setTimeout(() => latestMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    const scrollTimer = window.setTimeout(
+      () => latestMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      0
+    );
     return () => window.clearTimeout(scrollTimer);
   }, [conversationActive, messages.length]);
 
   return (
-      <div className={compact
-      ? `agent-ask-ledger-content relative flex h-full min-h-0 w-full flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
-      : conversationActive ? 'flex h-full min-h-0 w-full flex-col' : 'mt-5'}>
+    <div
+      className={
+        compact
+          ? `agent-ask-ledger-content relative flex h-full min-h-0 w-full flex-col ${
+              conversationActive ? 'agent-ask-ledger-content--active' : ''
+            }`
+          : conversationActive
+          ? 'flex h-full min-h-0 w-full flex-col'
+          : 'mt-5'
+      }
+    >
       {conversationActive && (
-          <section
-          className={`order-1 min-h-0 w-full flex-1 overflow-y-auto ${meetingChat ? 'space-y-4 px-3 pb-44 pt-6' : compact ? 'space-y-4 px-3 pb-32 pt-8' : 'pb-32 pt-8 space-y-10'}`}
-          style={!compact ? {
-            marginLeft: 'calc(50% - 50vw)',
-            width: '100vw',
-            paddingLeft: 'calc(50vw - 50%)',
-            paddingRight: 'calc(50vw - 50%)',
-          } : undefined}
+        <section
+          className={`order-1 min-h-0 w-full flex-1 overflow-y-auto ${
+            meetingChat
+              ? 'space-y-4 px-3 pb-44 pt-6'
+              : compact
+              ? 'space-y-4 px-3 pb-32 pt-8'
+              : 'pb-32 pt-8 space-y-10'
+          }`}
+          style={
+            !compact
+              ? {
+                  marginLeft: 'calc(50% - 50vw)',
+                  width: '100vw',
+                  paddingLeft: 'calc(50vw - 50%)',
+                  paddingRight: 'calc(50vw - 50%)',
+                }
+              : undefined
+          }
           aria-live="polite"
         >
           {messages.map((message, messageIndex) => (
-            <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : `group ${meetingChat ? 'max-w-full' : 'max-w-[640px]'}`}>
+            <article
+              key={message.id}
+              ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined}
+              className={
+                message.role === 'user'
+                  ? 'group flex justify-end'
+                  : `group ${meetingChat ? 'max-w-full' : 'max-w-[640px]'}`
+              }
+            >
               {message.role === 'user' ? (
                 <div className="flex max-w-[78%] flex-col items-end gap-1">
-                  {message.skillId && <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]"><Boxes size={12} />{skillCatalog.find((skill) => skill.id === message.skillId)?.name}</span>}
-                  {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => openAttachment(attachment.attachment)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="min-w-0 flex-1 truncate">{attachment.resource.title}</span></button>)}</div> : null}
-                  {message.content && <>
-                    <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">{message.content}</p>
-                    <div className="mt-1 flex justify-end opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-                      <button type="button" onClick={() => void copyAnswer(message)} aria-label={copiedMessageId === message.id ? 'Copied message' : 'Copy message'} title={copiedMessageId === message.id ? 'Copied' : 'Copy message'} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">{copiedMessageId === message.id ? <Check size={14} /> : <CopyIcon size={14} />}</button>
+                  {message.skillId && (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]">
+                      <Boxes size={12} />
+                      {skillCatalog.find((skill) => skill.id === message.skillId)?.name}
+                    </span>
+                  )}
+                  {message.attachments?.length ? (
+                    <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+                      {message.attachments.map((attachment, index) =>
+                        attachment.kind === 'file' ? (
+                          <button
+                            key={`${message.id}-file-${attachment.attachment.id}`}
+                            type="button"
+                            onClick={() => openAttachment(attachment.attachment)}
+                            className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                            aria-label={`Open ${attachment.attachment.name}`}
+                          >
+                            <FileText
+                              size={12}
+                              className="shrink-0 text-[var(--ledger-text-muted)]"
+                            />
+                            <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                              {attachmentKindLabel(attachment.attachment)}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {attachmentDisplayName(attachment.attachment.name)}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            key={`${message.id}-resource-${index}`}
+                            type="button"
+                            onClick={() => openSource(attachment.resource)}
+                            className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                            aria-label={`Open ${attachment.resource.title}`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {attachment.resource.title}
+                            </span>
+                          </button>
+                        )
+                      )}
                     </div>
-                  </>}
+                  ) : null}
+                  {message.content && (
+                    <>
+                      <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">
+                        {message.content}
+                      </p>
+                      <div className="mt-1 flex justify-end opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => void copyAnswer(message)}
+                          aria-label={
+                            copiedMessageId === message.id ? 'Copied message' : 'Copy message'
+                          }
+                          title={copiedMessageId === message.id ? 'Copied' : 'Copy message'}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          {copiedMessageId === message.id ? (
+                            <Check size={14} />
+                          ) : (
+                            <CopyIcon size={14} />
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div>
-                  {message.interrupted ? <div className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800" role="status"><Square size={11} aria-hidden="true" />Chat interrupted</div> : null}
-                  {message.activity?.steps?.length ? <AskLedgerActivityTrace steps={message.activity.steps} durationMs={message.activity.durationMs} expanded={Boolean(expandedActivity[message.id])} onToggle={() => setExpandedActivity((current) => ({ ...current, [message.id]: !current[message.id] }))} /> : null}
+                  {message.interrupted ? (
+                    <div
+                      className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800"
+                      role="status"
+                    >
+                      <Square size={11} aria-hidden="true" />
+                      Chat interrupted
+                    </div>
+                  ) : null}
+                  {message.activity?.steps?.length ? (
+                    <AskLedgerActivityTrace
+                      steps={message.activity.steps}
+                      durationMs={message.activity.durationMs}
+                      expanded={Boolean(expandedActivity[message.id])}
+                      onToggle={() =>
+                        setExpandedActivity((current) => ({
+                          ...current,
+                          [message.id]: !current[message.id],
+                        }))
+                      }
+                    />
+                  ) : null}
                   {message.structured?.sections?.length ? (
-                    <div className={`ask-ledger-answer ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>
+                    <div
+                      className={`ask-ledger-answer ${
+                        meetingChat ? 'text-[13px]' : 'text-[15px]'
+                      } text-[var(--ledger-text-secondary)]`}
+                    >
                       {message.structured.sections.map((section) => (
                         <section key={`${message.id}-${section.title}`}>
-                          <h3 className="ask-ledger-answer__heading ask-ledger-answer__heading--3">{section.title}</h3>
-                          <div className="ask-ledger-answer__section-content">{renderAnswerContent(sanitizeAskLedgerOutput(section.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
+                          <h3 className="ask-ledger-answer__heading ask-ledger-answer__heading--3">
+                            {section.title}
+                          </h3>
+                          <div className="ask-ledger-answer__section-content">
+                            {renderAnswerContent(sanitizeAskLedgerOutput(section.content).answer, {
+                              sources: message.sources,
+                              onOpenSource: openSource,
+                            })}
+                          </div>
                         </section>
                       ))}
                     </div>
                   ) : (
-                    <div className={`ask-ledger-answer ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
+                    <div
+                      className={`ask-ledger-answer ${
+                        meetingChat ? 'text-[13px]' : 'text-[15px]'
+                      } text-[var(--ledger-text-secondary)]`}
+                    >
+                      {renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer, {
+                        sources: message.sources,
+                        onOpenSource: openSource,
+                      })}
+                    </div>
                   )}
                   {message.actions && message.actions.length > 0 && (
                     <div className="mt-5 space-y-2">
                       {message.actions.some((action) => action.status === 'pending') && (
                         <div className="space-y-1 text-sm text-[var(--ledger-text-secondary)]">
-                          {message.actions.filter((action) => action.status === 'pending').map((action) => <p key={action.id}>- {String(action.payload.title ?? actionLabel(action.type))}</p>)}
+                          {message.actions
+                            .filter((action) => action.status === 'pending')
+                            .map((action) => (
+                              <p key={action.id}>
+                                - {String(action.payload.title ?? actionLabel(action.type))}
+                              </p>
+                            ))}
                         </div>
                       )}
                       {message.actions.some((action) => action.status === 'pending') && (
-                        <button type="button" onClick={() => { const pending = message.actions?.filter((action) => action.status === 'pending') ?? []; setActionDraft(pending.length === 1 ? pending[0] : null); setActionReview({ actions: pending, title: pending.length === 1 ? actionLabel(pending[0].type) : `Create ${pending.length} tasks` }); }} className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">{message.actions.filter((action) => action.status === 'pending').length > 1 ? `Create ${message.actions.filter((action) => action.status === 'pending').length} tasks` : actionLabel(message.actions.find((action) => action.status === 'pending')?.type ?? 'create_task')}</button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pending =
+                              message.actions?.filter((action) => action.status === 'pending') ??
+                              [];
+                            setActionDraft(pending.length === 1 ? pending[0] : null);
+                            setActionReview({
+                              actions: pending,
+                              title:
+                                pending.length === 1
+                                  ? actionLabel(pending[0].type)
+                                  : `Create ${pending.length} tasks`,
+                            });
+                          }}
+                          className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          {message.actions.filter((action) => action.status === 'pending').length >
+                          1
+                            ? `Create ${
+                                message.actions.filter((action) => action.status === 'pending')
+                                  .length
+                              } tasks`
+                            : actionLabel(
+                                message.actions.find((action) => action.status === 'pending')
+                                  ?.type ?? 'create_task'
+                              )}
+                        </button>
                       )}
                       {message.actions.some((action) => action.status === 'created') && (
-                        <p className="text-xs text-[var(--ledger-text-muted)]">✓ {message.actions.filter((action) => action.status === 'created').length} {message.actions.some((action) => action.type === 'create_task') ? 'tasks' : 'actions'} created</p>
+                        <p className="text-xs text-[var(--ledger-text-muted)]">
+                          ✓ {message.actions.filter((action) => action.status === 'created').length}{' '}
+                          {message.actions.some((action) => action.type === 'create_task')
+                            ? 'tasks'
+                            : 'actions'}{' '}
+                          created
+                        </p>
                       )}
                       {message.actions.some((action) => action.status === 'failed') && (
-                        <p className="text-xs text-[var(--ledger-text-muted)]">{message.actions.filter((action) => action.status === 'created').length} of {message.actions.filter((action) => action.status !== 'rejected').length} actions completed. <button type="button" onClick={() => { const failed = message.actions?.filter((action) => action.status === 'failed') ?? []; setActionDraft(failed.length === 1 ? failed[0] : null); setActionReview({ actions: failed, title: `Retry ${failed.length} failed ${failed.length === 1 ? 'action' : 'actions'}` }); }} className="underline underline-offset-2">Retry</button></p>
+                        <p className="text-xs text-[var(--ledger-text-muted)]">
+                          {message.actions.filter((action) => action.status === 'created').length}{' '}
+                          of{' '}
+                          {message.actions.filter((action) => action.status !== 'rejected').length}{' '}
+                          actions completed.{' '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const failed =
+                                message.actions?.filter((action) => action.status === 'failed') ??
+                                [];
+                              setActionDraft(failed.length === 1 ? failed[0] : null);
+                              setActionReview({
+                                actions: failed,
+                                title: `Retry ${failed.length} failed ${
+                                  failed.length === 1 ? 'action' : 'actions'
+                                }`,
+                              });
+                            }}
+                            className="underline underline-offset-2"
+                          >
+                            Retry
+                          </button>
+                        </p>
                       )}
-                      {message.actions.filter((action) => action.status === 'created').map((action) => <button key={action.id} type="button" onClick={() => openActionResult(action)} className="mr-3 text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">✓ {action.resultTitle || 'Created'}</button>)}
-                      {message.actions.filter((action) => action.status === 'failed').map((action) => <p key={`${action.id}-error`} className="text-xs text-[var(--ledger-text-muted)]">! {String(action.payload.title ?? actionLabel(action.type))} could not be created: {action.error}</p>)}
+                      {message.actions
+                        .filter((action) => action.status === 'created')
+                        .map((action) => (
+                          <button
+                            key={action.id}
+                            type="button"
+                            onClick={() => openActionResult(action)}
+                            className="mr-3 text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                          >
+                            ✓ {action.resultTitle || 'Created'}
+                          </button>
+                        ))}
+                      {message.actions
+                        .filter((action) => action.status === 'failed')
+                        .map((action) => (
+                          <p
+                            key={`${action.id}-error`}
+                            className="text-xs text-[var(--ledger-text-muted)]"
+                          >
+                            ! {String(action.payload.title ?? actionLabel(action.type))} could not
+                            be created: {action.error}
+                          </p>
+                        ))}
                     </div>
                   )}
                   {message.sources && message.sources.length > 0 && (
@@ -2264,24 +3519,75 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                         type="button"
                         aria-expanded={Boolean(expandedSources[message.id])}
                         aria-controls={`ask-ledger-sources-${message.id}`}
-                        onClick={() => setExpandedSources((current) => ({ ...current, [message.id]: !current[message.id] }))}
+                        onClick={() =>
+                          setExpandedSources((current) => ({
+                            ...current,
+                            [message.id]: !current[message.id],
+                          }))
+                        }
                         className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       >
-                        <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-4 w-4 shrink-0" />
+                        <img
+                          src={`${import.meta.env.BASE_URL}logo-color.svg`}
+                          alt=""
+                          className="h-4 w-4 shrink-0"
+                        />
                         <span>Ledger sources</span>
-                        <span className="text-[11px] text-[var(--ledger-text-muted)]">{message.sources.length}</span>
-                        <ChevronDown size={13} className={`transition-transform ${expandedSources[message.id] ? 'rotate-180' : ''}`} />
+                        <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                          {message.sources.length}
+                        </span>
+                        <ChevronDown
+                          size={13}
+                          className={`transition-transform ${
+                            expandedSources[message.id] ? 'rotate-180' : ''
+                          }`}
+                        />
                       </button>
-                      {expandedSources[message.id] && <div id={`ask-ledger-sources-${message.id}`} className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1">
-                        {message.sources.map((source) => {
-                          const Icon = sourceIconMap[source.type];
-                          return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
-                        })}
-                      </div>}
+                      {expandedSources[message.id] && (
+                        <div
+                          id={`ask-ledger-sources-${message.id}`}
+                          className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1"
+                        >
+                          {message.sources.map((source) => {
+                            const Icon = sourceIconMap[source.type];
+                            return (
+                              <button
+                                key={source.id}
+                                type="button"
+                                onClick={() => openSource(source)}
+                                className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                <Icon
+                                  size={14}
+                                  className="shrink-0 text-[var(--ledger-text-muted)]"
+                                />
+                                <span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">
+                                  {source.title}
+                                </span>
+                                <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                                  {source.sourceLabel ?? sourceTypeLabels[source.type]}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="mt-4 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-                    <button type="button" onClick={() => void copyAnswer(message)} aria-label={copiedMessageId === message.id ? 'Copied answer' : 'Copy answer'} title={copiedMessageId === message.id ? 'Copied' : 'Copy answer'} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">{copiedMessageId === message.id ? <Check size={14} /> : <CopyIcon size={14} />}</button>
+                    <button
+                      type="button"
+                      onClick={() => void copyAnswer(message)}
+                      aria-label={copiedMessageId === message.id ? 'Copied answer' : 'Copy answer'}
+                      title={copiedMessageId === message.id ? 'Copied' : 'Copy answer'}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      {copiedMessageId === message.id ? (
+                        <Check size={14} />
+                      ) : (
+                        <CopyIcon size={14} />
+                      )}
+                    </button>
                   </div>
                 </div>
               )}
@@ -2289,57 +3595,197 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ))}
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
-              <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
-              {state.status === 'streaming' && state.response.answer ? <div className={`ask-ledger-answer mt-4 ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource, streaming: true })}</div> : null}
+              <AskLedgerActivityTrace
+                steps={activitySteps}
+                durationMs={liveActivityDurationMs}
+                active
+                expanded={activityExpanded}
+                onToggle={() => setActivityExpanded((current) => !current)}
+                generationPhrase={
+                  requestWatchdogStatus === 'slow'
+                    ? 'Still working — Cancel is available.'
+                    : generationPhrase
+                }
+              />
+              {state.status === 'streaming' && state.response.answer ? (
+                <div
+                  className={`ask-ledger-answer mt-4 ${
+                    meetingChat ? 'text-[13px]' : 'text-[15px]'
+                  } text-[var(--ledger-text-secondary)]`}
+                >
+                  {renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, {
+                    sources: state.response.sources,
+                    onOpenSource: openSource,
+                    streaming: true,
+                  })}
+                </div>
+              ) : null}
               {state.status === 'streaming' && state.response.sources.length > 0 && (
                 <div className="mt-4">
                   <button
                     type="button"
                     aria-expanded={Boolean(expandedSources.streaming)}
                     aria-controls="ask-ledger-streaming-sources"
-                    onClick={() => setExpandedSources((current) => ({ ...current, streaming: !current.streaming }))}
+                    onClick={() =>
+                      setExpandedSources((current) => ({
+                        ...current,
+                        streaming: !current.streaming,
+                      }))
+                    }
                     className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
-                    <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-4 w-4 shrink-0" />
+                    <img
+                      src={`${import.meta.env.BASE_URL}logo-color.svg`}
+                      alt=""
+                      className="h-4 w-4 shrink-0"
+                    />
                     <span>Ledger sources</span>
-                    <span className="text-[11px] text-[var(--ledger-text-muted)]">{state.response.sources.length}</span>
-                    <ChevronDown size={13} className={`transition-transform ${expandedSources.streaming ? 'rotate-180' : ''}`} />
+                    <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                      {state.response.sources.length}
+                    </span>
+                    <ChevronDown
+                      size={13}
+                      className={`transition-transform ${
+                        expandedSources.streaming ? 'rotate-180' : ''
+                      }`}
+                    />
                   </button>
-                  {expandedSources.streaming && <div id="ask-ledger-streaming-sources" className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1">
-                    {state.response.sources.map((source) => {
-                      const Icon = sourceIconMap[source.type];
-                      return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
-                    })}
-                  </div>}
+                  {expandedSources.streaming && (
+                    <div
+                      id="ask-ledger-streaming-sources"
+                      className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1"
+                    >
+                      {state.response.sources.map((source) => {
+                        const Icon = sourceIconMap[source.type];
+                        return (
+                          <button
+                            key={source.id}
+                            type="button"
+                            onClick={() => openSource(source)}
+                            className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                            <Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                            <span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">
+                              {source.title}
+                            </span>
+                            <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                              {source.sourceLabel ?? sourceTypeLabels[source.type]}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </article>
           )}
-          {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
+          {state.status === 'error' && (
+            <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert">
+              <p>Ledger couldn’t answer this question.</p>
+              <button
+                type="button"
+                onClick={retryLastQuestion}
+                className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline"
+              >
+                Try again
+              </button>
+            </article>
+          )}
         </section>
       )}
       <div
         ref={skillPickerRef}
-        className={`ask-ledger-composer ${conversationActive || compact ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${meetingChat ? `meeting-chat-composer ${conversationActive ? 'meeting-chat-composer--active !absolute !inset-x-0 !bottom-0 !z-20 !mx-0 !w-full !min-h-[128px]' : 'meeting-chat-composer--empty !absolute !inset-0 !z-20 !m-0 !h-full !min-h-0 !w-full'} !rounded-none !px-3 !py-3` : compact ? '!mx-3 !w-[calc(100%-1.5rem)] !min-h-[72px] !rounded-none !px-3 !py-2' : ''} ${localAIUnavailable ? 'cursor-pointer' : ''}`}
+        className={`ask-ledger-composer ${
+          conversationActive || compact
+            ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]'
+            : 'mx-auto min-h-[104px] max-w-[620px]'
+        } relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${
+          meetingChat
+            ? `meeting-chat-composer ${
+                conversationActive
+                  ? 'meeting-chat-composer--active !absolute !inset-x-0 !bottom-0 !z-20 !mx-0 !w-full !min-h-[128px]'
+                  : 'meeting-chat-composer--empty !absolute !inset-0 !z-20 !m-0 !h-full !min-h-0 !w-full'
+              } !rounded-none !px-3 !py-3`
+            : compact
+            ? '!mx-3 !w-[calc(100%-1.5rem)] !min-h-[72px] !rounded-none !px-3 !py-2'
+            : ''
+        } ${localAIUnavailable ? 'cursor-pointer' : ''}`}
         onClick={() => {
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
-        {conversationActive && <div aria-hidden="true" className={`ask-ledger-composer-fade pointer-events-none absolute inset-x-0 z-0 ${meetingChat ? 'bottom-[-16px] h-16' : compact ? 'bottom-[-10px] h-10' : 'bottom-[calc(100%+1px)] h-12'}`} />}
-        {(activeInitialContext || selectedSkill || composerAttachments.length > 0 || attachmentIndexing) && (
-            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 px-1">
+        {conversationActive && (
+          <div
+            aria-hidden="true"
+            className={`ask-ledger-composer-fade pointer-events-none absolute inset-x-0 z-0 ${
+              meetingChat
+                ? 'bottom-[-16px] h-16'
+                : compact
+                ? 'bottom-[-10px] h-10'
+                : 'bottom-[calc(100%+1px)] h-12'
+            }`}
+          />
+        )}
+        {(activeInitialContext ||
+          selectedSkill ||
+          composerAttachments.length > 0 ||
+          attachmentIndexing) && (
+          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 px-1">
             {composerAttachments.map((attachment) => (
-              <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
-                {attachment.kind === 'file' ? <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /> : (() => { const Icon = sourceIconMap[attachment.resource.type]; return <Icon size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />; })()}
-                <span className="min-w-0 flex-1 truncate">{attachment.kind === 'file' ? attachmentDisplayName(attachment.attachment.name) : attachment.resource.title}</span>
-                <button type="button" onClick={(event) => { event.stopPropagation(); removeComposerAttachment(attachment); }} aria-label={`Remove ${attachment.kind === 'file' ? attachment.attachment.name : attachment.resource.title}`} className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><X size={12} /></button>
+              <span
+                key={`${attachment.kind}-${
+                  attachment.kind === 'file'
+                    ? attachment.attachment.id
+                    : attachment.resource.resourceId
+                }`}
+                className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]"
+              >
+                {attachment.kind === 'file' ? (
+                  <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                ) : (
+                  (() => {
+                    const Icon = sourceIconMap[attachment.resource.type];
+                    return <Icon size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />;
+                  })()
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {attachment.kind === 'file'
+                    ? attachmentDisplayName(attachment.attachment.name)
+                    : attachment.resource.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeComposerAttachment(attachment);
+                  }}
+                  aria-label={`Remove ${
+                    attachment.kind === 'file'
+                      ? attachment.attachment.name
+                      : attachment.resource.title
+                  }`}
+                  className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <X size={12} />
+                </button>
               </span>
             ))}
             {activeInitialContext && (
               <span className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
                 <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
                 <span className="min-w-0 flex-1 truncate">{activeInitialContext.title}</span>
-                <button type="button" onClick={(event) => { event.stopPropagation(); removeInitialContext(); }} aria-label="Remove Ask Ledger context" className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]">×</button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeInitialContext();
+                  }}
+                  aria-label="Remove Ask Ledger context"
+                  className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  ×
+                </button>
               </span>
             )}
             {selectedSkill && (
@@ -2349,14 +3795,28 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 <button
                   type="button"
                   aria-label={`Remove ${selectedSkill.name}`}
-                  onClick={(event) => { event.stopPropagation(); setSelectedSkillId(null); pendingSkillIdRef.current = undefined; sessionSkillIdRef.current = undefined; inputRef.current?.focus(); }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedSkillId(null);
+                    pendingSkillIdRef.current = undefined;
+                    sessionSkillIdRef.current = undefined;
+                    inputRef.current?.focus();
+                  }}
                   className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <X size={12} />
                 </button>
               </span>
             )}
-            {attachmentIndexing && <span className="inline-flex h-8 items-center px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating" role="status" aria-live="polite">{attachmentIndexingPhrase}</span>}
+            {attachmentIndexing && (
+              <span
+                className="inline-flex h-8 items-center px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating"
+                role="status"
+                aria-live="polite"
+              >
+                {attachmentIndexingPhrase}
+              </span>
+            )}
           </div>
         )}
         <textarea
@@ -2385,14 +3845,35 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             }
           }}
           rows={3}
-          placeholder={skillPlaceholder(selectedSkill) ?? (conversationActive ? 'Reply...' : meetingChat && activeInitialContext?.contextType === 'meeting' ? 'Ask about this meeting…' : 'Ask Ledger...')}
+          placeholder={
+            skillPlaceholder(selectedSkill) ??
+            (conversationActive
+              ? 'Reply...'
+              : meetingChat && activeInitialContext?.contextType === 'meeting'
+              ? 'Ask about this meeting…'
+              : 'Ask Ledger...')
+          }
           aria-label="Ask Ledger"
           aria-disabled={localAIUnavailable}
           aria-describedby={localAIUnavailable ? 'ask-ledger-setup-help' : undefined}
-          className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[52px]'} min-w-0 flex-1 resize-none self-stretch border-0 bg-transparent p-0 text-sm leading-6 shadow-none outline-none ring-0 placeholder:text-[var(--ledger-placeholder)] focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
+          className={`max-h-32 ${
+            conversationActive ? 'min-h-[44px]' : 'min-h-[52px]'
+          } min-w-0 flex-1 resize-none self-stretch border-0 bg-transparent p-0 text-sm leading-6 shadow-none outline-none ring-0 placeholder:text-[var(--ledger-placeholder)] focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${
+            localAIUnavailable
+              ? 'cursor-pointer text-[var(--ledger-text-secondary)]'
+              : 'text-[var(--ledger-text-primary)]'
+          }`}
         />
-        {localAIUnavailable && <span id="ask-ledger-setup-help" className="sr-only">Set up Local AI to ask your workspace.</span>}
-        {attachmentError && <p role="alert" className="mt-1 truncate text-[11px] text-[var(--ledger-danger)]">{attachmentError}</p>}
+        {localAIUnavailable && (
+          <span id="ask-ledger-setup-help" className="sr-only">
+            Set up Local AI to ask your workspace.
+          </span>
+        )}
+        {attachmentError && (
+          <p role="alert" className="mt-1 truncate text-[11px] text-[var(--ledger-danger)]">
+            {attachmentError}
+          </p>
+        )}
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="relative">
             <button
@@ -2406,153 +3887,493 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 setSkillPickerOpen(nextOpen);
                 if (nextOpen) window.setTimeout(() => skillOptionRefs.current[0]?.focus(), 0);
               }}
-              onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSkillPickerOpen(false); inputRef.current?.focus(); } }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setSkillPickerOpen(false);
+                  inputRef.current?.focus();
+                }
+              }}
               className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
             >
               <Boxes size={13} />
               <span>Skills</span>
-              <ChevronDown size={12} className={`transition-transform ${skillPickerOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                size={12}
+                className={`transition-transform ${skillPickerOpen ? 'rotate-180' : ''}`}
+              />
             </button>
-            {skillPickerOpen && skillPopupPosition && createPortal(
-              <div
-                ref={skillPopupRef}
-                role="listbox"
-                aria-label="Ledger Skills"
-                tabIndex={-1}
-                onKeyDown={(event) => {
-                  const currentIndex = skillOptionRefs.current.findIndex((option) => option === document.activeElement);
-                  if (event.key === 'Escape') { event.preventDefault(); setSkillPickerOpen(false); inputRef.current?.focus(); }
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    const nextIndex = event.key === 'ArrowDown' ? Math.min(currentIndex + 1, skillCatalog.length - 1) : Math.max(currentIndex - 1, 0);
-                    skillOptionRefs.current[nextIndex]?.focus();
-                  }
-                }}
-                style={{ left: skillPopupPosition.left, top: skillPopupPosition.top, maxHeight: skillPopupPosition.maxHeight, transform: skillPopupPosition.transform }}
-                className={`agent-ask-ledger-portal fixed z-[2147483647] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)] ${compact ? 'agent-ask-ledger-portal--compact' : 'w-[280px]'}`}
-              >
-                {contextPickerSkill ? (
-                  <div role="dialog" aria-label={`Choose context for ${contextPickerSkill.name}`}>
-                    <div className="flex items-center gap-2 border-b border-[color:var(--ledger-border-subtle)] px-2.5 py-2">
-                      <button type="button" onClick={() => setContextPickerSkill(null)} className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">Back</button>
-                      <span className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{skillRequirementLabel(contextPickerSkill)}</span>
+            {skillPickerOpen &&
+              skillPopupPosition &&
+              createPortal(
+                <div
+                  ref={skillPopupRef}
+                  role="listbox"
+                  aria-label="Ledger Skills"
+                  tabIndex={-1}
+                  onKeyDown={(event) => {
+                    const currentIndex = skillOptionRefs.current.findIndex(
+                      (option) => option === document.activeElement
+                    );
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      setSkillPickerOpen(false);
+                      inputRef.current?.focus();
+                    }
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      const nextIndex =
+                        event.key === 'ArrowDown'
+                          ? Math.min(currentIndex + 1, skillCatalog.length - 1)
+                          : Math.max(currentIndex - 1, 0);
+                      skillOptionRefs.current[nextIndex]?.focus();
+                    }
+                  }}
+                  style={{
+                    left: skillPopupPosition.left,
+                    top: skillPopupPosition.top,
+                    maxHeight: skillPopupPosition.maxHeight,
+                    transform: skillPopupPosition.transform,
+                  }}
+                  className={`agent-ask-ledger-portal fixed z-[2147483647] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)] ${
+                    compact ? 'agent-ask-ledger-portal--compact' : 'w-[280px]'
+                  }`}
+                >
+                  {contextPickerSkill ? (
+                    <div role="dialog" aria-label={`Choose context for ${contextPickerSkill.name}`}>
+                      <div className="flex items-center gap-2 border-b border-[color:var(--ledger-border-subtle)] px-2.5 py-2">
+                        <button
+                          type="button"
+                          onClick={() => setContextPickerSkill(null)}
+                          className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          Back
+                        </button>
+                        <span className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                          {skillRequirementLabel(contextPickerSkill)}
+                        </span>
+                      </div>
+                      <input
+                        autoFocus
+                        value={contextPickerSearch}
+                        onChange={(event) => setContextPickerSearch(event.target.value)}
+                        placeholder="Search Ledger"
+                        aria-label="Search Ledger context"
+                        className="mx-1 my-1 h-8 w-[calc(100%-8px)] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                      />
+                      <div className="max-h-56 overflow-y-auto">
+                        {contextPickerLoading ? (
+                          <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">
+                            Loading Ledger resources…
+                          </p>
+                        ) : (
+                          contextPickerOptions
+                            .filter((item) =>
+                              item.title.toLowerCase().includes(contextPickerSearch.toLowerCase())
+                            )
+                            .slice(0, 30)
+                            .map((context) => (
+                              <button
+                                key={`${context.resourceType}:${context.resourceId}`}
+                                type="button"
+                                onClick={() => selectSkillContext(context)}
+                                className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                <span className="min-w-0 flex-1 truncate">{context.title}</span>
+                                <span className="ml-2 text-[10px] text-[var(--ledger-text-muted)]">
+                                  {context.resourceType}
+                                </span>
+                              </button>
+                            ))
+                        )}
+                        {!contextPickerLoading && !contextPickerOptions.length && (
+                          <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">
+                            No matching Ledger resources.
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <input autoFocus value={contextPickerSearch} onChange={(event) => setContextPickerSearch(event.target.value)} placeholder="Search Ledger" aria-label="Search Ledger context" className="mx-1 my-1 h-8 w-[calc(100%-8px)] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none" />
-                    <div className="max-h-56 overflow-y-auto">
-                      {contextPickerLoading ? <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">Loading Ledger resources…</p> : contextPickerOptions.filter((item) => item.title.toLowerCase().includes(contextPickerSearch.toLowerCase())).slice(0, 30).map((context) => <button key={`${context.resourceType}:${context.resourceId}`} type="button" onClick={() => selectSkillContext(context)} className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><span className="min-w-0 flex-1 truncate">{context.title}</span><span className="ml-2 text-[10px] text-[var(--ledger-text-muted)]">{context.resourceType}</span></button>)}
-                      {!contextPickerLoading && !contextPickerOptions.length && <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">No matching Ledger resources.</p>}
-                    </div>
-                  </div>
-                ) : skillCatalog.map((skill, index) => {
-                  const Icon = skillIconMap[skill.icon as keyof typeof skillIconMap] ?? Boxes;
-                  const requirement = skillRequirementLabel(skill);
-                  return (
+                  ) : (
+                    skillCatalog.map((skill, index) => {
+                      const Icon = skillIconMap[skill.icon as keyof typeof skillIconMap] ?? Boxes;
+                      const requirement = skillRequirementLabel(skill);
+                      return (
+                        <button
+                          key={skill.id}
+                          ref={(element) => {
+                            skillOptionRefs.current[index] = element;
+                          }}
+                          type="button"
+                          role="option"
+                          aria-selected={selectedSkillId === skill.id}
+                          onClick={() => selectSkill(skill)}
+                          className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          <Icon
+                            size={15}
+                            strokeWidth={1.8}
+                            className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-medium text-[var(--ledger-text-primary)]">
+                              {skill.name}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                              {requirement ?? skill.description}
+                            </span>
+                          </span>
+                          {skill.isCustom && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Edit ${skill.name}`}
+                              title={`Edit ${skill.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const custom = availableCustomSkills.find(
+                                  (item) => item.id === skill.id
+                                );
+                                if (custom) onEditCustomSkill?.(custom);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  const custom = availableCustomSkills.find(
+                                    (item) => item.id === skill.id
+                                  );
+                                  if (custom) onEditCustomSkill?.(custom);
+                                }
+                              }}
+                              className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              ⋯
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                  <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
                     <button
-                      key={skill.id}
-                      ref={(element) => { skillOptionRefs.current[index] = element; }}
                       type="button"
-                      role="option"
-                      aria-selected={selectedSkillId === skill.id}
-                      onClick={() => selectSkill(skill)}
-                      className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                      onClick={() => {
+                        setSkillPickerOpen(false);
+                        window.dispatchEvent(new CustomEvent('ledger:ask-ledger-create-skill'));
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                     >
-                      <Icon size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-medium text-[var(--ledger-text-primary)]">{skill.name}</span>
-                        <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">{requirement ?? skill.description}</span>
+                      <span className="text-base leading-none text-[var(--ledger-text-muted)]">
+                        +
                       </span>
-                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} title={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = availableCustomSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const custom = availableCustomSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
+                      <span>Create skill</span>
                     </button>
-                  );
-                })}
-                <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
-                  <button type="button" onClick={() => { setSkillPickerOpen(false); window.dispatchEvent(new CustomEvent('ledger:ask-ledger-create-skill')); }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><span className="text-base leading-none text-[var(--ledger-text-muted)]">+</span><span>Create skill</span></button>
-                </div>
-              </div>,
-              document.documentElement
-            )}
+                  </div>
+                </div>,
+                document.documentElement
+              )}
           </div>
-        <div className="flex items-center gap-1">
-          {downloadMinimized && downloadTier && downloadPhase === 'downloading' && <button type="button" onClick={() => setDownloadMinimized(false)} className="inline-flex h-7 max-w-40 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-label={`Show ${generationTierLabels[downloadTier]} download progress`}><Download size={13} /><span className="truncate">Downloading {generationTierLabels[downloadTier]} {downloadModelView?.progressPercent ?? 0}%</span></button>}
+          <div className="flex items-center gap-1">
+            {downloadMinimized && downloadTier && downloadPhase === 'downloading' && (
+              <button
+                type="button"
+                onClick={() => setDownloadMinimized(false)}
+                className="inline-flex h-7 max-w-40 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                aria-label={`Show ${generationTierLabels[downloadTier]} download progress`}
+              >
+                <Download size={13} />
+                <span className="truncate">
+                  Downloading {generationTierLabels[downloadTier]}{' '}
+                  {downloadModelView?.progressPercent ?? 0}%
+                </span>
+              </button>
+            )}
             {localAIUnavailable && (
-              <button type="button" onClick={(event) => { event.stopPropagation(); setSetupModalOpen(true); }} aria-label="Set up Local AI" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><AlertCircle size={15} /></button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSetupModalOpen(true);
+                }}
+                aria-label="Set up Local AI"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <AlertCircle size={15} />
+              </button>
             )}
             <div ref={attachmentMenuRef} className="relative">
-              <button type="button" onClick={(event) => { event.stopPropagation(); setAdvancedOpen(false); setAttachmentMenuOpen((open) => !open); setResourcePickerOpen(false); }} aria-label="Add attachment" title="Attach PDF, DOCX, TXT, Markdown, CSV, or XLSX · Up to 5 files · 10 MB per file · 25 MB total" aria-expanded={attachmentMenuOpen} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setAdvancedOpen(false);
+                  setAttachmentMenuOpen((open) => !open);
+                  setResourcePickerOpen(false);
+                }}
+                aria-label="Add attachment"
+                title="Attach PDF, DOCX, TXT, Markdown, CSV, or XLSX · Up to 5 files · 10 MB per file · 25 MB total"
+                aria-expanded={attachmentMenuOpen}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
                 <Paperclip size={15} />
               </button>
               {attachmentMenuOpen && (
-                <div role="menu" aria-label="Add Ask Ledger context" className={`absolute bottom-9 right-0 z-40 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)] ${meetingChat ? 'w-40 p-1' : 'w-56 p-1.5'}`}>
-                  {!resourcePickerOpen ? <>
-                    <button type="button" role="menuitem" onClick={() => void uploadAttachments()} className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}`}><Paperclip size={meetingChat ? 13 : 14} />Upload file</button>
-                    <button type="button" role="menuitem" onClick={() => { setAttachmentMenuOpen(false); void window.desktopWindow?.openModule('files', { kind: 'files' }); }} className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}`}><Link2 size={meetingChat ? 13 : 14} />Files & links</button>
-                    <button type="button" role="menuitem" onClick={() => void openResourcePicker()} className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}`}><FolderKanban size={meetingChat ? 13 : 14} />Add Ledger resource</button>
-                  </> : <>
-                    <button type="button" onClick={() => setResourcePickerOpen(false)} className="w-full px-3 py-2 text-left text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">← Back</button>
-                    <div className="max-h-56 overflow-y-auto border-t border-[color:var(--ledger-border-subtle)] pt-1">{resourcePickerLoading ? <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">Loading Ledger resources…</p> : resourcePickerOptions.map((resource) => <button key={`${resource.type}:${resource.resourceId}`} type="button" onClick={() => addResourceAttachment(resource)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><span className="min-w-0 flex-1 truncate">{resource.title}</span><span className="text-[10px] text-[var(--ledger-text-muted)]">{sourceTypeLabels[resource.type]}</span></button>)}{!resourcePickerLoading && !resourcePickerOptions.length && <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">No Ledger resources available.</p>}</div>
-                  </>}
+                <div
+                  role="menu"
+                  aria-label="Add Ask Ledger context"
+                  className={`absolute bottom-9 right-0 z-40 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)] ${
+                    meetingChat ? 'w-40 p-1' : 'w-56 p-1.5'
+                  }`}
+                >
+                  {!resourcePickerOpen ? (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void uploadAttachments()}
+                        className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${
+                          meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'
+                        }`}
+                      >
+                        <Paperclip size={meetingChat ? 13 : 14} />
+                        Upload file
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setAttachmentMenuOpen(false);
+                          void window.desktopWindow?.openModule('files', { kind: 'files' });
+                        }}
+                        className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${
+                          meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'
+                        }`}
+                      >
+                        <Link2 size={meetingChat ? 13 : 14} />
+                        Files & links
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void openResourcePicker()}
+                        className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${
+                          meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'
+                        }`}
+                      >
+                        <FolderKanban size={meetingChat ? 13 : 14} />
+                        Add Ledger resource
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setResourcePickerOpen(false)}
+                        className="w-full px-3 py-2 text-left text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        ← Back
+                      </button>
+                      <div className="max-h-56 overflow-y-auto border-t border-[color:var(--ledger-border-subtle)] pt-1">
+                        {resourcePickerLoading ? (
+                          <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">
+                            Loading Ledger resources…
+                          </p>
+                        ) : (
+                          resourcePickerOptions.map((resource) => (
+                            <button
+                              key={`${resource.type}:${resource.resourceId}`}
+                              type="button"
+                              onClick={() => addResourceAttachment(resource)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              <span className="min-w-0 flex-1 truncate">{resource.title}</span>
+                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                                {sourceTypeLabels[resource.type]}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                        {!resourcePickerLoading && !resourcePickerOptions.length && (
+                          <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">
+                            No Ledger resources available.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
-            {isSubmitting && <button type="button" onClick={cancel} aria-label="Cancel generation" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Square size={12} /></button>}
-            <button type="button" onClick={() => submit()} disabled={(!question.trim() && !selectedSkillId && !composerAttachments.length) || !localAIReady || isSubmitting} aria-label="Submit question" className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)] disabled:opacity-35">
-              {isSubmitting ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
-            </button>
-          {localAIReady && !meetingChat && (
-            <div className="ledger-ask-model-control relative order-first">
+            {isSubmitting && (
               <button
-                ref={advancedButtonRef}
                 type="button"
-                aria-haspopup="dialog"
-                aria-expanded={advancedOpen}
-                aria-label={isSubmitting ? 'Response mode locked while Ledger is generating' : 'Choose response mode'}
-                title={isSubmitting ? 'Response mode locked while Ledger is generating' : 'Choose response mode'}
-                onPointerDown={(event) => { event.stopPropagation(); }}
-                onClick={(event) => { event.stopPropagation(); setAttachmentMenuOpen(false); setAdvancedOpen((open) => !open); setTierSwitchError(null); }}
-                disabled={tierSwitchInProgress || isSubmitting}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
+                onClick={cancel}
+                aria-label="Cancel generation"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
-                <SlidersHorizontal size={13} />
-                <span>{generationModeLabels[generationMode]}</span>
+                <Square size={12} />
               </button>
-              {advancedOpen && (
-                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(220px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-2 shadow-[var(--ledger-shadow)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)]">Advanced</span>
-                    {tierSwitchInProgress && <LoaderCircle size={15} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" aria-label="Switching Local AI model" />}
-                  </div>
-                  <div className="mt-2 space-y-0.5" role="radiogroup" aria-label="Response mode">
-                    {generationModeOrder.map((mode) => {
-                      const tier = mode === 'thinking' ? 'balanced' : mode;
-                      const model = modelForTier(tier);
-                      const installed = Boolean(model?.installed || model?.state === 'installed');
-                      const unavailable = model?.state === 'unavailable' || model?.available === false;
-                      const selected = generationMode === mode;
-                      return (
-                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress || isSubmitting} className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
-                          <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
-                          <span className="min-w-0 flex-1">
-                            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
-                            <span className="mt-0.5 block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">{generationModeDescriptions[mode]}</span>
-                          </span>
-                          {mode !== 'thinking' && !installed ? <span className="w-12 shrink-0 text-right text-[10px] text-[var(--ledger-text-muted)]">{unavailable ? 'Unavailable' : 'Install'}</span> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <span className="sr-only" aria-live="polite">{tierSwitchInProgress ? 'Switching response mode…' : `${generationModeLabels[generationMode]} selected`}</span>
-                  {tierSwitchError && <p className="mt-2 text-[11px] text-[var(--ledger-danger)]" role="alert">{tierSwitchError}</p>}
-                </div>
+            )}
+            <button
+              type="button"
+              onClick={() => submit()}
+              disabled={
+                (!question.trim() && !selectedSkillId && !composerAttachments.length) ||
+                !localAIReady ||
+                isSubmitting
+              }
+              aria-label="Submit question"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)] disabled:opacity-35"
+            >
+              {isSubmitting ? (
+                <LoaderCircle size={15} className="animate-spin" />
+              ) : (
+                <Send size={15} />
               )}
-            </div>
-          )}
+            </button>
+            {localAIReady && !meetingChat && (
+              <div className="ledger-ask-model-control relative order-first">
+                <button
+                  ref={advancedButtonRef}
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={advancedOpen}
+                  aria-label={
+                    isSubmitting
+                      ? 'Response mode locked while Ledger is generating'
+                      : 'Choose response mode'
+                  }
+                  title={
+                    isSubmitting
+                      ? 'Response mode locked while Ledger is generating'
+                      : 'Choose response mode'
+                  }
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setAttachmentMenuOpen(false);
+                    setAdvancedOpen((open) => !open);
+                    setTierSwitchError(null);
+                  }}
+                  disabled={tierSwitchInProgress || isSubmitting}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
+                >
+                  <SlidersHorizontal size={13} />
+                  <span>{generationModeLabels[generationMode]}</span>
+                </button>
+                {advancedOpen && (
+                  <div
+                    ref={advancedPopoverRef}
+                    role="dialog"
+                    aria-label="How Ledger should respond"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    className="absolute bottom-9 left-0 z-40 w-[min(220px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-2 shadow-[var(--ledger-shadow)]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)]">
+                        Advanced
+                      </span>
+                      {tierSwitchInProgress && (
+                        <LoaderCircle
+                          size={15}
+                          className="shrink-0 animate-spin text-[var(--ledger-text-muted)]"
+                          aria-label="Switching Local AI model"
+                        />
+                      )}
+                    </div>
+                    <div className="mt-2 space-y-0.5" role="radiogroup" aria-label="Response mode">
+                      {generationModeOrder.map((mode) => {
+                        const tier = mode === 'thinking' ? 'balanced' : mode;
+                        const model = modelForTier(tier);
+                        const installed = Boolean(model?.installed || model?.state === 'installed');
+                        const unavailable =
+                          model?.state === 'unavailable' || model?.available === false;
+                        const selected = generationMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            aria-label={`${generationModeLabels[mode]}: ${
+                              generationModeDescriptions[mode]
+                            }${mode === 'balanced' ? ', recommended' : ''}${
+                              mode !== 'thinking' && !installed
+                                ? unavailable
+                                  ? ', unavailable'
+                                  : ', download required'
+                                : ''
+                            }`}
+                            onClick={() => void selectGenerationMode(mode)}
+                            disabled={tierSwitchInProgress || isSubmitting}
+                            className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${
+                              selected
+                                ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
+                            } disabled:cursor-not-allowed disabled:opacity-55`}
+                          >
+                            <span
+                              className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                                selected
+                                  ? 'border-[var(--ledger-accent)]'
+                                  : 'border-[var(--ledger-border-strong)]'
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {selected ? (
+                                <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
+                              ) : null}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium">
+                                <span>{generationModeLabels[mode]}</span>
+                                {mode === 'balanced' ? (
+                                  <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">
+                                    Recommended
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="mt-0.5 block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">
+                                {generationModeDescriptions[mode]}
+                              </span>
+                            </span>
+                            {mode !== 'thinking' && !installed ? (
+                              <span className="w-12 shrink-0 text-right text-[10px] text-[var(--ledger-text-muted)]">
+                                {unavailable ? 'Unavailable' : 'Install'}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="sr-only" aria-live="polite">
+                      {tierSwitchInProgress
+                        ? 'Switching response mode…'
+                        : `${generationModeLabels[generationMode]} selected`}
+                    </span>
+                    {tierSwitchError && (
+                      <p className="mt-2 text-[11px] text-[var(--ledger-danger)]" role="alert">
+                        {tierSwitchError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
       {!conversationActive && !meetingChat && showEmptyStateExamples && (
         <section className="mt-7" aria-labelledby="ask-ledger-examples-heading">
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
-            <h2 id="ask-ledger-examples-heading" className="text-xs font-medium text-[var(--ledger-text-muted)]">Get started with some examples</h2>
+            <h2
+              id="ask-ledger-examples-heading"
+              className="text-xs font-medium text-[var(--ledger-text-muted)]"
+            >
+              Get started with some examples
+            </h2>
             <button
               type="button"
               aria-label="Hide examples"
@@ -2584,8 +4405,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 }}
                 className="group flex min-h-[72px] items-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"
               >
-                <Icon size={14} strokeWidth={1.8} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)] transition group-hover:text-[var(--ledger-text-primary)]" />
-                <span className="min-w-0"><span className="block truncate text-sm text-[var(--ledger-text-primary)]">{title}</span><span className="mt-0.5 block truncate text-xs leading-5 text-[var(--ledger-text-muted)]">{description}</span></span>
+                <Icon
+                  size={14}
+                  strokeWidth={1.8}
+                  className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)] transition group-hover:text-[var(--ledger-text-primary)]"
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-[var(--ledger-text-primary)]">
+                    {title}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs leading-5 text-[var(--ledger-text-muted)]">
+                    {description}
+                  </span>
+                </span>
               </button>
             ))}
           </div>
@@ -2594,37 +4426,314 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
       <ModalOverlay
         isOpen={Boolean(actionReview)}
-        onClose={() => { if (!actionBusy) { setActionReview(null); setActionDraft(null); } }}
+        onClose={() => {
+          if (!actionBusy) {
+            setActionReview(null);
+            setActionDraft(null);
+          }
+        }}
         classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
-            <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">{actionReview?.title ?? 'Review action'}</h2>
-            <button type="button" aria-label="Close action review" onClick={() => { setActionReview(null); setActionDraft(null); }} disabled={actionBusy} className="text-sm text-[var(--ledger-text-muted)]">×</button>
+            <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">
+              {actionReview?.title ?? 'Review action'}
+            </h2>
+            <button
+              type="button"
+              aria-label="Close action review"
+              onClick={() => {
+                setActionReview(null);
+                setActionDraft(null);
+              }}
+              disabled={actionBusy}
+              className="text-sm text-[var(--ledger-text-muted)]"
+            >
+              ×
+            </button>
           </div>
           {actionDraft ? (
             <div className="mt-5 space-y-3">
-              <label className="block text-xs text-[var(--ledger-text-muted)]">Title<input value={String(actionDraft.payload.title ?? '')} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, title: event.target.value } })} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]" /></label>
-              {actionDraft.type === 'create_task' && <>
-                <label className="block text-xs text-[var(--ledger-text-muted)]">Project (optional)<select value={String(actionDraft.payload.project_id ?? '')} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, project_id: event.target.value || null } })} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"><option value="">No project</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                <div className="grid grid-cols-2 gap-2"><label className="block text-xs text-[var(--ledger-text-muted)]">Status<select value={String(actionDraft.payload.status ?? 'todo')} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, status: event.target.value } })} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)]"><option value="todo">To do</option><option value="in_progress">In progress</option></select></label><label className="block text-xs text-[var(--ledger-text-muted)]">Due date<input type="date" value={String(actionDraft.payload.due_date ?? '')} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, due_date: event.target.value || null } })} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)]" /></label></div>
-              </>}
-              {actionDraft.type === 'create_reminder' && <label className="block text-xs text-[var(--ledger-text-muted)]">Reminder date<input type="date" value={String(actionDraft.payload.remind_at ?? '').slice(0, 10)} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, remind_at: event.target.value ? `${event.target.value}T09:00:00.000Z` : null } })} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]" />{!actionDraft.payload.remind_at && <span className="mt-1 block text-[11px]">Choose a date to continue.</span>}</label>}
-              {actionDraft.type === 'create_note' && <label className="block text-xs text-[var(--ledger-text-muted)]">Content<textarea value={String(actionDraft.payload.content ?? '')} onChange={(event) => setActionDraft({ ...actionDraft, payload: { ...actionDraft.payload, content: event.target.value } })} rows={4} className="mt-1 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]" /></label>}
+              <label className="block text-xs text-[var(--ledger-text-muted)]">
+                Title
+                <input
+                  value={String(actionDraft.payload.title ?? '')}
+                  onChange={(event) =>
+                    setActionDraft({
+                      ...actionDraft,
+                      payload: { ...actionDraft.payload, title: event.target.value },
+                    })
+                  }
+                  className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                />
+              </label>
+              {actionDraft.type === 'create_task' && (
+                <>
+                  <label className="block text-xs text-[var(--ledger-text-muted)]">
+                    Project (optional)
+                    <select
+                      value={String(actionDraft.payload.project_id ?? '')}
+                      onChange={(event) =>
+                        setActionDraft({
+                          ...actionDraft,
+                          payload: {
+                            ...actionDraft.payload,
+                            project_id: event.target.value || null,
+                          },
+                        })
+                      }
+                      className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                    >
+                      <option value="">No project</option>
+                      {projectOptions.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-xs text-[var(--ledger-text-muted)]">
+                      Status
+                      <select
+                        value={String(actionDraft.payload.status ?? 'todo')}
+                        onChange={(event) =>
+                          setActionDraft({
+                            ...actionDraft,
+                            payload: { ...actionDraft.payload, status: event.target.value },
+                          })
+                        }
+                        className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)]"
+                      >
+                        <option value="todo">To do</option>
+                        <option value="in_progress">In progress</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs text-[var(--ledger-text-muted)]">
+                      Due date
+                      <input
+                        type="date"
+                        value={String(actionDraft.payload.due_date ?? '')}
+                        onChange={(event) =>
+                          setActionDraft({
+                            ...actionDraft,
+                            payload: {
+                              ...actionDraft.payload,
+                              due_date: event.target.value || null,
+                            },
+                          })
+                        }
+                        className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)]"
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+              {actionDraft.type === 'create_reminder' && (
+                <label className="block text-xs text-[var(--ledger-text-muted)]">
+                  Reminder date
+                  <input
+                    type="date"
+                    value={String(actionDraft.payload.remind_at ?? '').slice(0, 10)}
+                    onChange={(event) =>
+                      setActionDraft({
+                        ...actionDraft,
+                        payload: {
+                          ...actionDraft.payload,
+                          remind_at: event.target.value
+                            ? `${event.target.value}T09:00:00.000Z`
+                            : null,
+                        },
+                      })
+                    }
+                    className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                  />
+                  {!actionDraft.payload.remind_at && (
+                    <span className="mt-1 block text-[11px]">Choose a date to continue.</span>
+                  )}
+                </label>
+              )}
+              {actionDraft.type === 'create_note' && (
+                <label className="block text-xs text-[var(--ledger-text-muted)]">
+                  Content
+                  <textarea
+                    value={String(actionDraft.payload.content ?? '')}
+                    onChange={(event) =>
+                      setActionDraft({
+                        ...actionDraft,
+                        payload: { ...actionDraft.payload, content: event.target.value },
+                      })
+                    }
+                    rows={4}
+                    className="mt-1 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                  />
+                </label>
+              )}
             </div>
           ) : (
-            <div className="mt-5 space-y-3">{actionReview?.actions.map((action) => <div key={action.id} className="flex items-start gap-2"><div className="min-w-0 flex-1"><label className="block text-xs text-[var(--ledger-text-muted)]">{actionLabel(action.type)}<input value={String(action.payload.title ?? '')} onChange={(event) => setActionReview((current) => current ? { ...current, actions: current.actions.map((item) => item.id === action.id ? { ...item, payload: { ...item.payload, title: event.target.value } } : item) } : current)} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]" /></label>{action.type === 'create_task' && <div className="mt-1 grid grid-cols-2 gap-2"><select aria-label="Project" value={String(action.payload.project_id ?? '')} onChange={(event) => setActionReview((current) => current ? { ...current, actions: current.actions.map((item) => item.id === action.id ? { ...item, payload: { ...item.payload, project_id: event.target.value || null } } : item) } : current)} className="h-8 min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] text-[var(--ledger-text-secondary)]"><option value="">No project</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input aria-label="Due date" type="date" value={String(action.payload.due_date ?? '')} onChange={(event) => setActionReview((current) => current ? { ...current, actions: current.actions.map((item) => item.id === action.id ? { ...item, payload: { ...item.payload, due_date: event.target.value || null } } : item) } : current)} className="h-8 min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] text-[var(--ledger-text-secondary)]" /></div>}</div><button type="button" aria-label={`Remove ${String(action.payload.title ?? actionLabel(action.type))}`} onClick={() => { rejectAction(action); setActionReview((current) => current ? { ...current, actions: current.actions.filter((item) => item.id !== action.id) } : current); }} className="mt-5 rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">×</button></div>)}</div>
+            <div className="mt-5 space-y-3">
+              {actionReview?.actions.map((action) => (
+                <div key={action.id} className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <label className="block text-xs text-[var(--ledger-text-muted)]">
+                      {actionLabel(action.type)}
+                      <input
+                        value={String(action.payload.title ?? '')}
+                        onChange={(event) =>
+                          setActionReview((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  actions: current.actions.map((item) =>
+                                    item.id === action.id
+                                      ? {
+                                          ...item,
+                                          payload: { ...item.payload, title: event.target.value },
+                                        }
+                                      : item
+                                  ),
+                                }
+                              : current
+                          )
+                        }
+                        className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                      />
+                    </label>
+                    {action.type === 'create_task' && (
+                      <div className="mt-1 grid grid-cols-2 gap-2">
+                        <select
+                          aria-label="Project"
+                          value={String(action.payload.project_id ?? '')}
+                          onChange={(event) =>
+                            setActionReview((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    actions: current.actions.map((item) =>
+                                      item.id === action.id
+                                        ? {
+                                            ...item,
+                                            payload: {
+                                              ...item.payload,
+                                              project_id: event.target.value || null,
+                                            },
+                                          }
+                                        : item
+                                    ),
+                                  }
+                                : current
+                            )
+                          }
+                          className="h-8 min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] text-[var(--ledger-text-secondary)]"
+                        >
+                          <option value="">No project</option>
+                          {projectOptions.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          aria-label="Due date"
+                          type="date"
+                          value={String(action.payload.due_date ?? '')}
+                          onChange={(event) =>
+                            setActionReview((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    actions: current.actions.map((item) =>
+                                      item.id === action.id
+                                        ? {
+                                            ...item,
+                                            payload: {
+                                              ...item.payload,
+                                              due_date: event.target.value || null,
+                                            },
+                                          }
+                                        : item
+                                    ),
+                                  }
+                                : current
+                            )
+                          }
+                          className="h-8 min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] text-[var(--ledger-text-secondary)]"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${String(
+                      action.payload.title ?? actionLabel(action.type)
+                    )}`}
+                    onClick={() => {
+                      rejectAction(action);
+                      setActionReview((current) =>
+                        current
+                          ? {
+                              ...current,
+                              actions: current.actions.filter((item) => item.id !== action.id),
+                            }
+                          : current
+                      );
+                    }}
+                    className="mt-5 rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
           <div className="mt-6 flex justify-end gap-2">
-            <button type="button" onClick={() => { setActionReview(null); setActionDraft(null); }} disabled={actionBusy} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-muted)]">Cancel</button>
-            <button type="button" onClick={() => { if (!actionReview || !actionReview.actions.length) return; const actions = actionReview.actions.map((action) => actionDraft?.id === action.id ? actionDraft : action); void executeActionGroup(actions); }} disabled={actionBusy || !actionReview?.actions.length || Boolean(actionDraft?.type === 'create_reminder' && !actionDraft.payload.remind_at)} className="rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{actionBusy ? 'Working…' : actionReview?.actions.length && actionReview.actions.length > 1 ? `Create ${actionReview.actions.length} tasks` : actionReview ? actionLabel(actionReview.actions[0].type) : 'Confirm'}</button>
+            <button
+              type="button"
+              onClick={() => {
+                setActionReview(null);
+                setActionDraft(null);
+              }}
+              disabled={actionBusy}
+              className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-muted)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!actionReview || !actionReview.actions.length) return;
+                const actions = actionReview.actions.map((action) =>
+                  actionDraft?.id === action.id ? actionDraft : action
+                );
+                void executeActionGroup(actions);
+              }}
+              disabled={
+                actionBusy ||
+                !actionReview?.actions.length ||
+                Boolean(actionDraft?.type === 'create_reminder' && !actionDraft.payload.remind_at)
+              }
+              className="rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {actionBusy
+                ? 'Working…'
+                : actionReview?.actions.length && actionReview.actions.length > 1
+                ? `Create ${actionReview.actions.length} tasks`
+                : actionReview
+                ? actionLabel(actionReview.actions[0].type)
+                : 'Confirm'}
+            </button>
           </div>
         </div>
       </ModalOverlay>
 
       <ModalOverlay
         isOpen={Boolean(downloadTier && !downloadMinimized)}
-        onClose={() => { if (downloadPhase === 'downloading') { downloadDismissedRef.current = true; setDownloadMinimized(true); } else if (downloadPhase !== 'preparing') setDownloadTier(null); }}
+        onClose={() => {
+          if (downloadPhase === 'downloading') {
+            downloadDismissedRef.current = true;
+            setDownloadMinimized(true);
+          } else if (downloadPhase !== 'preparing') setDownloadTier(null);
+        }}
         closeOnBackdropClick={downloadPhase !== 'downloading' && downloadPhase !== 'preparing'}
         backdropBorderRadius="var(--window-radius)"
         backdropInset="0px"
@@ -2634,31 +4743,172 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         <div ref={downloadModalRef} className="p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">{downloadPhase === 'downloading' ? `Downloading ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : downloadPhase === 'preparing' ? `Preparing ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : downloadModelView?.installed ? `Use ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : `Download ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`}</h2>
-              {downloadPhase === 'confirm' && <><p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{downloadTier ? generationModeDescriptions[downloadTier] : 'Improve local answer quality.'}</p>{downloadTier && tierWarningNeedsAcknowledgement(downloadTier) && <p className="mt-3 text-xs leading-5 text-[var(--ledger-text-muted)]">{tierWarning(downloadTier)}</p>}</>}
+              <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">
+                {downloadPhase === 'downloading'
+                  ? `Downloading ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`
+                  : downloadPhase === 'preparing'
+                  ? `Preparing ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`
+                  : downloadModelView?.installed
+                  ? `Use ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`
+                  : `Download ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`}
+              </h2>
+              {downloadPhase === 'confirm' && (
+                <>
+                  <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                    {downloadTier
+                      ? generationModeDescriptions[downloadTier]
+                      : 'Improve local answer quality.'}
+                  </p>
+                  {downloadTier && tierWarningNeedsAcknowledgement(downloadTier) && (
+                    <p className="mt-3 text-xs leading-5 text-[var(--ledger-text-muted)]">
+                      {tierWarning(downloadTier)}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              {downloadPhase === 'downloading' && <button type="button" onClick={() => { setDownloadMinimized(true); advancedButtonRef.current?.focus(); }} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-label="Minimize model download"><Minimize2 size={14} /></button>}
-              <ModalCloseButton onClick={() => { if (downloadPhase === 'downloading') { downloadDismissedRef.current = true; setDownloadMinimized(true); } else if (downloadPhase !== 'preparing') setDownloadTier(null); }} ariaLabel="Hide model download" disabled={downloadPhase === 'preparing'} />
+              {downloadPhase === 'downloading' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDownloadMinimized(true);
+                    advancedButtonRef.current?.focus();
+                  }}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  aria-label="Minimize model download"
+                >
+                  <Minimize2 size={14} />
+                </button>
+              )}
+              <ModalCloseButton
+                onClick={() => {
+                  if (downloadPhase === 'downloading') {
+                    downloadDismissedRef.current = true;
+                    setDownloadMinimized(true);
+                  } else if (downloadPhase !== 'preparing') setDownloadTier(null);
+                }}
+                ariaLabel="Hide model download"
+                disabled={downloadPhase === 'preparing'}
+              />
             </div>
           </div>
           {downloadPhase === 'error' ? (
-            <div className="mt-5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3" role="alert"><p className="text-sm font-medium text-[var(--ledger-text-primary)]">Couldn’t download this model.</p><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{downloadError ?? 'Try again later.'}</p></div>
+            <div
+              className="mt-5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3"
+              role="alert"
+            >
+              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                Couldn’t download this model.
+              </p>
+              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                {downloadError ?? 'Try again later.'}
+              </p>
+            </div>
           ) : downloadPhase === 'preparing' ? (
-            <div className="mt-6 flex items-center gap-2 text-sm text-[var(--ledger-text-secondary)]" aria-live="polite"><LoaderCircle size={15} className="animate-spin text-[var(--ledger-text-muted)]" /> Switching Local AI model…</div>
+            <div
+              className="mt-6 flex items-center gap-2 text-sm text-[var(--ledger-text-secondary)]"
+              aria-live="polite"
+            >
+              <LoaderCircle size={15} className="animate-spin text-[var(--ledger-text-muted)]" />{' '}
+              Switching Local AI model…
+            </div>
           ) : downloadPhase === 'downloading' ? (
             <div className="mt-5" aria-live="polite">
-              <div className="flex items-center justify-between gap-4"><p className="text-sm font-medium text-[var(--ledger-text-primary)]">Downloading {downloadTier ? generationTierLabels[downloadTier] : 'model'}</p><span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{downloadModelView?.progressPercent ?? 0}%</span></div>
-              <p className="mt-3 text-xs tabular-nums text-[var(--ledger-text-secondary)]">{formatDownloadedBytes(downloadModelView?.bytesDownloaded)} of {formatLocalAIBytes(downloadModelView?.totalBytes ?? downloadModelView?.expectedSize)}</p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-label={`Downloading ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={downloadModelView?.progressPercent ?? 0}><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300" style={{ width: `${Math.max(downloadModelView?.progressPercent ?? 1, 1)}%` }} /></div>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                  Downloading {downloadTier ? generationTierLabels[downloadTier] : 'model'}
+                </p>
+                <span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">
+                  {downloadModelView?.progressPercent ?? 0}%
+                </span>
+              </div>
+              <p className="mt-3 text-xs tabular-nums text-[var(--ledger-text-secondary)]">
+                {formatDownloadedBytes(downloadModelView?.bytesDownloaded)} of{' '}
+                {formatLocalAIBytes(
+                  downloadModelView?.totalBytes ?? downloadModelView?.expectedSize
+                )}
+              </p>
+              <div
+                className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]"
+                role="progressbar"
+                aria-label={`Downloading ${
+                  downloadTier ? generationTierLabels[downloadTier] : 'model'
+                }`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={downloadModelView?.progressPercent ?? 0}
+              >
+                <div
+                  className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300"
+                  style={{ width: `${Math.max(downloadModelView?.progressPercent ?? 1, 1)}%` }}
+                />
+              </div>
             </div>
           ) : (
             <>
-              <div className="mt-5 space-y-2 text-xs"><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">Download size</span><span className="tabular-nums text-[var(--ledger-text-secondary)]">{formatLocalAIBytes(downloadModelView?.expectedSize, 'Unavailable')}</span></div><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">AI processing</span><span className="text-[var(--ledger-text-secondary)]">On this device</span></div></div>
+              <div className="mt-5 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[var(--ledger-text-muted)]">Download size</span>
+                  <span className="tabular-nums text-[var(--ledger-text-secondary)]">
+                    {formatLocalAIBytes(downloadModelView?.expectedSize, 'Unavailable')}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[var(--ledger-text-muted)]">AI processing</span>
+                  <span className="text-[var(--ledger-text-secondary)]">On this device</span>
+                </div>
+              </div>
             </>
           )}
           <div className="mt-6 flex justify-end gap-2">
-            {downloadPhase === 'downloading' ? <button type="button" onClick={cancelOptionalDownload} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button> : downloadPhase === 'preparing' ? null : downloadPhase === 'error' ? <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)]">Close</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} disabled={isSubmitting} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50">Try again</button></> : <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} disabled={isSubmitting || !downloadModelView?.available} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50">{downloadModelView?.installed ? 'Use & continue' : 'Download & use'}</button></>}
+            {downloadPhase === 'downloading' ? (
+              <button
+                type="button"
+                onClick={cancelOptionalDownload}
+                className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                Cancel
+              </button>
+            ) : downloadPhase === 'preparing' ? null : downloadPhase === 'error' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDownloadTier(null)}
+                  className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)]"
+                >
+                  Close
+                </button>
+                <button
+                  ref={downloadPrimaryButtonRef}
+                  type="button"
+                  onClick={() => void startOptionalDownload()}
+                  disabled={isSubmitting}
+                  className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Try again
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDownloadTier(null)}
+                  className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  ref={downloadPrimaryButtonRef}
+                  type="button"
+                  onClick={() => void startOptionalDownload()}
+                  disabled={isSubmitting || !downloadModelView?.available}
+                  className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {downloadModelView?.installed ? 'Use & continue' : 'Download & use'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </ModalOverlay>
@@ -2674,37 +4924,137 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">Set up Local AI</h2>
+              <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">
+                Set up Local AI
+              </h2>
             </div>
-            <ModalCloseButton onClick={closeSetupModal} ariaLabel="Close Local AI setup" disabled={localAISettingUp} />
+            <ModalCloseButton
+              onClick={closeSetupModal}
+              ariaLabel="Close Local AI setup"
+              disabled={localAISettingUp}
+            />
           </div>
 
           {setupError ? (
             <div className="mt-5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3">
-              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">{setupError.title}</p>
-              {setupError.detail && <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{setupError.detail}</p>}
+              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                {setupError.title}
+              </p>
+              {setupError.detail && (
+                <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{setupError.detail}</p>
+              )}
             </div>
           ) : localAISettingUp ? (
             <div className="mt-5">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Setting up Local AI</p>
-                {localAIVerifying ? <span className="inline-flex items-center gap-1.5 text-xs text-[var(--ledger-text-muted)]"><LoaderCircle size={12} className="animate-spin" /> Verifying files…</span> : <span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{localAIProgress}%</span>}
+                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                  Setting up Local AI
+                </p>
+                {localAIVerifying ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-[var(--ledger-text-muted)]">
+                    <LoaderCircle size={12} className="animate-spin" /> Verifying files…
+                  </span>
+                ) : (
+                  <span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">
+                    {localAIProgress}%
+                  </span>
+                )}
               </div>
-              {!localAIVerifying && <>
-                <p className="mt-4 text-xs text-[var(--ledger-text-muted)]">Downloading models…</p>
-                <p className="mt-1 text-xs tabular-nums text-[var(--ledger-text-secondary)]">{formatDownloadedBytes(localAIBytesDownloaded)} of {formatLocalAIBytes(localAITotalBytes)}</p>
-                <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-label="Local AI setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={localAIProgress}><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300" style={{ width: `${Math.max(localAIProgress, 1)}%` }} /></div>
-              </>}
-              <button type="button" onClick={() => { cancelLocalAISetup(); setSetupModalOpen(false); }} className="mt-4 text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">Cancel</button>
+              {!localAIVerifying && (
+                <>
+                  <p className="mt-4 text-xs text-[var(--ledger-text-muted)]">
+                    Downloading models…
+                  </p>
+                  <p className="mt-1 text-xs tabular-nums text-[var(--ledger-text-secondary)]">
+                    {formatDownloadedBytes(localAIBytesDownloaded)} of{' '}
+                    {formatLocalAIBytes(localAITotalBytes)}
+                  </p>
+                  <div
+                    className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]"
+                    role="progressbar"
+                    aria-label="Local AI setup progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={localAIProgress}
+                  >
+                    <div
+                      className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300"
+                      style={{ width: `${Math.max(localAIProgress, 1)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  cancelLocalAISetup();
+                  setSetupModalOpen(false);
+                }}
+                className="mt-4 text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+              >
+                Cancel
+              </button>
             </div>
           ) : (
             <>
-              <p className="mt-5 text-sm leading-6 text-[var(--ledger-text-secondary)]">AI processing runs on this device. A one-time download is required.</p>
-              <div className="mt-5 space-y-2 text-xs"><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">Download</span><span className="tabular-nums text-[var(--ledger-text-secondary)]">{formatLocalAIBytes(localAITotalBytes)}</span></div><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">AI processing</span><span className="text-[var(--ledger-text-secondary)]">On this device</span></div></div>
-              <div className="mt-5 flex items-center justify-end gap-2"><button type="button" onClick={openLocalAISettings} className="mr-auto rounded-md px-2 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Open settings</button><button type="button" onClick={closeSetupModal} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={startLocalAISetup} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85">Set up</button></div>
+              <p className="mt-5 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                AI processing runs on this device. A one-time download is required.
+              </p>
+              <div className="mt-5 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[var(--ledger-text-muted)]">Download</span>
+                  <span className="tabular-nums text-[var(--ledger-text-secondary)]">
+                    {formatLocalAIBytes(localAITotalBytes)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[var(--ledger-text-muted)]">AI processing</span>
+                  <span className="text-[var(--ledger-text-secondary)]">On this device</span>
+                </div>
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={openLocalAISettings}
+                  className="mr-auto rounded-md px-2 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  Open settings
+                </button>
+                <button
+                  type="button"
+                  onClick={closeSetupModal}
+                  className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={startLocalAISetup}
+                  className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85"
+                >
+                  Set up
+                </button>
+              </div>
             </>
           )}
-          {setupError && <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={closeSetupModal} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={startLocalAISetup} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85">Try again</button></div>}
+          {setupError && (
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeSetupModal}
+                className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={startLocalAISetup}
+                className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85"
+              >
+                Try again
+              </button>
+            </div>
+          )}
         </div>
       </ModalOverlay>
 
@@ -2713,8 +5063,21 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
             {displayedRequest}
           </p>
-          {activitySteps.length ? <AskLedgerActivityTrace steps={activitySteps} durationMs={state.status === 'answer' ? activityDurationMs : liveActivityDurationMs} active={state.status !== 'answer'} expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={generationPhrase} /> : null}
-          <p className={`mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${!state.response.answer ? 'ledger-ask-generating' : ''}`}>
+          {activitySteps.length ? (
+            <AskLedgerActivityTrace
+              steps={activitySteps}
+              durationMs={state.status === 'answer' ? activityDurationMs : liveActivityDurationMs}
+              active={state.status !== 'answer'}
+              expanded={activityExpanded}
+              onToggle={() => setActivityExpanded((current) => !current)}
+              generationPhrase={generationPhrase}
+            />
+          ) : null}
+          <p
+            className={`mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${
+              !state.response.answer ? 'ledger-ask-generating' : ''
+            }`}
+          >
             {state.response.answer || generationPhrase}
           </p>
           {state.status === 'answer' && state.response.sources.length > 0 && (

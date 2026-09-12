@@ -337,10 +337,12 @@ export function TodayList({
   const displayedNextUpItems = surfaceSection === 'next-up' ? eventSurfaceItems : nextUpItems;
   const nextUpIds = new Set(nextUpItems.map((item) => item.id));
   const allAttentionItems: MobileTodayInteractionItem[] = [
-    ...today
-      .filter((item) => item.status === 'overdue' && item.type !== 'focus')
-      .slice(0, 5),
-    ...projects.filter((project) => Boolean(project.attentionReason)),
+    ...new Map(
+      [
+        ...today.filter((item) => item.status === 'overdue' && item.type !== 'focus'),
+        ...projects.filter((project) => Boolean(project.attentionReason)),
+      ].map((item) => [item.id, item] as const),
+    ).values(),
   ];
   const attentionItems = attentionExpanded ? allAttentionItems : allAttentionItems.slice(0, 5);
   const attentionIds = new Set(attentionItems.map((item) => item.id));

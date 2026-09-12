@@ -13,7 +13,9 @@ import { registerCurrentMobilePushToken, revokeCurrentMobilePushToken } from '@/
 import { getMobileUserSettings, readMobileNotificationPreferences } from '@/api/userSettings';
 import { AppLoadingScreen } from '@/components/AppLoadingScreen';
 import { bootstrapAppPreferencesState, resetAppPreferencesState } from '@/store/appPreferencesStore';
+import { clearMobileResourceCache } from '@/lib/mobileResourceCache';
 import { useAuthState } from '@/store/sessionStore';
+import { resetWorkspaceState } from '@/store/workspaceStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
@@ -94,6 +96,8 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    resetWorkspaceState();
+    clearMobileResourceCache();
     void bootstrapNotificationOnboardingState(auth.user?.id ?? null);
   }, [auth.user?.id]);
 
@@ -201,12 +205,20 @@ export default function RootLayout() {
       return;
     }
 
-    let destination: '/auth/welcome' | '/' | null = null;
+    let destination: '/auth/welcome' | '/' | '/onboarding/workspace' | null = null;
 
     if (!auth.session && pathname !== '/' && !isPublicMobilePath(pathname)) {
       destination = '/auth/welcome';
     } else if (auth.session && isPublicMobilePath(pathname)) {
       destination = '/';
+    } else if (
+      auth.session &&
+      notificationOnboarding.userId === auth.user?.id &&
+      notificationOnboarding.isHydrated &&
+      !notificationOnboarding.workspaceSetupComplete &&
+      pathname !== '/onboarding/workspace'
+    ) {
+      destination = '/onboarding/workspace';
     }
 
     if (destination && destination !== pathname) {
@@ -217,6 +229,7 @@ export default function RootLayout() {
     auth.session,
     boot.isBootReady,
     notificationOnboarding.isComplete,
+    notificationOnboarding.workspaceSetupComplete,
     notificationOnboarding.isLoading,
     pathname,
     router,

@@ -4,7 +4,6 @@ import { Alert, Keyboard, Pressable, TouchableWithoutFeedback, View } from 'reac
 import { Eye, EyeOff } from 'lucide-react-native';
 
 import { AuthHeader } from '@/components/AuthHeader';
-import { AuthProductMockup } from '@/components/AuthProductMockup';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -61,7 +60,7 @@ export default function SignUpScreen() {
   }
 
   return (
-    <Screen contentStyle={{ paddingTop: 0 }}>
+    <Screen contentStyle={{ paddingTop: 0 }} topFade={false}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
           <AuthHeader
@@ -69,8 +68,6 @@ export default function SignUpScreen() {
             subtitle="Start with a clear view of what matters."
             align="left"
           />
-
-          <AuthProductMockup height={164} />
 
           <View style={styles.form}>
             <View

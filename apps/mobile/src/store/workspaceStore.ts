@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getMobileWorkspaces, mockWorkspaceScopeOptions } from '@/api/workspaces';
 import { getMobileUserSettings, updateMobileUserSettings } from '@/api/userSettings';
 import type { MobileWorkspaceScopeOption } from '@/types/ledger';
+import { getAuthState } from './sessionStore';
 
 const WORKSPACE_STORAGE_KEY = 'ledger-mobile-selected-workspace';
 const TODAY_SCOPE_STORAGE_KEY = 'ledger-mobile-today-scope-workspace';
@@ -48,6 +49,11 @@ const initialState: WorkspaceState = {
 let state = initialState;
 const listeners = new Set<() => void>();
 let hydrationPromise: Promise<void> | null = null;
+let hydrationUserId: string | null = null;
+
+function storageKey(key: string, userId = getAuthState().user?.id) {
+  return userId ? `${key}:${userId}` : key;
+}
 
 function emit() {
   for (const listener of listeners) listener();
@@ -100,7 +106,7 @@ export function setWorkspaceState(next: Partial<WorkspaceState>) {
 }
 
 export function selectWorkspace(workspaceId: string) {
-  void SecureStore.setItemAsync(WORKSPACE_STORAGE_KEY, workspaceId).catch(() => {
+  void SecureStore.setItemAsync(storageKey(WORKSPACE_STORAGE_KEY), workspaceId).catch(() => {
     // Ignore storage failures; workspace selection should still update in-memory.
   });
   void syncWorkspacePreferencesToServer({
@@ -114,7 +120,7 @@ export function selectWorkspace(workspaceId: string) {
 }
 
 export function setTodayScopeWorkspace(workspaceId: string) {
-  void SecureStore.setItemAsync(TODAY_SCOPE_STORAGE_KEY, workspaceId).catch(() => {
+  void SecureStore.setItemAsync(storageKey(TODAY_SCOPE_STORAGE_KEY), workspaceId).catch(() => {
     // Ignore storage failures; preference should still update in-memory.
   });
   void syncWorkspacePreferencesToServer({
@@ -127,7 +133,7 @@ export function setTodayScopeWorkspace(workspaceId: string) {
 }
 
 export function setDefaultCaptureWorkspace(workspaceId: string) {
-  void SecureStore.setItemAsync(DEFAULT_CAPTURE_STORAGE_KEY, workspaceId).catch(() => {
+  void SecureStore.setItemAsync(storageKey(DEFAULT_CAPTURE_STORAGE_KEY), workspaceId).catch(() => {
     // Ignore storage failures; preference should still update in-memory.
   });
   void syncWorkspacePreferencesToServer({
@@ -139,7 +145,7 @@ export function setDefaultCaptureWorkspace(workspaceId: string) {
 }
 
 export function setDefaultSiriWorkspace(workspaceId: string) {
-  void SecureStore.setItemAsync(DEFAULT_SIRI_STORAGE_KEY, workspaceId).catch(() => {
+  void SecureStore.setItemAsync(storageKey(DEFAULT_SIRI_STORAGE_KEY), workspaceId).catch(() => {
     // Ignore storage failures; preference should still update in-memory.
   });
   void syncWorkspacePreferencesToServer({
@@ -161,7 +167,7 @@ export function setSiriAskEveryTime(siriAskEveryTime: boolean) {
 
 export function setRememberLastWorkspace(rememberLastWorkspace: boolean) {
   void SecureStore.setItemAsync(
-    REMEMBER_LAST_WORKSPACE_STORAGE_KEY,
+    storageKey(REMEMBER_LAST_WORKSPACE_STORAGE_KEY),
     rememberLastWorkspace ? 'true' : 'false',
   ).catch(() => {
     // Ignore storage failures; preference should still update in-memory.
@@ -233,11 +239,22 @@ export function resolveSiriCaptureWorkspaceId(state = getWorkspaceState()) {
   return firstWorkspaceId ?? null;
 }
 
-export async function bootstrapWorkspaceState() {
-  if (hydrationPromise) {
-    await hydrationPromise;
+export async function bootstrapWorkspaceState(userId = getAuthState().user?.id ?? null) {
+  if (!userId) {
+    resetWorkspaceState();
     return;
   }
+
+  if (hydrationPromise) {
+    const activeHydration = hydrationPromise;
+    await activeHydration;
+    if (hydrationUserId !== userId) {
+      await bootstrapWorkspaceState(userId);
+    }
+    return;
+  }
+
+  hydrationUserId = userId;
 
   hydrationPromise = (async () => {
     if (state.isHydrated) {
@@ -255,11 +272,11 @@ export async function bootstrapWorkspaceState() {
         savedRememberLastWorkspace,
       ] =
         await Promise.all([
-          SecureStore.getItemAsync(WORKSPACE_STORAGE_KEY).catch(() => null),
-          SecureStore.getItemAsync(TODAY_SCOPE_STORAGE_KEY).catch(() => null),
-          SecureStore.getItemAsync(DEFAULT_CAPTURE_STORAGE_KEY).catch(() => null),
-          SecureStore.getItemAsync(DEFAULT_SIRI_STORAGE_KEY).catch(() => null),
-          SecureStore.getItemAsync(REMEMBER_LAST_WORKSPACE_STORAGE_KEY).catch(() => null),
+          SecureStore.getItemAsync(storageKey(WORKSPACE_STORAGE_KEY, userId)).catch(() => null),
+          SecureStore.getItemAsync(storageKey(TODAY_SCOPE_STORAGE_KEY, userId)).catch(() => null),
+          SecureStore.getItemAsync(storageKey(DEFAULT_CAPTURE_STORAGE_KEY, userId)).catch(() => null),
+          SecureStore.getItemAsync(storageKey(DEFAULT_SIRI_STORAGE_KEY, userId)).catch(() => null),
+          SecureStore.getItemAsync(storageKey(REMEMBER_LAST_WORKSPACE_STORAGE_KEY, userId)).catch(() => null),
         ]);
 
       const [userSettings, response] = await Promise.all([getMobileUserSettings(), getMobileWorkspaces()]);
@@ -302,16 +319,16 @@ export async function bootstrapWorkspaceState() {
       if (hasRealWorkspaceIds) {
         const cleanupTasks: Promise<unknown>[] = [];
         if (savedWorkspaceId && !isLikelyUuid(savedWorkspaceId)) {
-          cleanupTasks.push(SecureStore.deleteItemAsync(WORKSPACE_STORAGE_KEY));
+          cleanupTasks.push(SecureStore.deleteItemAsync(storageKey(WORKSPACE_STORAGE_KEY, userId)));
         }
         if (savedTodayScopeWorkspaceId && !isLikelyUuid(savedTodayScopeWorkspaceId)) {
-          cleanupTasks.push(SecureStore.deleteItemAsync(TODAY_SCOPE_STORAGE_KEY));
+          cleanupTasks.push(SecureStore.deleteItemAsync(storageKey(TODAY_SCOPE_STORAGE_KEY, userId)));
         }
         if (savedDefaultCaptureWorkspaceId && !isLikelyUuid(savedDefaultCaptureWorkspaceId)) {
-          cleanupTasks.push(SecureStore.deleteItemAsync(DEFAULT_CAPTURE_STORAGE_KEY));
+          cleanupTasks.push(SecureStore.deleteItemAsync(storageKey(DEFAULT_CAPTURE_STORAGE_KEY, userId)));
         }
         if (savedDefaultSiriWorkspaceId && !isLikelyUuid(savedDefaultSiriWorkspaceId)) {
-          cleanupTasks.push(SecureStore.deleteItemAsync(DEFAULT_SIRI_STORAGE_KEY));
+          cleanupTasks.push(SecureStore.deleteItemAsync(storageKey(DEFAULT_SIRI_STORAGE_KEY, userId)));
         }
         if (cleanupTasks.length > 0) {
           void Promise.allSettled(cleanupTasks);
@@ -363,11 +380,11 @@ export async function bootstrapWorkspaceState() {
         rememberLastWorkspace,
       });
     } catch {
-      const savedWorkspaceId = await SecureStore.getItemAsync(WORKSPACE_STORAGE_KEY).catch(() => null);
-      const savedTodayScopeWorkspaceId = await SecureStore.getItemAsync(TODAY_SCOPE_STORAGE_KEY).catch(() => null);
-      const savedDefaultCaptureWorkspaceId = await SecureStore.getItemAsync(DEFAULT_CAPTURE_STORAGE_KEY).catch(() => null);
-      const savedDefaultSiriWorkspaceId = await SecureStore.getItemAsync(DEFAULT_SIRI_STORAGE_KEY).catch(() => null);
-      const savedRememberLastWorkspace = await SecureStore.getItemAsync(REMEMBER_LAST_WORKSPACE_STORAGE_KEY).catch(() => null);
+      const savedWorkspaceId = await SecureStore.getItemAsync(storageKey(WORKSPACE_STORAGE_KEY, userId)).catch(() => null);
+      const savedTodayScopeWorkspaceId = await SecureStore.getItemAsync(storageKey(TODAY_SCOPE_STORAGE_KEY, userId)).catch(() => null);
+      const savedDefaultCaptureWorkspaceId = await SecureStore.getItemAsync(storageKey(DEFAULT_CAPTURE_STORAGE_KEY, userId)).catch(() => null);
+      const savedDefaultSiriWorkspaceId = await SecureStore.getItemAsync(storageKey(DEFAULT_SIRI_STORAGE_KEY, userId)).catch(() => null);
+      const savedRememberLastWorkspace = await SecureStore.getItemAsync(storageKey(REMEMBER_LAST_WORKSPACE_STORAGE_KEY, userId)).catch(() => null);
       setWorkspaceState({
         isLoading: false,
         isHydrated: true,
@@ -401,5 +418,6 @@ export async function bootstrapWorkspaceState() {
     await hydrationPromise;
   } finally {
     hydrationPromise = null;
+    hydrationUserId = null;
   }
 }

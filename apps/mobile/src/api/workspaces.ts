@@ -40,8 +40,24 @@ type MobileWorkspacesResponse = {
   scopeOptions: MobileWorkspaceScopeOption[];
 };
 
+type MobileWorkspaceOnboardingResponse = {
+  workspace_id: string;
+  workspace: {
+    id: string;
+    name: string;
+    is_personal: boolean;
+  };
+};
+
 export async function getMobileWorkspaces() {
   return mobileRequest<MobileWorkspacesResponse>('/api/mobile/workspaces');
+}
+
+export async function configureMobileWorkspace(payload: { name: string; isPersonal: boolean }) {
+  return mobileRequest<MobileWorkspaceOnboardingResponse>('/api/mobile/onboarding/workspace', {
+    method: 'PATCH',
+    body: JSON.stringify({ name: payload.name, is_personal: payload.isPersonal }),
+  });
 }
 
 export async function loadMobileWorkspaceScopeOptions() {

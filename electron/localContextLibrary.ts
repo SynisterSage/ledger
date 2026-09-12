@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import * as XLSX from 'xlsx';
 import type {
   LocalContextFile,
   LocalContextFileStatus,
@@ -9,12 +10,21 @@ import type {
   LocalContextTargetType,
 } from '../src/types/localContextLibrary.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
-import { chunkAttachmentBlocks, extractAttachmentBlocks, type ExtractedAttachmentBlock } from './askLedgerAttachmentService.ts';
+import {
+  chunkAttachmentBlocks,
+  extractAttachmentBlocks,
+  type ExtractedAttachmentBlock,
+} from './askLedgerAttachmentService.ts';
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 const SUPPORTED = new Map([
   ['pdf', 'application/pdf'],
+  ['png', 'image/png'],
+  ['jpg', 'image/jpeg'],
+  ['jpeg', 'image/jpeg'],
+  ['webp', 'image/webp'],
+  ['gif', 'image/gif'],
   ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   ['txt', 'text/plain'],
   ['md', 'text/markdown'],
@@ -62,12 +72,22 @@ export class LocalContextLibrary {
 
   private async indexRecord(record: LocalContextFile) {
     const bytes = await fs.readFile(path.join(this.root, record.relativePath));
-    const blocks = chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
-    await fs.writeFile(path.join(this.root, indexName(record.id)), JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }), { mode: 0o600 });
+    const blocks = record.mimeType.startsWith('image/')
+      ? []
+      : chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
+    await fs.writeFile(
+      path.join(this.root, indexName(record.id)),
+      JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }),
+      { mode: 0o600 }
+    );
     return blocks;
   }
 
-  private validateOwnerAndWorkspace(record: LocalContextFile, ownerUserId: string, workspaceId: string) {
+  private validateOwnerAndWorkspace(
+    record: LocalContextFile,
+    ownerUserId: string,
+    workspaceId: string
+  ) {
     if (record.ownerUserId !== ownerUserId || record.workspaceId !== workspaceId) {
       throw new LocalContextLibraryError('Local file is not available in this workspace.');
     }
@@ -79,13 +99,23 @@ export class LocalContextLibrary {
     await this.ensureRoot();
     let record: LocalContextManifest;
     try {
-      record = JSON.parse(await fs.readFile(path.join(this.root, manifestName(id)), 'utf8')) as LocalContextManifest;
+      record = JSON.parse(
+        await fs.readFile(path.join(this.root, manifestName(id)), 'utf8')
+      ) as LocalContextManifest;
     } catch {
       return null;
     }
-    if (!record || record.id !== id || !isWithinRoot(this.root, path.resolve(this.root, record.relativePath))) return null;
+    if (
+      !record ||
+      record.id !== id ||
+      !isWithinRoot(this.root, path.resolve(this.root, record.relativePath))
+    )
+      return null;
     const absolutePath = path.resolve(this.root, record.relativePath);
-    const exists = await fs.stat(absolutePath).then((value) => value.isFile()).catch(() => false);
+    const exists = await fs
+      .stat(absolutePath)
+      .then((value) => value.isFile())
+      .catch(() => false);
     if (!exists && record.status !== 'missing') {
       record = { ...record, status: 'missing' };
     }
@@ -93,8 +123,14 @@ export class LocalContextLibrary {
     return record;
   }
 
-  async importFiles(paths: string[], ownerUserId: string, workspaceId: string, options?: { expiresAt?: string }): Promise<LocalContextFile[]> {
-    if (!ownerUserId.trim() || !workspaceId.trim()) throw new LocalContextLibraryError('Account and workspace are required.');
+  async importFiles(
+    paths: string[],
+    ownerUserId: string,
+    workspaceId: string,
+    options?: { expiresAt?: string }
+  ): Promise<LocalContextFile[]> {
+    if (!ownerUserId.trim() || !workspaceId.trim())
+      throw new LocalContextLibraryError('Account and workspace are required.');
     if (!paths.length) return [];
     await this.ensureRoot();
     const imported: LocalContextFile[] = [];
@@ -104,12 +140,17 @@ export class LocalContextLibrary {
     for (const sourcePath of paths) {
       const originalPath = path.resolve(sourcePath);
       const source = await fs.stat(originalPath).catch(() => null);
-      if (!source?.isFile()) throw new LocalContextLibraryError('Only regular files can be imported.');
-      if (source.size > MAX_FILE_BYTES) throw new LocalContextLibraryError('Each local file must be 50 MB or smaller.');
+      if (!source?.isFile())
+        throw new LocalContextLibraryError('Only regular files can be imported.');
+      if (source.size > MAX_FILE_BYTES)
+        throw new LocalContextLibraryError('Each local file must be 50 MB or smaller.');
       const name = path.basename(originalPath);
       const extension = extensionFor(name);
       const mimeType = SUPPORTED.get(extension);
-      if (!mimeType) throw new LocalContextLibraryError(`Unsupported local file type: .${extension || 'unknown'}.`);
+      if (!mimeType)
+        throw new LocalContextLibraryError(
+          `Unsupported local file type: .${extension || 'unknown'}.`
+        );
       const bytes = await fs.readFile(originalPath);
       const contentHash = createHash('sha256').update(bytes).digest('hex');
       const duplicate = existingByHash.get(contentHash);
@@ -162,7 +203,9 @@ export class LocalContextLibrary {
     await this.ensureRoot();
     const names = await fs.readdir(this.root);
     const records = await Promise.all(
-      names.filter((name) => name.endsWith('.json')).map((name) => this.loadRecord(name.slice(0, -5)))
+      names
+        .filter((name) => name.endsWith('.json'))
+        .map((name) => this.loadRecord(name.slice(0, -5)))
     );
     return records
       .filter((record): record is LocalContextFile => Boolean(record))
@@ -175,25 +218,39 @@ export class LocalContextLibrary {
     return { files, totalBytes: files.reduce((total, record) => total + record.sizeBytes, 0) };
   }
 
-  async contextDocuments(ownerUserId: string, workspaceId: string): Promise<AskLedgerContextItem[]> {
+  async contextDocuments(
+    ownerUserId: string,
+    workspaceId: string
+  ): Promise<AskLedgerContextItem[]> {
     const records = await this.list(ownerUserId, workspaceId);
     const documents: AskLedgerContextItem[] = [];
     for (const record of records) {
       if (record.status !== 'ready') continue;
       try {
-        const indexed = JSON.parse(await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
-        if (indexed.fileId !== record.id || indexed.contentHash !== record.contentHash || !Array.isArray(indexed.blocks)) continue;
-        indexed.blocks.forEach((block, index) => documents.push({
-          workspaceId,
-          resourceType: 'attachment',
-          resourceId: `local:${record.id}:${index}`,
-          title: record.name,
-          content: block.text,
-          sourceLabel: `On this device · ${record.extension.toUpperCase()}${block.source.pageNumber ? ` · Page ${block.source.pageNumber}` : ''}`,
-          provenance: 'Local file library',
-          route: { kind: 'local-context-file', fileId: record.id },
-          metadata: { localFileId: record.id, localFileName: record.name },
-        }));
+        const indexed = JSON.parse(
+          await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')
+        ) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
+        if (
+          indexed.fileId !== record.id ||
+          indexed.contentHash !== record.contentHash ||
+          !Array.isArray(indexed.blocks)
+        )
+          continue;
+        indexed.blocks.forEach((block, index) =>
+          documents.push({
+            workspaceId,
+            resourceType: 'attachment',
+            resourceId: `local:${record.id}:${index}`,
+            title: record.name,
+            content: block.text,
+            sourceLabel: `On this device · ${record.extension.toUpperCase()}${
+              block.source.pageNumber ? ` · Page ${block.source.pageNumber}` : ''
+            }`,
+            provenance: 'Local file library',
+            route: { kind: 'local-context-file', fileId: record.id, ...block.source },
+            metadata: { localFileId: record.id, localFileName: record.name },
+          })
+        );
       } catch {
         // A file without a valid local index is not safe to provide as context.
       }
@@ -206,8 +263,77 @@ export class LocalContextLibrary {
     if (!record) return null;
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
     const absolutePath = path.resolve(this.root, record.relativePath);
-    const exists = await fs.stat(absolutePath).then((value) => value.isFile()).catch(() => false);
+    const exists = await fs
+      .stat(absolutePath)
+      .then((value) => value.isFile())
+      .catch(() => false);
     return exists ? absolutePath : null;
+  }
+
+  async preview(id: string, ownerUserId: string, workspaceId: string) {
+    const record = await this.loadRecord(id);
+    if (!record) return null;
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    const absolutePath = path.resolve(this.root, record.relativePath);
+    const bytes = await fs.readFile(absolutePath).catch(() => null);
+    if (!bytes)
+      return { kind: 'unavailable' as const, message: 'This local file is no longer available.' };
+    if (record.mimeType.startsWith('image/') || record.mimeType === 'application/pdf') {
+      if (bytes.byteLength > 25 * 1024 * 1024)
+        return { kind: 'unavailable' as const, message: 'This file is too large to preview here.' };
+      return {
+        kind: 'binary' as const,
+        mimeType: record.mimeType,
+        dataUrl: `data:${record.mimeType};base64,${bytes.toString('base64')}`,
+      };
+    }
+    if (record.extension === 'csv' || record.extension === 'xlsx') {
+      const workbook = XLSX.read(bytes, { type: 'buffer', cellDates: true });
+      const sheets = workbook.SheetNames.slice(0, 20).map((name) => {
+        const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[name], { header: 1, raw: false, defval: '', blankrows: false }).slice(0, 201) as unknown[][];
+        const width = Math.min(30, Math.max(1, ...matrix.map((row) => row.length)));
+        const headers = Array.from({ length: width }, (_, index) => String(matrix[0]?.[index] ?? `Column ${index + 1}`));
+        const rows = matrix.slice(1).map((row) => Array.from({ length: width }, (_, index) => String(row[index] ?? '')));
+        return { name, headers, rows };
+      });
+      return { kind: 'table' as const, sheets };
+    }
+    try {
+      const text =
+        record.extension === 'txt' || record.extension === 'md' || record.extension === 'csv'
+          ? bytes.toString('utf8')
+          : extractAttachmentBlocks(bytes, record.name)
+              .map((block) => block.text)
+              .join('\n\n');
+      return {
+        kind: 'text' as const,
+        text,
+        readOnly: !['txt', 'md', 'csv'].includes(record.extension),
+      };
+    } catch {
+      return {
+        kind: 'unavailable' as const,
+        message: 'Ledger could not preview this file safely.',
+      };
+    }
+  }
+
+  async saveText(id: string, ownerUserId: string, workspaceId: string, text: string) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    if (!['txt', 'md', 'csv'].includes(record.extension)) throw new LocalContextLibraryError('This file type is read-only in Ledger.');
+    const bytes = Buffer.from(text, 'utf8');
+    if (bytes.byteLength > MAX_FILE_BYTES) throw new LocalContextLibraryError('This file must be 50 MB or smaller.');
+    const absolutePath = path.resolve(this.root, record.relativePath);
+    const temporaryPath = `${absolutePath}.tmp`;
+    await fs.writeFile(temporaryPath, bytes, { mode: 0o600 });
+    await fs.rename(temporaryPath, absolutePath);
+    const updated: LocalContextFile = { ...record, sizeBytes: bytes.byteLength, contentHash: createHash('sha256').update(bytes).digest('hex'), updatedAt: now(), status: 'ready' };
+    await this.indexRecord(updated);
+    await this.writeManifest(updated);
+    this.records.set(id, updated);
+    return updated;
   }
 
   async markUsed(id: string, ownerUserId: string, workspaceId: string) {
@@ -220,24 +346,46 @@ export class LocalContextLibrary {
     return updated;
   }
 
-  async link(id: string, ownerUserId: string, workspaceId: string, targetType: LocalContextTargetType, targetId: string) {
+  async link(
+    id: string,
+    ownerUserId: string,
+    workspaceId: string,
+    targetType: LocalContextTargetType,
+    targetId: string
+  ) {
     if (!targetId.trim()) throw new LocalContextLibraryError('A linked Ledger item is required.');
     const record = await this.loadRecord(id);
     if (!record) throw new LocalContextLibraryError('Local file not found.');
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
-    const existing = record.links.find((link) => link.targetType === targetType && link.targetId === targetId);
+    const existing = record.links.find(
+      (link) => link.targetType === targetType && link.targetId === targetId
+    );
     const link: LocalContextLink = existing ?? { targetType, targetId, createdAt: now() };
-    const updated = existing ? record : { ...record, links: [...record.links, link], updatedAt: now() };
+    const updated = existing
+      ? record
+      : { ...record, links: [...record.links, link], updatedAt: now() };
     this.records.set(id, updated);
     await this.writeManifest(updated);
     return updated;
   }
 
-  async unlink(id: string, ownerUserId: string, workspaceId: string, targetType: LocalContextTargetType, targetId: string) {
+  async unlink(
+    id: string,
+    ownerUserId: string,
+    workspaceId: string,
+    targetType: LocalContextTargetType,
+    targetId: string
+  ) {
     const record = await this.loadRecord(id);
     if (!record) throw new LocalContextLibraryError('Local file not found.');
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
-    const updated = { ...record, links: record.links.filter((link) => link.targetType !== targetType || link.targetId !== targetId), updatedAt: now() };
+    const updated = {
+      ...record,
+      links: record.links.filter(
+        (link) => link.targetType !== targetType || link.targetId !== targetId
+      ),
+      updatedAt: now(),
+    };
     this.records.set(id, updated);
     await this.writeManifest(updated);
     return updated;
@@ -248,7 +396,8 @@ export class LocalContextLibrary {
     if (!record) return false;
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
     const absolutePath = path.resolve(this.root, record.relativePath);
-    if (!isWithinRoot(this.root, absolutePath)) throw new LocalContextLibraryError('Invalid local file path.');
+    if (!isWithinRoot(this.root, absolutePath))
+      throw new LocalContextLibraryError('Invalid local file path.');
     await fs.rm(absolutePath, { force: true });
     await fs.rm(path.join(this.root, manifestName(id)), { force: true });
     await fs.rm(path.join(this.root, indexName(id)), { force: true });
@@ -260,20 +409,36 @@ export class LocalContextLibrary {
     if (retentionDays === undefined) return 0;
     const cutoff = Date.now() - retentionDays * 86_400_000;
     const records = await this.list(ownerUserId, workspaceId);
-    const expired = records.filter((record) => (record.expiresAt ? Date.parse(record.expiresAt) <= Date.now() : retentionDays !== undefined && Date.parse(record.lastUsedAt ?? record.updatedAt ?? record.createdAt) < cutoff));
+    const expired = records.filter((record) =>
+      record.expiresAt
+        ? Date.parse(record.expiresAt) <= Date.now()
+        : retentionDays !== undefined &&
+          Date.parse(record.lastUsedAt ?? record.updatedAt ?? record.createdAt) < cutoff
+    );
     await Promise.all(expired.map((record) => this.remove(record.id, ownerUserId, workspaceId)));
     return expired.length;
   }
 
   async clearAccount(ownerUserId: string) {
     const names = await fs.readdir(this.root).catch(() => [] as string[]);
-    const records = await Promise.all(names.filter((name) => name.endsWith('.json')).map((name) => this.loadRecord(name.slice(0, -5))));
+    const records = await Promise.all(
+      names
+        .filter((name) => name.endsWith('.json'))
+        .map((name) => this.loadRecord(name.slice(0, -5)))
+    );
     const ownedRecords = records.filter((record): record is LocalContextFile => {
       if (!record) return false;
       return record.ownerUserId === ownerUserId;
     });
-    await Promise.all(ownedRecords.map((record) => this.remove(record.id, ownerUserId, record.workspaceId)));
+    await Promise.all(
+      ownedRecords.map((record) => this.remove(record.id, ownerUserId, record.workspaceId))
+    );
   }
 }
 
-export const localContextFileStatus = (record: LocalContextFile, root: string): LocalContextFileStatus => record.status || (isWithinRoot(path.resolve(root), path.resolve(root, record.relativePath)) ? 'ready' : 'failed');
+export const localContextFileStatus = (
+  record: LocalContextFile,
+  root: string
+): LocalContextFileStatus =>
+  record.status ||
+  (isWithinRoot(path.resolve(root), path.resolve(root, record.relativePath)) ? 'ready' : 'failed');

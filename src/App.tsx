@@ -4246,15 +4246,12 @@ export function DashboardContent({
       void refreshTodayTasks();
       if (row.kind === 'task' && target.starter_key) {
         setStarterTasks((current) =>
-          current.map((task) =>
-            task.id === target.id ? { ...task, status: 'completed' } : task
-          )
+          current.map((task) => (task.id === target.id ? { ...task, status: 'completed' } : task))
         );
       }
       const pending = readStarterOnboardingReturn();
       const isStarterTask =
-        row.kind === 'task' &&
-        (Boolean(target.starter_key) || pending?.taskId === target.id);
+        row.kind === 'task' && (Boolean(target.starter_key) || pending?.taskId === target.id);
       const returnProjectId = target.project_id ?? pending?.projectId ?? null;
       if (isStarterTask && returnProjectId && activeWorkspaceId) {
         if (pending?.workspaceId === activeWorkspaceId && pending.taskId === target.id) {
@@ -4566,25 +4563,85 @@ export function DashboardContent({
 
   const overviewTryItems = [
     { title: 'Connect calendar', icon: CalendarDays, action: openOverviewCalendarConnection },
-    { title: 'Try project roadmap', icon: FolderKanban, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }) },
-    { title: 'Invite a member', icon: UserPlus, action: () => openOverviewTryModule('teams', { focusContext: 'try:invite-member' }) },
-    { title: 'Add a milestone', icon: Milestone, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all', focusContext: 'try:add-milestone' }) },
-    { title: 'Review unfinished', icon: CheckSquare2, action: () => openOverviewTryModule('dashboard', { focusSection: 'today' }) },
-    { title: 'Install browser extension', icon: Plug2, action: () => openOverviewTryModule('settings', { focusContext: 'integrations' }) },
-    { title: 'Create a meeting note', icon: FileText, action: () => openOverviewTryModule('quick-note') },
-    { title: 'Link a note to a project', icon: Link2, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }) },
-    { title: 'Try long-term tasks', icon: Check, action: () => openOverviewTryModule('quick-task') },
-    { title: 'See all shortcuts', icon: Keyboard, action: () => openOverviewTryModule('settings', { focusContext: 'shortcuts' }) },
-    { title: 'Try a note template', icon: FileText, action: () => openOverviewTryModule('notes', { focusContext: 'try:template' }) },
-    { title: 'Review Intake', icon: Funnel, action: () => openOverviewTryModule('inbox', { focusSection: 'unprocessed' }) },
-    { title: 'Open Circle', icon: CircleUserRound, action: () => openOverviewTryModule('circle', { focusContext: 'overview' }) },
-    { title: 'Create a team meeting note', icon: Users, action: () => openOverviewTryModule('notes', { focusContext: 'try:team-meeting-template' }) },
+    {
+      title: 'Try project roadmap',
+      icon: FolderKanban,
+      action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }),
+    },
+    {
+      title: 'Invite a member',
+      icon: UserPlus,
+      action: () => openOverviewTryModule('teams', { focusContext: 'try:invite-member' }),
+    },
+    {
+      title: 'Add a milestone',
+      icon: Milestone,
+      action: () =>
+        openOverviewTryModule('projects', {
+          focusSection: 'timeline:all',
+          focusContext: 'try:add-milestone',
+        }),
+    },
+    {
+      title: 'Review unfinished',
+      icon: CheckSquare2,
+      action: () => openOverviewTryModule('dashboard', { focusSection: 'today' }),
+    },
+    {
+      title: 'Install browser extension',
+      icon: Plug2,
+      action: () => openOverviewTryModule('settings', { focusContext: 'integrations' }),
+    },
+    {
+      title: 'Create a meeting note',
+      icon: FileText,
+      action: () => openOverviewTryModule('quick-note'),
+    },
+    {
+      title: 'Link a note to a project',
+      icon: Link2,
+      action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }),
+    },
+    {
+      title: 'Try long-term tasks',
+      icon: Check,
+      action: () => openOverviewTryModule('quick-task'),
+    },
+    {
+      title: 'See all shortcuts',
+      icon: Keyboard,
+      action: () => openOverviewTryModule('settings', { focusContext: 'shortcuts' }),
+    },
+    {
+      title: 'Try a note template',
+      icon: FileText,
+      action: () => openOverviewTryModule('notes', { focusContext: 'try:template' }),
+    },
+    {
+      title: 'Review Intake',
+      icon: Funnel,
+      action: () => openOverviewTryModule('inbox', { focusSection: 'unprocessed' }),
+    },
+    {
+      title: 'Open Circle',
+      icon: CircleUserRound,
+      action: () => openOverviewTryModule('circle', { focusContext: 'overview' }),
+    },
+    {
+      title: 'Create a team meeting note',
+      icon: Users,
+      action: () => openOverviewTryModule('notes', { focusContext: 'try:team-meeting-template' }),
+    },
   ];
   const visibleOverviewTryItems = isPersonalWorkspace
-    ? overviewTryItems.filter((item) => !['Invite a member', 'Open Circle', 'Create a team meeting note'].includes(item.title))
+    ? overviewTryItems.filter(
+        (item) =>
+          !['Invite a member', 'Open Circle', 'Create a team meeting note'].includes(item.title)
+      )
     : overviewTryItems;
   const overviewTryStart = visibleOverviewTryItems.length
-    ? (Number(todayKey().replace(/-/g, '')) + overviewTryRotationTick) % visibleOverviewTryItems.length
+    ? (Number(todayKey().replace(/-/g, '')) + overviewTryRotationTick) %
+      visibleOverviewTryItems.length
     : 0;
   const overviewTryItem = visibleOverviewTryItems[overviewTryStart];
 
@@ -5803,7 +5860,9 @@ export function DashboardContent({
         status: 'completed',
       });
       setStarterTasks((current) =>
-        current.map((task) => (task.id === nextStarterTask.id ? { ...task, status: 'completed' } : task))
+        current.map((task) =>
+          task.id === nextStarterTask.id ? { ...task, status: 'completed' } : task
+        )
       );
       clearStarterOnboardingReturn();
       toast.show('Step complete', {
@@ -7390,12 +7449,16 @@ export function DashboardContent({
                         if (nextStarterTask?.starter_key?.endsWith(':review')) {
                           void openStarterReview();
                         } else {
-                          platform.navigation.openRoute(routeForProject(activeWorkspaceId ?? '', starterProjectId));
+                          platform.navigation.openRoute(
+                            routeForProject(activeWorkspaceId ?? '', starterProjectId)
+                          );
                         }
                       }}
                       className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent-hover)]"
                     >
-                      {nextStarterTask?.starter_key?.endsWith(':review') ? 'Open check-in' : 'Open guide'}
+                      {nextStarterTask?.starter_key?.endsWith(':review')
+                        ? 'Open check-in'
+                        : 'Open guide'}
                     </button>
                   )}
                 </div>
@@ -7767,7 +7830,11 @@ export function DashboardContent({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
-                            <LedgerLensWheel size={16} state={overviewFocusStatus} label="Lens status" />
+                            <LedgerLensWheel
+                              size={16}
+                              state={overviewFocusStatus}
+                              label="Lens status"
+                            />
                             <p
                               id="overview-lens-heading"
                               className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
@@ -7885,7 +7952,11 @@ export function DashboardContent({
                           className="block w-full pt-2 text-left transition hover:text-[var(--ledger-text-primary)]"
                         >
                           <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                            <overviewTryItem.icon size={11} className="shrink-0" aria-hidden="true" />
+                            <overviewTryItem.icon
+                              size={11}
+                              className="shrink-0"
+                              aria-hidden="true"
+                            />
                             Try next
                           </p>
                           <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
@@ -9232,10 +9303,7 @@ export function AppShell({
             Boolean(nextRoute.focusProjectId) ||
             Boolean(nextRoute.focusTaskId),
           resourceId:
-            nextRoute.focusNoteId ??
-            nextRoute.focusProjectId ??
-            nextRoute.focusTaskId ??
-            null,
+            nextRoute.focusNoteId ?? nextRoute.focusProjectId ?? nextRoute.focusTaskId ?? null,
         },
       });
       setWorkspaceShellRoute(nextRoute);
@@ -9286,9 +9354,7 @@ export function AppShell({
 
   useEffect(() => {
     if (!activeKeepAliveModuleKey) return;
-    setVisitedModuleKeys((current) =>
-      touchKeepAliveModules(current, activeKeepAliveModuleKey)
-    );
+    setVisitedModuleKeys((current) => touchKeepAliveModules(current, activeKeepAliveModuleKey));
     window.desktopWindow?.reportPerformance?.({
       name: 'keepalive.updated',
       details: { active: activeKeepAliveModuleKey },
@@ -9549,7 +9615,8 @@ export function AppShell({
     };
     const subscription = window.ledgerIpc?.events?.onTouchbarAction?.(handleTouchBarAction);
     return () => {
-      if (typeof subscription === 'string') window.ledgerIpc?.events?.offTouchbarAction?.(subscription);
+      if (typeof subscription === 'string')
+        window.ledgerIpc?.events?.offTouchbarAction?.(subscription);
     };
   }, []);
 
@@ -9695,7 +9762,7 @@ export function AppShell({
         case 'slack':
           return <SlackWindow routeWorkspaceId={workspaceSlackMatch?.[1] ?? null} />;
         case 'files':
-          return <FilesWindow />;
+          return <FilesWindow focusContext={activeModuleFocusContext} />;
         case 'settings':
           return <SettingsWindow />;
       }

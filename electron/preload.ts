@@ -902,11 +902,15 @@ contextBridge.exposeInMainWorld('meetingAudio', {
 });
 
 contextBridge.exposeInMainWorld('localCapturePrivacy', {
-  get() { return ipcRenderer.invoke('local-capture-privacy:get'); },
+  get() {
+    return ipcRenderer.invoke('local-capture-privacy:get');
+  },
   set(payload: { scanImageRetention: 'delete_after_processing' | 'retain_until_deleted' }) {
     return ipcRenderer.invoke('local-capture-privacy:set', payload);
   },
-  deleteAll() { return ipcRenderer.invoke('local-capture-privacy:delete-all'); },
+  deleteAll() {
+    return ipcRenderer.invoke('local-capture-privacy:delete-all');
+  },
 });
 
 contextBridge.exposeInMainWorld('speakerTags', {
@@ -983,19 +987,51 @@ contextBridge.exposeInMainWorld('noteOcr', {
   cancelVisionModelDownload() {
     return ipcRenderer.invoke('note-ocr:vision-cancel-download');
   },
-  onVisionProgress(listener: (status: { available: boolean; downloading: boolean; progressPercent: number; totalBytes: number }) => void) {
-    const wrapped = (_event: Electron.IpcRendererEvent, status: { available: boolean; downloading: boolean; progressPercent: number; totalBytes: number }) => listener(status);
+  onVisionProgress(
+    listener: (status: {
+      available: boolean;
+      downloading: boolean;
+      progressPercent: number;
+      totalBytes: number;
+    }) => void
+  ) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      status: {
+        available: boolean;
+        downloading: boolean;
+        progressPercent: number;
+        totalBytes: number;
+      }
+    ) => listener(status);
     ipcRenderer.on('note-ocr:vision-progress', wrapped);
     return () => ipcRenderer.off('note-ocr:vision-progress', wrapped);
   },
   selectImage() {
     return ipcRenderer.invoke('note-ocr:select-image');
   },
-  recognize(payload: { imagePath: string; noteId: string; language?: string; mode?: 'auto' | 'handwriting' | 'printed'; requestId?: string }) {
+  recognize(payload: {
+    imagePath: string;
+    noteId: string;
+    language?: string;
+    mode?: 'auto' | 'handwriting' | 'printed';
+    requestId?: string;
+  }) {
     return ipcRenderer.invoke('note-ocr:recognize', payload);
   },
-  onProgress(listener: (progress: { requestId: string | null; stage: 'preparing' | 'converting' | 'recognizing' | 'complete' }) => void) {
-    const wrapped = (_event: Electron.IpcRendererEvent, progress: { requestId: string | null; stage: 'preparing' | 'converting' | 'recognizing' | 'complete' }) => listener(progress);
+  onProgress(
+    listener: (progress: {
+      requestId: string | null;
+      stage: 'preparing' | 'converting' | 'recognizing' | 'complete';
+    }) => void
+  ) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      progress: {
+        requestId: string | null;
+        stage: 'preparing' | 'converting' | 'recognizing' | 'complete';
+      }
+    ) => listener(progress);
     ipcRenderer.on('note-ocr:progress', wrapped);
     return () => ipcRenderer.off('note-ocr:progress', wrapped);
   },
@@ -1205,21 +1241,50 @@ contextBridge.exposeInMainWorld('localContext', {
     return ipcRenderer.invoke('local-context:list', payload);
   },
   cleanupExpired(payload: { ownerUserId: string; workspaceId: string; retentionDays?: number }) {
-    return ipcRenderer.invoke('local-context:cleanup-expired', payload) as Promise<{ removed: number }>;
+    return ipcRenderer.invoke('local-context:cleanup-expired', payload) as Promise<{
+      removed: number;
+    }>;
   },
   importFiles(payload: { ownerUserId: string; workspaceId: string }) {
     return ipcRenderer.invoke('local-context:import', payload);
   },
   open(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
-    return ipcRenderer.invoke('local-context:open', payload) as Promise<{ ok: boolean; error?: string }>;
+    return ipcRenderer.invoke('local-context:open', payload) as Promise<{
+      ok: boolean;
+      error?: string;
+    }>;
+  },
+  preview(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
+    return ipcRenderer.invoke('local-context:preview', payload) as Promise<
+      | { kind: 'binary'; mimeType: string; dataUrl: string }
+      | { kind: 'table'; sheets: Array<{ name: string; headers: string[]; rows: string[][] }> }
+      | { kind: 'text'; text: string; readOnly?: boolean }
+      | { kind: 'unavailable'; message: string }
+      | null
+    >;
+  },
+  saveText(payload: { ownerUserId: string; workspaceId: string; fileId: string; text: string }) {
+    return ipcRenderer.invoke('local-context:save-text', payload);
   },
   remove(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
     return ipcRenderer.invoke('local-context:remove', payload) as Promise<{ removed: boolean }>;
   },
-  link(payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) {
+  link(payload: {
+    ownerUserId: string;
+    workspaceId: string;
+    fileId: string;
+    targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder';
+    targetId: string;
+  }) {
     return ipcRenderer.invoke('local-context:link', payload);
   },
-  unlink(payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) {
+  unlink(payload: {
+    ownerUserId: string;
+    workspaceId: string;
+    fileId: string;
+    targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder';
+    targetId: string;
+  }) {
     return ipcRenderer.invoke('local-context:unlink', payload);
   },
 });

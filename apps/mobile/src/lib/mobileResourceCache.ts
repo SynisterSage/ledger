@@ -7,6 +7,7 @@ type CacheEntry<T> = {
 
 const entries = new Map<string, CacheEntry<unknown>>();
 const inFlight = new Map<string, Promise<unknown>>();
+let cacheGeneration = 0;
 
 const DEFAULT_TTL_MS = 30_000;
 
@@ -34,6 +35,12 @@ export function invalidateMobileResourcePrefix(prefix: string) {
   }
 }
 
+export function clearMobileResourceCache() {
+  cacheGeneration += 1;
+  entries.clear();
+  inFlight.clear();
+}
+
 export function getMobileResource<T>(
   key: string,
   loader: () => Promise<T>,
@@ -49,12 +56,17 @@ export function getMobileResource<T>(
   const pending = inFlight.get(key) as Promise<T> | undefined;
   if (pending) return pending;
 
+  const generation = cacheGeneration;
   const request = loader().then((value) => {
     recordMobilePerformance('cache.miss', 0, { resource: key.split(':', 2).join(':') });
-    entries.set(key, { value, expiresAt: Date.now() + (options.ttlMs ?? DEFAULT_TTL_MS) });
+    if (generation === cacheGeneration) {
+      entries.set(key, { value, expiresAt: Date.now() + (options.ttlMs ?? DEFAULT_TTL_MS) });
+    }
     return value;
   }).finally(() => {
-    inFlight.delete(key);
+    if (inFlight.get(key) === request) {
+      inFlight.delete(key);
+    }
   });
 
   inFlight.set(key, request);

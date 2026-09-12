@@ -52,7 +52,7 @@
                         <constraints>
                             <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="brand-container-center-x"/>
                             <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" constant="-44" id="brand-container-center-y"/>
-                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="top" secondItem="EXPO-BrandContainer" secondAttribute="bottom" constant="32" id="footer-top"/>
+                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="bottom" secondItem="EXPO-ContainerView" secondAttribute="bottom" constant="-54" id="footer-bottom"/>
                             <constraint firstItem="EXPO-SplashFooter" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="footer-center-x"/>
                         </constraints>
                         <color key="backgroundColor" name="SplashScreenBackground"/>

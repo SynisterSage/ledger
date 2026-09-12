@@ -55,19 +55,22 @@ export default function FilesScreen() {
     { text: 'Remove', style: 'destructive', onPress: async () => { if (userId && workspaceId) await removeMobileLocalFile(file.id, userId, workspaceId); await load(); } },
   ]);
 
-  return <Screen scroll contentStyle={{ paddingTop: 18 }}>
+  // This page has a static title at the top; the shared scroll fade would sit
+  // above it and wash out “Files & links” before the user has scrolled.
+  return <Screen scroll topFade={false} contentStyle={{ paddingTop: 18 }}>
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back"><SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor={theme.colors.textPrimary} /></Pressable>
+      <Pressable style={styles.headerBack} onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back"><SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor={theme.colors.textPrimary} /></Pressable>
       <View style={styles.headerCopy}><AppText variant="screenTitle">Files & links</AppText><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>Keep private files on the device you’re using.</AppText></View>
     </View>
     <View style={[styles.notice, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}><SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={16} tintColor={theme.colors.accent} /><AppText variant="caption" style={{ color: theme.colors.textSecondary, flex: 1 }}>Files added here are copied into Ledger’s private app storage. They are not uploaded or synced.</AppText></View>
-    <View style={styles.section}><View style={styles.sectionHeader}><AppText variant="sectionTitle">On this device</AppText><Pressable onPress={() => void importFile()} disabled={busy} accessibilityRole="button"><AppText variant="button" style={{ color: theme.colors.accent }}>{busy ? 'Adding…' : 'Add file'}</AppText></Pressable></View>{files.length ? files.map((file) => <View key={file.id} style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}><Pressable onPress={() => void openFile(file)} style={styles.rowMain}><SymbolView name={{ ios: 'doc', android: 'description', web: 'description' }} size={18} tintColor={theme.colors.textMuted} /><View style={styles.rowCopy}><AppText variant="body" numberOfLines={1}>{file.name}</AppText><AppText variant="meta" style={{ color: theme.colors.textMuted }}>Private to this device</AppText></View></Pressable><Pressable onPress={() => deleteFile(file)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`}><SymbolView name={{ ios: 'trash', android: 'delete_outline', web: 'delete' }} size={17} tintColor={theme.colors.textMuted} /></Pressable></View>) : <AppText variant="caption" style={{ color: theme.colors.textSecondary }}>No local files yet. Add a file when you need it beside a Ledger capture.</AppText>}</View>
-    <View style={styles.section}><AppText variant="sectionTitle">Connected links</AppText><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>Drive, Figma, and other connected content stays linked to its original service. Open it from the related note or project in Ledger.</AppText></View>
+    <View style={styles.section}><View style={styles.sectionHeader}><AppText variant="sectionTitle">On this device</AppText><Pressable onPress={() => void importFile()} disabled={busy} accessibilityRole="button"><AppText variant="button" style={{ color: theme.colors.accent }}>{busy ? 'Adding…' : 'Add file'}</AppText></Pressable></View>{files.length ? files.map((file) => <View key={file.id} style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}><Pressable onPress={() => void openFile(file)} style={styles.rowMain}><SymbolView name={{ ios: 'doc', android: 'description', web: 'description' }} size={18} tintColor={theme.colors.textMuted} /><View style={styles.rowCopy}><AppText variant="body" numberOfLines={1}>{file.name}</AppText><AppText variant="meta" style={{ color: theme.colors.textMuted }}>Private to this device</AppText></View></Pressable><Pressable onPress={() => deleteFile(file)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`}><SymbolView name={{ ios: 'trash', android: 'delete_outline', web: 'delete' }} size={17} tintColor={theme.colors.textMuted} /></Pressable></View>) : <View style={[styles.emptyState, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}><SymbolView name={{ ios: 'doc.badge.plus', android: 'note_add', web: 'note_add' }} size={22} tintColor={theme.colors.accent} /><View style={styles.emptyCopy}><AppText variant="bodyStrong">No files saved here yet</AppText><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>Add a file when you need it beside a Ledger capture.</AppText></View></View>}</View>
+    <View style={styles.section}><AppText variant="sectionTitle">Connected links</AppText><View style={[styles.emptyState, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}><SymbolView name={{ ios: 'link', android: 'link', web: 'link' }} size={22} tintColor={theme.colors.accent} /><View style={styles.emptyCopy}><AppText variant="bodyStrong">No connected links yet</AppText><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>Links from notes and projects will stay connected to their original service.</AppText></View></View></View>
   </Screen>;
 }
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 24 },
+  headerBack: { marginTop: 7 },
   headerCopy: { flex: 1, gap: 4 },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, marginBottom: 28 },
   section: { gap: 12, marginBottom: 28 },
@@ -75,4 +78,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowCopy: { flex: 1, gap: 2 },
+  emptyState: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14 },
+  emptyCopy: { flex: 1, gap: 4 },
 });

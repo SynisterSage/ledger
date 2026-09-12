@@ -26,7 +26,9 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
   const [startDate, setStartDate] = useState(initialStart);
   const [endDate, setEndDate] = useState(initialEnd);
   const [items, setItems] = useState<MobileCalendarItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // Start in a loading state so AgendaView does not lock its initial scroll
+  // position against the temporary header-only list before the range arrives.
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const requestIdRef = useRef(0);
@@ -42,6 +44,21 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     setEndDate(initialEnd);
   }, [initialEnd, initialStart, workspaceId]);
 
+  // A view switch can move the agenda anchor (for example, from a selected
+  // future month back to today). Rebuild the fetch window around that anchor;
+  // otherwise the list may not contain today's date when the scroll command
+  // runs and will remain on the previous month.
+  const previousAnchorRef = useRef(anchorDate.getTime());
+  useEffect(() => {
+    const nextAnchor = anchorDate.getTime();
+    if (previousAnchorRef.current === nextAnchor) return;
+    previousAnchorRef.current = nextAnchor;
+    setIsLoading(true);
+    setStartDate(initialStart);
+    setEndDate(initialEnd);
+    setItems([]);
+  }, [anchorDate, initialEnd, initialStart]);
+
   useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
     if (changedWorkspaceId !== workspaceId) return;
     cacheRef.current.clear();
@@ -55,6 +72,8 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setItems(cached);
+      setError(null);
+      setIsLoading(false);
       return () => { cancelled = true; };
     }
 

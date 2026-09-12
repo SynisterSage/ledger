@@ -44,7 +44,10 @@ import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { LocalContextLibrary, LocalContextLibraryError } from './localContextLibrary.ts';
-import { LocalAskLedgerSessionStore, LocalAskLedgerSessionStoreError } from './localAskLedgerSessionStore.ts';
+import {
+  LocalAskLedgerSessionStore,
+  LocalAskLedgerSessionStoreError,
+} from './localAskLedgerSessionStore.ts';
 import {
   OverviewFocusService,
   type OverviewFocusResult,
@@ -74,7 +77,11 @@ import {
   recordPerformanceEvent,
   recentPerformanceEvents,
 } from './performanceDiagnostics';
-import { boundedOptionalString, boundedPerformanceDetails, isValidModuleWindowKind } from './ipcValidation';
+import {
+  boundedOptionalString,
+  boundedPerformanceDetails,
+  isValidModuleWindowKind,
+} from './ipcValidation';
 import {
   activityFromLevel,
   restoreIndicatorPosition,
@@ -84,10 +91,16 @@ import {
 } from './floatingMeetingIndicatorPosition';
 import { resolveFloatingMeetingIndicatorRenderer } from './floatingMeetingIndicatorAssets';
 import { getFloatingMeetingIndicatorPlatformOptions } from './floatingMeetingIndicatorPlatform';
-import { canExecuteLedgerAction, createLedgerActionDispatcher } from './actions/ledgerActionDispatcher';
+import {
+  canExecuteLedgerAction,
+  createLedgerActionDispatcher,
+} from './actions/ledgerActionDispatcher';
 import { createTouchBarController, type TouchBarController } from './touchBar/touchBarController';
 import { createTouchBarContextCoordinator } from './touchBar/touchBarContextCoordinator';
-import type { LedgerTouchBarMeetingContext, LedgerTouchBarWindowContext } from './touchBar/touchBarContext';
+import type {
+  LedgerTouchBarMeetingContext,
+  LedgerTouchBarWindowContext,
+} from './touchBar/touchBarContext';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -311,12 +324,16 @@ localAIService.onGenerationRuntimeState((state) => {
 });
 const localAIInstalledState = new Map<string, boolean>();
 let whisperInstalledState = localTranscriptionService.modelStatus().installed;
-localAIAssets.status().generationModels && Object.entries(localAIAssets.status().generationModels).forEach(([modelId, status]) => {
-  localAIInstalledState.set(`generation:${modelId}`, status.installed);
-});
+localAIAssets.status().generationModels &&
+  Object.entries(localAIAssets.status().generationModels).forEach(([modelId, status]) => {
+    localAIInstalledState.set(`generation:${modelId}`, status.installed);
+  });
 localAIInstalledState.set('embedding', localAIAssets.status().embedding.installed);
 
-function broadcastLocalAIDownloadComplete(payload: { modelType: 'generation' | 'embedding' | 'whisper'; label: string }) {
+function broadcastLocalAIDownloadComplete(payload: {
+  modelType: 'generation' | 'embedding' | 'whisper';
+  label: string;
+}) {
   // Completion toasts belong exclusively to the primary Ledger IPC workspace
   // window. The sidebar may also host a download entry point, but it must
   // never render this toast in compact, expanded, or any other sidebar state.
@@ -332,14 +349,27 @@ localAIAssets.onChange((status) => {
   Object.entries(status.generationModels).forEach(([modelId, modelStatus]) => {
     const key = `generation:${modelId}`;
     const wasInstalled = localAIInstalledState.get(key) ?? false;
-    if (!wasInstalled && modelStatus.installed && !modelStatus.downloading && !modelStatus.verifying) {
+    if (
+      !wasInstalled &&
+      modelStatus.installed &&
+      !modelStatus.downloading &&
+      !modelStatus.verifying
+    ) {
       broadcastLocalAIDownloadComplete({ modelType: 'generation', label: modelStatus.displayName });
     }
     localAIInstalledState.set(key, modelStatus.installed);
   });
   const embeddingWasInstalled = localAIInstalledState.get('embedding') ?? false;
-  if (!embeddingWasInstalled && status.embedding.installed && !status.embedding.downloading && !status.embedding.verifying) {
-    broadcastLocalAIDownloadComplete({ modelType: 'embedding', label: status.embedding.displayName });
+  if (
+    !embeddingWasInstalled &&
+    status.embedding.installed &&
+    !status.embedding.downloading &&
+    !status.embedding.verifying
+  ) {
+    broadcastLocalAIDownloadComplete({
+      modelType: 'embedding',
+      label: status.embedding.displayName,
+    });
   }
   localAIInstalledState.set('embedding', status.embedding.installed);
 });
@@ -524,7 +554,12 @@ localTranscriptionService.onProgress((event) => {
   if (!touchBarMeetingContext || event.noteId !== touchBarMeetingContext.noteId) return;
   const status = String(event.status);
   if (status === 'complete') {
-    touchBarMeetingContext = { ...touchBarMeetingContext, active: false, state: 'completed', transcriptAvailable: true };
+    touchBarMeetingContext = {
+      ...touchBarMeetingContext,
+      active: false,
+      state: 'completed',
+      transcriptAvailable: true,
+    };
   } else if (['queued', 'preparing', 'transcribing', 'merging'].includes(status)) {
     touchBarMeetingContext = { ...touchBarMeetingContext, active: true, state: 'processing' };
   }
@@ -697,7 +732,14 @@ ipcMain.handle('meeting-audio:stop', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
   if (touchBarMeetingContext?.noteId) {
-    touchBarMeetingContext = { ...touchBarMeetingContext, active: true, state: 'processing', canPause: false, canResume: false, canStop: false };
+    touchBarMeetingContext = {
+      ...touchBarMeetingContext,
+      active: true,
+      state: 'processing',
+      canPause: false,
+      canResume: false,
+      canStop: false,
+    };
   }
   const result = await meetingAudioCaptureService.stop();
   meetingAutoStopCoordinator.stop();
@@ -717,7 +759,7 @@ ipcMain.handle('meeting-auto-stop:call-ended', (_event, payload: { noteId?: unkn
     meetingAutoStopCoordinator.signalCallEnded(payload.noteId)
   );
 });
-  ipcMain.handle(
+ipcMain.handle(
   'meeting-auto-stop:new-meeting',
   (_event, payload: { noteId?: unknown; title?: unknown }) => {
     if (typeof payload?.noteId !== 'string') return false;
@@ -768,7 +810,10 @@ ipcMain.handle('note-ocr:vision-download', () => localVisionAssets.download());
 ipcMain.handle('note-ocr:vision-cancel-download', () => localVisionAssets.cancel());
 ipcMain.handle('local-capture-privacy:get', () => localCapturePrivacy.preferences());
 ipcMain.handle('local-capture-privacy:set', (_event, payload: { scanImageRetention?: unknown }) => {
-  if (payload?.scanImageRetention !== 'delete_after_processing' && payload?.scanImageRetention !== 'retain_until_deleted') {
+  if (
+    payload?.scanImageRetention !== 'delete_after_processing' &&
+    payload?.scanImageRetention !== 'retain_until_deleted'
+  ) {
     throw new Error('Invalid local capture retention setting.');
   }
   return localCapturePrivacy.setPreferences({ scanImageRetention: payload.scanImageRetention });
@@ -777,7 +822,10 @@ ipcMain.handle('local-capture-privacy:delete-all', async () => {
   const activeSessionId = meetingAudioCaptureService.status().sessionId;
   const result = await localCapturePrivacy.deleteLocalCaptureData();
   const removedRecordings = recordingSessionStore.clearCompletedAndRecovery(activeSessionId);
-  return { ...result, deleted: removedRecordings ? [...result.deleted, 'meeting-recordings'] : result.deleted };
+  return {
+    ...result,
+    deleted: removedRecordings ? [...result.deleted, 'meeting-recordings'] : result.deleted,
+  };
 });
 ipcMain.handle('note-ocr:select-image', async () => {
   const selection = await dialog.showOpenDialog({
@@ -790,27 +838,46 @@ ipcMain.handle('note-ocr:select-image', async () => {
 });
 ipcMain.handle(
   'note-ocr:recognize',
-  (event, payload: { imagePath?: unknown; noteId?: unknown; language?: unknown; mode?: unknown; requestId?: unknown }) => {
+  (
+    event,
+    payload: {
+      imagePath?: unknown;
+      noteId?: unknown;
+      language?: unknown;
+      mode?: unknown;
+      requestId?: unknown;
+    }
+  ) => {
     if (typeof payload?.imagePath !== 'string' || typeof payload.noteId !== 'string') {
       throw new Error('Invalid note OCR request.');
     }
     if (payload.language !== undefined && typeof payload.language !== 'string') {
       throw new Error('Invalid OCR language.');
     }
-    if (payload.mode !== undefined && payload.mode !== 'auto' && payload.mode !== 'handwriting' && payload.mode !== 'printed') {
+    if (
+      payload.mode !== undefined &&
+      payload.mode !== 'auto' &&
+      payload.mode !== 'handwriting' &&
+      payload.mode !== 'printed'
+    ) {
       throw new Error('Invalid OCR mode.');
     }
     if (payload.requestId !== undefined && typeof payload.requestId !== 'string') {
       throw new Error('Invalid OCR request id.');
     }
-    return localNoteOcrService.recognize({
-      imagePath: payload.imagePath,
-      request: {
-        noteId: payload.noteId,
-        ...(payload.language ? { language: payload.language } : {}),
-        ...(payload.mode ? { mode: payload.mode } : {}),
+    return localNoteOcrService.recognize(
+      {
+        imagePath: payload.imagePath,
+        request: {
+          noteId: payload.noteId,
+          ...(payload.language ? { language: payload.language } : {}),
+          ...(payload.mode ? { mode: payload.mode } : {}),
+        },
       },
-    }, undefined, (stage) => event.sender.send('note-ocr:progress', { requestId: payload.requestId ?? null, stage }));
+      undefined,
+      (stage) =>
+        event.sender.send('note-ocr:progress', { requestId: payload.requestId ?? null, stage })
+    );
   }
 );
 
@@ -886,7 +953,12 @@ ipcMain.handle(
     const result = localTranscriptionService.complete(payload.jobId, payload.retention);
     if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
     if (touchBarMeetingContext && touchBarMeetingContext.state === 'processing') {
-      touchBarMeetingContext = { ...touchBarMeetingContext, active: false, state: 'completed', transcriptAvailable: true };
+      touchBarMeetingContext = {
+        ...touchBarMeetingContext,
+        active: false,
+        state: 'completed',
+        transcriptAvailable: true,
+      };
       syncTouchBarMeetingContext();
     }
     return result;
@@ -932,30 +1004,49 @@ ipcMain.handle(
     if (selection.canceled || !selection.filePaths.length)
       return { canceled: true, attachments: [] };
     const attachments = await askLedgerService.ingestAttachments(
-        payload.workspaceId,
-        payload.conversationId,
-        selection.filePaths,
-        {
-          count: typeof payload.existingCount === 'number' ? payload.existingCount : 0,
-          sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0,
-        }
-      );
+      payload.workspaceId,
+      payload.conversationId,
+      selection.filePaths,
+      {
+        count: typeof payload.existingCount === 'number' ? payload.existingCount : 0,
+        sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0,
+      }
+    );
     let localFiles: Awaited<ReturnType<LocalContextLibrary['importFiles']>> = [];
     if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
       try {
-        const localRetention = payload.localRetention === '30_days' ? '30_days' : payload.localRetention === 'conversation_only' ? 'conversation_only' : 'until_removed';
+        const localRetention =
+          payload.localRetention === '30_days'
+            ? '30_days'
+            : payload.localRetention === 'conversation_only'
+            ? 'conversation_only'
+            : 'until_removed';
         if (localRetention !== 'conversation_only') {
-          localFiles = await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId, {
-            expiresAt: localRetention === '30_days' ? new Date(Date.now() + 30 * 86_400_000).toISOString() : undefined,
-          });
+          localFiles = await localContextLibrary.importFiles(
+            selection.filePaths,
+            payload.ownerUserId,
+            payload.workspaceId,
+            {
+              expiresAt:
+                localRetention === '30_days'
+                  ? new Date(Date.now() + 30 * 86_400_000).toISOString()
+                  : undefined,
+            }
+          );
         }
       } catch (error) {
-        console.warn('[local-context] Ask Ledger attachment was not promoted to Files & links', error instanceof Error ? error.message : error);
+        console.warn(
+          '[local-context] Ask Ledger attachment was not promoted to Files & links',
+          error instanceof Error ? error.message : error
+        );
       }
     }
     return {
       canceled: false,
-      attachments: attachments.map((attachment, index) => ({ ...attachment, localFileId: localFiles[index]?.id })),
+      attachments: attachments.map((attachment, index) => ({
+        ...attachment,
+        localFileId: localFiles[index]?.id,
+      })),
       localFiles,
     };
   }
@@ -989,110 +1080,298 @@ ipcMain.handle(
 
 const LOCAL_CONTEXT_TARGET_TYPES = new Set(['ask_session', 'note', 'project', 'event', 'reminder']);
 
-ipcMain.handle('local-ask-session:list', async (_event, payload: { userId?: unknown; workspaceId?: unknown; limit?: unknown }) => {
-  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalAskLedgerSessionStoreError('Account and workspace are required.');
-  return { sessions: await localAskLedgerSessionStore.list(payload.userId, payload.workspaceId, typeof payload.limit === 'number' ? payload.limit : 20) };
-});
+ipcMain.handle(
+  'local-ask-session:list',
+  async (_event, payload: { userId?: unknown; workspaceId?: unknown; limit?: unknown }) => {
+    if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string')
+      throw new LocalAskLedgerSessionStoreError('Account and workspace are required.');
+    return {
+      sessions: await localAskLedgerSessionStore.list(
+        payload.userId,
+        payload.workspaceId,
+        typeof payload.limit === 'number' ? payload.limit : 20
+      ),
+    };
+  }
+);
 
-ipcMain.handle('local-ask-session:get', async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
-  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.sessionId !== 'string') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
-  return { session: await localAskLedgerSessionStore.get(payload.sessionId, payload.userId, payload.workspaceId) };
-});
+ipcMain.handle(
+  'local-ask-session:get',
+  async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
+    if (
+      typeof payload?.userId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.sessionId !== 'string'
+    )
+      throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+    return {
+      session: await localAskLedgerSessionStore.get(
+        payload.sessionId,
+        payload.userId,
+        payload.workspaceId
+      ),
+    };
+  }
+);
 
 ipcMain.handle('local-ask-session:save', async (_event, payload: { session?: unknown }) => {
-  if (!payload?.session || typeof payload.session !== 'object') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
-  return { session: await localAskLedgerSessionStore.save(payload.session as import('../src/types/localAskLedgerSession.ts').LocalAskLedgerSession) };
+  if (!payload?.session || typeof payload.session !== 'object')
+    throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+  return {
+    session: await localAskLedgerSessionStore.save(
+      payload.session as import('../src/types/localAskLedgerSession.ts').LocalAskLedgerSession
+    ),
+  };
 });
 
-ipcMain.handle('local-ask-session:delete', async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
-  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.sessionId !== 'string') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
-  return { removed: await localAskLedgerSessionStore.remove(payload.sessionId, payload.userId, payload.workspaceId) };
-});
+ipcMain.handle(
+  'local-ask-session:delete',
+  async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
+    if (
+      typeof payload?.userId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.sessionId !== 'string'
+    )
+      throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+    return {
+      removed: await localAskLedgerSessionStore.remove(
+        payload.sessionId,
+        payload.userId,
+        payload.workspaceId
+      ),
+    };
+  }
+);
 
-ipcMain.handle('local-context:list', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
-  return localContextLibrary.summary(payload.ownerUserId, payload.workspaceId);
-});
+ipcMain.handle(
+  'local-context:list',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+    if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string')
+      throw new LocalContextLibraryError('Account and workspace are required.');
+    return localContextLibrary.summary(payload.ownerUserId, payload.workspaceId);
+  }
+);
 
-ipcMain.handle('local-context:cleanup-expired', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; retentionDays?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || (payload.retentionDays !== undefined && typeof payload.retentionDays !== 'number')) throw new LocalContextLibraryError('Account and workspace are required.');
-  return { removed: await localContextLibrary.cleanupExpired(payload.ownerUserId, payload.workspaceId, payload.retentionDays) };
-});
+ipcMain.handle(
+  'local-context:cleanup-expired',
+  async (
+    _event,
+    payload: { ownerUserId?: unknown; workspaceId?: unknown; retentionDays?: unknown }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      (payload.retentionDays !== undefined && typeof payload.retentionDays !== 'number')
+    )
+      throw new LocalContextLibraryError('Account and workspace are required.');
+    return {
+      removed: await localContextLibrary.cleanupExpired(
+        payload.ownerUserId,
+        payload.workspaceId,
+        payload.retentionDays
+      ),
+    };
+  }
+);
 
-ipcMain.handle('local-context:import', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
-  const selection = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Ledger local context', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] }],
-  });
-  if (selection.canceled || !selection.filePaths.length) return { canceled: true, files: [] };
-  return { canceled: false, files: await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId) };
-});
+ipcMain.handle(
+  'local-context:import',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+    if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string')
+      throw new LocalContextLibraryError('Account and workspace are required.');
+    const selection = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Ledger local context',
+          extensions: [
+            'pdf',
+            'png',
+            'jpg',
+            'jpeg',
+            'webp',
+            'gif',
+            'docx',
+            'txt',
+            'md',
+            'csv',
+            'xlsx',
+          ],
+        },
+      ],
+    });
+    if (selection.canceled || !selection.filePaths.length) return { canceled: true, files: [] };
+    return {
+      canceled: false,
+      files: await localContextLibrary.importFiles(
+        selection.filePaths,
+        payload.ownerUserId,
+        payload.workspaceId
+      ),
+    };
+  }
+);
 
-ipcMain.handle('local-context:open', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string') throw new LocalContextLibraryError('A local file is required.');
-  const filePath = await localContextLibrary.pathFor(payload.fileId, payload.ownerUserId, payload.workspaceId);
-  if (!filePath) return { ok: false, error: 'This local file is no longer available.' };
-  const error = await shell.openPath(filePath);
-  return error ? { ok: false, error } : { ok: true };
-});
+ipcMain.handle(
+  'local-context:open',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local file is required.');
+    const filePath = await localContextLibrary.pathFor(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId
+    );
+    if (!filePath) return { ok: false, error: 'This local file is no longer available.' };
+    const error = await shell.openPath(filePath);
+    return error ? { ok: false, error } : { ok: true };
+  }
+);
 
-ipcMain.handle('local-context:remove', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string') throw new LocalContextLibraryError('A local file is required.');
-  return { removed: await localContextLibrary.remove(payload.fileId, payload.ownerUserId, payload.workspaceId) };
-});
+ipcMain.handle(
+  'local-context:preview',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local file is required.');
+    return localContextLibrary.preview(payload.fileId, payload.ownerUserId, payload.workspaceId);
+  }
+);
 
-ipcMain.handle('local-context:link', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; targetType?: unknown; targetId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.targetType !== 'string' || typeof payload?.targetId !== 'string' || !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)) throw new LocalContextLibraryError('A valid local context link is required.');
-  return localContextLibrary.link(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder', payload.targetId);
-});
+ipcMain.handle(
+  'local-context:save-text',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; text?: unknown }) => {
+    if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.text !== 'string')
+      throw new LocalContextLibraryError('A local text file is required.');
+    return localContextLibrary.saveText(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.text);
+  }
+);
 
-ipcMain.handle('local-context:unlink', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; targetType?: unknown; targetId?: unknown }) => {
-  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.targetType !== 'string' || typeof payload?.targetId !== 'string' || !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)) throw new LocalContextLibraryError('A valid local context link is required.');
-  return localContextLibrary.unlink(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder', payload.targetId);
-});
+ipcMain.handle(
+  'local-context:remove',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local file is required.');
+    return {
+      removed: await localContextLibrary.remove(
+        payload.fileId,
+        payload.ownerUserId,
+        payload.workspaceId
+      ),
+    };
+  }
+);
+
+ipcMain.handle(
+  'local-context:link',
+  async (
+    _event,
+    payload: {
+      ownerUserId?: unknown;
+      workspaceId?: unknown;
+      fileId?: unknown;
+      targetType?: unknown;
+      targetId?: unknown;
+    }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string' ||
+      typeof payload?.targetType !== 'string' ||
+      typeof payload?.targetId !== 'string' ||
+      !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)
+    )
+      throw new LocalContextLibraryError('A valid local context link is required.');
+    return localContextLibrary.link(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId,
+      payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder',
+      payload.targetId
+    );
+  }
+);
+
+ipcMain.handle(
+  'local-context:unlink',
+  async (
+    _event,
+    payload: {
+      ownerUserId?: unknown;
+      workspaceId?: unknown;
+      fileId?: unknown;
+      targetType?: unknown;
+      targetId?: unknown;
+    }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string' ||
+      typeof payload?.targetType !== 'string' ||
+      typeof payload?.targetId !== 'string' ||
+      !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)
+    )
+      throw new LocalContextLibraryError('A valid local context link is required.');
+    return localContextLibrary.unlink(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId,
+      payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder',
+      payload.targetId
+    );
+  }
+);
 
 const sanitizeAskLedgerHandoff = (value: unknown) => {
   if (!value || typeof value !== 'object') return undefined;
   const handoff = value as Record<string, unknown>;
   if (handoff.kind !== 'overview_focus') return undefined;
   const insights = Array.isArray(handoff.insights)
-    ? handoff.insights
-        .slice(0, 3)
-        .flatMap((item) =>
-          item &&
-          typeof item === 'object' &&
-          typeof (item as Record<string, unknown>).title === 'string' &&
-          typeof (item as Record<string, unknown>).summary === 'string'
-            ? [
-                {
-                  title: String((item as Record<string, unknown>).title).slice(0, 120),
-                  summary: String((item as Record<string, unknown>).summary).slice(0, 300),
-                },
-              ]
-            : []
-        )
+    ? handoff.insights.slice(0, 3).flatMap((item) =>
+        item &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).title === 'string' &&
+        typeof (item as Record<string, unknown>).summary === 'string'
+          ? [
+              {
+                title: String((item as Record<string, unknown>).title).slice(0, 120),
+                summary: String((item as Record<string, unknown>).summary).slice(0, 300),
+              },
+            ]
+          : []
+      )
     : [];
   const resourceRefs = Array.isArray(handoff.resourceRefs)
-    ? handoff.resourceRefs
-        .slice(0, 16)
-        .flatMap((item) =>
-          item &&
-          typeof item === 'object' &&
-          typeof (item as Record<string, unknown>).resourceType === 'string' &&
-          typeof (item as Record<string, unknown>).resourceId === 'string'
-            ? [
-                {
-                  resourceType: String((item as Record<string, unknown>).resourceType) as never,
-                  resourceId: String((item as Record<string, unknown>).resourceId).slice(0, 200),
-                  title: String((item as Record<string, unknown>).title ?? 'Ledger resource').slice(
-                    0,
-                    200
-                  ),
-                },
-              ]
-            : []
-        )
+    ? handoff.resourceRefs.slice(0, 16).flatMap((item) =>
+        item &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).resourceType === 'string' &&
+        typeof (item as Record<string, unknown>).resourceId === 'string'
+          ? [
+              {
+                resourceType: String((item as Record<string, unknown>).resourceType) as never,
+                resourceId: String((item as Record<string, unknown>).resourceId).slice(0, 200),
+                title: String((item as Record<string, unknown>).title ?? 'Ledger resource').slice(
+                  0,
+                  200
+                ),
+              },
+            ]
+          : []
+      )
     : [];
   const workspaceId =
     typeof handoff.workspaceId === 'string' ? handoff.workspaceId.slice(0, 200) : '';
@@ -1148,7 +1427,10 @@ ipcMain.handle(
     )
       throw new Error('Ask Ledger context workspace mismatch.');
     if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
-      const localDocuments = await localContextLibrary.contextDocuments(payload.ownerUserId, payload.workspaceId);
+      const localDocuments = await localContextLibrary.contextDocuments(
+        payload.ownerUserId,
+        payload.workspaceId
+      );
       documents = [...documents, ...localDocuments];
     }
     const builtinSkill =
@@ -1315,6 +1597,15 @@ ipcMain.handle(
       throw new Error('Skill context is incomplete.');
     if (explicitContext?.workspaceId && explicitContext.workspaceId !== payload.workspaceId)
       throw new Error('Ask Ledger context workspace mismatch.');
+    // Files & links passes an explicit attachment/external anchor. Keep those
+    // sessions bounded to the selected resource instead of allowing the
+    // workspace document corpus to broaden the answer.
+    if (explicitContext?.resourceType === 'attachment') {
+      const localPrefix = `local:${explicitContext.resourceId}:`;
+      documents = documents.filter((item) => item.resourceType === 'attachment' && (String(item.resourceId) === explicitContext.resourceId || String(item.resourceId).startsWith(localPrefix)));
+    } else if (explicitContext?.resourceType === 'external') {
+      documents = documents.filter((item) => item.resourceType === 'external' && String(item.resourceId) === explicitContext.resourceId);
+    }
     if (
       skill &&
       explicitContext &&
@@ -1845,8 +2136,21 @@ ipcMain.handle('ask-ledger:local-ai-remove', (_event, role: unknown) => {
 
 function appleCalendarBridgePath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'AppleCalendarBridge.app', 'Contents', 'MacOS', 'AppleCalendarBridge')
-    : path.join(app.getAppPath(), 'native', 'AppleCalendarBridge.app', 'Contents', 'MacOS', 'AppleCalendarBridge');
+    ? path.join(
+        process.resourcesPath,
+        'AppleCalendarBridge.app',
+        'Contents',
+        'MacOS',
+        'AppleCalendarBridge'
+      )
+    : path.join(
+        app.getAppPath(),
+        'native',
+        'AppleCalendarBridge.app',
+        'Contents',
+        'MacOS',
+        'AppleCalendarBridge'
+      );
 }
 
 function zoomAccessibilityBridgePath() {
@@ -8459,13 +8763,25 @@ function normalizeModuleFocusPayload(payload: unknown): ModuleFocusPayload | nul
   const focusInboxId = boundedOptionalString(value.focusInboxId, 200);
   const focusContext = boundedOptionalString(value.focusContext, 500);
   const focusSection = boundedOptionalString(value.focusSection, 120);
-  if ([focusDate, focusProjectId, focusNoteId, focusTaskId, focusInboxId, focusContext, focusSection].includes(undefined)) return null;
+  if (
+    [
+      focusDate,
+      focusProjectId,
+      focusNoteId,
+      focusTaskId,
+      focusInboxId,
+      focusContext,
+      focusSection,
+    ].includes(undefined)
+  )
+    return null;
 
   return {
     kind: value.kind as ModuleWindowKind,
     historyMode: value.historyMode === 'replace' ? 'replace' : 'push',
     navigationGeneration:
-      typeof value.navigationGeneration === 'number' && Number.isSafeInteger(value.navigationGeneration)
+      typeof value.navigationGeneration === 'number' &&
+      Number.isSafeInteger(value.navigationGeneration)
         ? value.navigationGeneration
         : undefined,
     focusDate,
@@ -10123,18 +10439,18 @@ ipcMain.handle('window:workspace-route-changed', (event, rawPayload: unknown) =>
   const detachedRecord = getDetachedWindowRecord(senderWindow);
   const result = detachedRecord
     ? navigateDetachedWindow(
-      detachedRecord,
-      routeFromModuleArgs(
-        kind,
-        payload.focusDate,
-        payload.focusProjectId,
-        payload.focusNoteId,
-        payload.focusTaskId,
-        payload.focusContext,
-        payload.focusSection
-      ),
-      payload.historyMode !== 'replace'
-    )
+        detachedRecord,
+        routeFromModuleArgs(
+          kind,
+          payload.focusDate,
+          payload.focusProjectId,
+          payload.focusNoteId,
+          payload.focusTaskId,
+          payload.focusContext,
+          payload.focusSection
+        ),
+        payload.historyMode !== 'replace'
+      )
     : updateWorkspaceModuleRoute(
         routeFromModuleArgs(
           kind,
@@ -10147,12 +10463,9 @@ ipcMain.handle('window:workspace-route-changed', (event, rawPayload: unknown) =>
         ),
         payload.historyMode !== 'replace'
       );
-  recordIpcDuration(
-    'window:workspace-route-changed',
-    performance.now() - startedAt,
-    senderWindow,
-    { kind }
-  );
+  recordIpcDuration('window:workspace-route-changed', performance.now() - startedAt, senderWindow, {
+    kind,
+  });
   return result;
 });
 
@@ -10328,7 +10641,8 @@ ipcMain.handle('window:confirm-tab-detach', (event, transferId: unknown) => {
     pending.target !== target ||
     !pending.source ||
     pending.source.isDestroyed()
-  ) return false;
+  )
+    return false;
   if (pending.timeout) clearTimeout(pending.timeout);
   pendingTabDetaches.delete(transferId);
   pending.resolve(true);
@@ -10537,7 +10851,10 @@ function touchBarWindowKey(win: BrowserWindow) {
 function syncTouchBarMeetingContext() {
   const status = meetingAudioCaptureService.status() as { state?: string };
   if (status.state === 'recording' || status.state === 'paused') {
-    const audioStatus = meetingAudioCaptureService.status() as { noteId?: string | null; workspaceId?: string | null };
+    const audioStatus = meetingAudioCaptureService.status() as {
+      noteId?: string | null;
+      workspaceId?: string | null;
+    };
     touchBarMeetingContext = {
       active: true,
       state: status.state,
@@ -10572,15 +10889,17 @@ function syncTouchBar() {
 function getTouchBarTargetWindow(): BrowserWindow | null {
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return null;
   const windows = getLedgerWindows();
-  const focusedWorkspace = workspaceModuleWin && !workspaceModuleWin.isDestroyed() && workspaceModuleWin.isFocused()
-    ? workspaceModuleWin
-    : null;
+  const focusedWorkspace =
+    workspaceModuleWin && !workspaceModuleWin.isDestroyed() && workspaceModuleWin.isFocused()
+      ? workspaceModuleWin
+      : null;
   if (focusedWorkspace) return focusedWorkspace;
-  const focusedModule = windows.find((window) => getTouchBarWindowRole(window) === 'module' && window.isFocused());
+  const focusedModule = windows.find(
+    (window) => getTouchBarWindowRole(window) === 'module' && window.isFocused()
+  );
   if (focusedModule) return focusedModule;
-  const focusedSidebar = sidebarWin && !sidebarWin.isDestroyed() && sidebarWin.isFocused()
-    ? sidebarWin
-    : null;
+  const focusedSidebar =
+    sidebarWin && !sidebarWin.isDestroyed() && sidebarWin.isFocused() ? sidebarWin : null;
   return focusedSidebar;
 }
 

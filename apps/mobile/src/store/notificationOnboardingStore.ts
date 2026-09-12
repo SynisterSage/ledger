@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import * as Notifications from 'expo-notifications';
 
 import {
   getMobileUserSettings,
@@ -13,6 +12,7 @@ type NotificationOnboardingState = {
   isLoading: boolean;
   isHydrated: boolean;
   isComplete: boolean;
+  workspaceSetupComplete: boolean;
   choice: NotificationPermissionChoice;
   userId: string | null;
   error: string | null;
@@ -22,6 +22,7 @@ const initialState: NotificationOnboardingState = {
   isLoading: false,
   isHydrated: false,
   isComplete: false,
+  workspaceSetupComplete: false,
   choice: null,
   userId: null,
   error: null,
@@ -89,37 +90,13 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
       return;
     }
 
-    let onboarding = readMobileNotificationOnboardingState(settings);
-
-    // iOS is authoritative about whether Ledger may notify this device. Do
-    // not keep asking someone who has already granted that permission just
-    // because an older server-side onboarding flag was never written.
-    const permission = await Notifications.getPermissionsAsync().catch(() => null);
-    if (token !== bootstrapToken) {
-      return;
-    }
-
-    if (permission?.status === 'granted' && !onboarding.isComplete) {
-      onboarding = { isComplete: true, choice: 'enabled' };
-
-      // Reconcile without changing account/profile onboarding. The optimistic
-      // state above prevents the prompt from flashing back if this best-effort
-      // write is delayed or temporarily unavailable.
-      void updateMobileUserSettings({
-        preferences: {
-          mobileNotificationOnboardingCompleted: true,
-          mobileNotificationOnboardingChoice: 'enabled',
-        },
-      }).catch(() => {
-        // A later launch can retry reconciliation; system permission remains
-        // sufficient to suppress the in-app ask for this session.
-      });
-    }
+    const onboarding = readMobileNotificationOnboardingState(settings);
 
     setState({
       isLoading: false,
       isHydrated: true,
       isComplete: onboarding.isComplete,
+      workspaceSetupComplete: Boolean(settings.onboarding_completed),
       choice: onboarding.choice,
       error: null,
       userId,
@@ -133,6 +110,7 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
       isLoading: false,
       isHydrated: true,
       isComplete: false,
+      workspaceSetupComplete: false,
       choice: null,
       error: error instanceof Error ? error.message : 'Unable to load notification onboarding.',
       userId,
@@ -172,6 +150,7 @@ export async function setNotificationOnboardingChoice(
       isLoading: false,
       isHydrated: true,
       isComplete: true,
+      workspaceSetupComplete: true,
       choice: onboarding.choice ?? choice,
       error: null,
       userId,
@@ -189,6 +168,10 @@ export async function setNotificationOnboardingChoice(
     });
     throw error;
   }
+}
+
+export function completeWorkspaceSetup() {
+  setState({ workspaceSetupComplete: true });
 }
 
 export function resetNotificationOnboardingState() {
