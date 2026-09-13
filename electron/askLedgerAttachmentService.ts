@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { unzipSync, strFromU8, unzlibSync } from 'fflate';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as XLSX from 'xlsx';
@@ -15,6 +18,7 @@ export const ASK_LEDGER_ATTACHMENT_LIMITS = {
 
 const SUPPORTED = new Map([
   ['pdf', 'application/pdf'],
+  ['doc', 'application/msword'],
   ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   ['txt', 'text/plain'],
   ['md', 'text/markdown'],
@@ -40,12 +44,14 @@ export class AskLedgerAttachmentError extends Error {
 }
 
 const extensionFor = (name: string) => path.extname(name).slice(1).toLowerCase();
+const execFileAsync = promisify(execFile);
 const clean = (value: string) => value.replace(/\u0000/g, '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 const xmlDecode = (value: string) => value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 
 const validateBytes = (bytes: Uint8Array, extension: string) => {
-  if (bytes.includes(0) && !['pdf', 'docx', 'xlsx'].includes(extension)) throw new AskLedgerAttachmentError('This file does not contain readable text.');
+  if (bytes.includes(0) && !['pdf', 'doc', 'docx', 'xlsx'].includes(extension)) throw new AskLedgerAttachmentError('This file does not contain readable text.');
   if (extension === 'pdf' && strFromU8(bytes.subarray(0, 5), true) !== '%PDF-') throw new AskLedgerAttachmentError('This file is not a readable PDF.');
+  if (extension === 'doc' && (bytes[0] !== 0xd0 || bytes[1] !== 0xcf || bytes[2] !== 0x11 || bytes[3] !== 0xe0)) throw new AskLedgerAttachmentError('This file is not a readable legacy Word document.');
   if (extension === 'docx') {
     if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new AskLedgerAttachmentError('This file is not a readable DOCX document.');
   }
@@ -237,6 +243,31 @@ const extractDocx = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
   return blocks;
 };
 
+const extractDoc = async (bytes: Uint8Array): Promise<ExtractedAttachmentBlock[]> => {
+  if (process.platform !== 'darwin') {
+    throw new AskLedgerAttachmentError('Legacy .doc extraction is currently available on macOS only. Save the file as .docx to use it on this device.');
+  }
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ledger-doc-'));
+  const sourcePath = path.join(directory, 'document.doc');
+  try {
+    await fs.writeFile(sourcePath, bytes, { mode: 0o600 });
+    const { stdout } = await execFileAsync('/usr/bin/textutil', ['-convert', 'txt', '-stdout', sourcePath], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const text = clean(stdout);
+    if (!text) throw new AskLedgerAttachmentError('This Word document contains no usable text. It may be scanned or image-only.');
+    return text.split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z])/).map((part, index) => ({
+      text: clean(part),
+      source: { paragraph: index + 1 },
+    })).filter((block) => block.text);
+  } catch (error) {
+    if (error instanceof AskLedgerAttachmentError) throw error;
+    throw new AskLedgerAttachmentError('This legacy Word document could not be converted safely. Save the file as .docx and try again.');
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+};
+
 const extractText = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
   const text = clean(new TextDecoder('utf-8', { fatal: false }).decode(bytes));
   if (!text) throw new AskLedgerAttachmentError('This file contains no usable text.');
@@ -312,7 +343,7 @@ const extractXlsx = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBl
 export const extractAttachmentBlocks = async (bytes: Uint8Array, fileName: string): Promise<ExtractedAttachmentBlock[]> => {
   const extension = extensionFor(fileName);
   validateBytes(bytes, extension);
-  return extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, fileName) : extractText(bytes);
+  return extension === 'pdf' ? extractPdf(bytes) : extension === 'doc' ? extractDoc(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, fileName) : extractText(bytes);
 };
 
 export const chunkAttachmentBlocks = (blocks: ExtractedAttachmentBlock[], maxCharacters = 1400): ExtractedAttachmentBlock[] => {
@@ -425,7 +456,7 @@ export const attachmentBlocksToContext = (document: NormalizedAttachmentDocument
     ? `${document.attachment.extension.toUpperCase()} · Page ${block.source.pageNumber}`
       : block.source.rowStart
       ? `${document.attachment.extension.toUpperCase()} · ${block.source.sheetName ? `${block.source.sheetName} · ` : ''}Rows ${block.source.rowStart}–${block.source.rowEnd ?? block.source.rowStart}`
-      : document.attachment.extension === 'docx' ? 'Document' : document.attachment.extension.toUpperCase(),
+      : ['doc', 'docx'].includes(document.attachment.extension) ? 'Document' : document.attachment.extension.toUpperCase(),
   route: { kind: 'ask-ledger-attachment', attachmentId: document.attachment.id, conversationId: document.attachment.conversationId },
   attachmentSource: { attachmentId: document.attachment.id, fileName: document.attachment.name, ...block.source },
 }));

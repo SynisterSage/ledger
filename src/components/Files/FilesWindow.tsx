@@ -1019,7 +1019,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const createDocxTextCopy = async () => {
     if (
       activeSelected?.kind !== 'local' ||
-      activeSelected.file.extension !== 'docx' ||
+      !['doc', 'docx'].includes(activeSelected.file.extension) ||
       !user?.id ||
       !activeWorkspaceId ||
       !window.localContext?.createTextCopy
@@ -1432,7 +1432,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         </button>
                       ) : null}
                       {activeSelected.kind === 'local' &&
-                      activeSelected.file.extension === 'docx' &&
+                      ['doc', 'docx'].includes(activeSelected.file.extension) &&
                       localPreview?.kind === 'text' ? (
                         <button
                           type="button"

@@ -1090,7 +1090,7 @@ ipcMain.handle(
     const selection = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] },
+        { name: 'Ask Ledger attachments', extensions: ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx'] },
       ],
     });
     if (selection.canceled || !selection.filePaths.length)
@@ -1303,6 +1303,7 @@ ipcMain.handle(
           name: 'Ledger local context',
           extensions: [
             'pdf',
+            'doc',
             'png',
             'jpg',
             'jpeg',

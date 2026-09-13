@@ -205,6 +205,27 @@ test('plan my week uses structured weekly, overdue, and completion task scopes',
   await index.shutdown();
 });
 
+test('informal weekly overview includes work context alongside the calendar', async () => {
+  const now = new Date();
+  const day = new Date(now); day.setHours(0, 0, 0, 0);
+  const start = new Date(day); start.setDate(start.getDate() - start.getDay());
+  const date = (offset: number) => { const value = new Date(start); value.setDate(value.getDate() + offset); return value.toISOString().slice(0, 10); };
+  const project = item({ resourceType: 'project', resourceId: 'project-week', title: 'Finish portfolio site', content: 'Active project.', status: 'in_progress' });
+  const task = item({ resourceType: 'task', resourceId: 'task-week', title: 'Draft project presentation', content: '', dueAt: date(2), status: 'todo', projectId: 'project-week', projectName: 'Finish portfolio site' });
+  const event = item({ resourceType: 'event', resourceId: 'event-week', title: 'Studio critique', content: '', timestamp: `${date(2)}T14:00:00.000Z` });
+  const reminder = item({ resourceType: 'reminder', resourceId: 'reminder-week', title: 'Submit critique notes', content: '', dueAt: date(3), status: 'todo' });
+  const documents = [project, task, event, reminder];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'what is my week looking like', [], 32, { documents });
+  assert.equal(result.mode, 'research');
+  assert.ok(result.items.some((entry) => entry.resourceId === 'project-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'task-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'event-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'reminder-week'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'calendar-schedule-overview'), false);
+  await index.shutdown();
+});
+
 test('context-bound health and meeting skills expand their selected seeds', async () => {
   const project = item({ resourceType: 'project', resourceId: 'project-health', title: 'Alfa', content: 'In progress.', relationships: [{ relationshipType: 'has_task', resourceType: 'task', resourceId: 'task-health' }] });
   const task = item({ resourceType: 'task', resourceId: 'task-health', title: 'Resolve final proof', content: 'Blocked by review.', projectId: 'project-health', status: 'Open' });

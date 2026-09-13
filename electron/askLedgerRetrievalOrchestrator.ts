@@ -5,6 +5,7 @@ import { LedgerRetrievalService, type LedgerRetrievalResult } from './ledgerRetr
 import { CachedAskLedgerIntegrationRetriever } from './askLedgerIntegrationRetrieval.ts';
 import type { AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { buildAskLedgerQueryPlan } from '../src/types/askLedgerQueryPlan.ts';
+import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent.ts';
 
 export type AskLedgerRetrievalMode = 'quick' | 'research';
 
@@ -76,6 +77,7 @@ const addObjective = (objectives: RetrievalObjective[], objective: RetrievalObje
 
 type PlanMyWeekQuery = { id: string; label: string; query: string; resourceTypes: AskLedgerResourceType[]; constraints: RetrievalPlan['structuredConstraints'] };
 const planMyWeekQueries: PlanMyWeekQuery[] = [
+  { id: 'week-projects', label: 'Active projects', query: 'active projects', resourceTypes: ['project'] as AskLedgerResourceType[], constraints: { openOnly: true } },
   { id: 'week-open-tasks', label: 'Open tasks due this week', query: 'tasks this week', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { openOnly: true } },
   { id: 'week-completed-tasks', label: 'Completed tasks due this week', query: 'completed tasks this week', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { statuses: ['completed', 'complete', 'done', 'finished'] } },
   { id: 'overdue-tasks', label: 'Overdue open tasks', query: 'overdue open tasks', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { overdue: true, openOnly: true } },
@@ -364,6 +366,11 @@ export class AskLedgerRetrievalOrchestrator {
 
   async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; customSkillResourceTypes?: AskLedgerResourceType[]; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
     if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
+    // Use a balanced structured pass for informal weekly questions too, so a
+    // recurring calendar summary cannot crowd out actual work context.
+    if (detectAskLedgerQueryIntent(question).kind === 'weekly_overview' && !options?.documents?.some((item) => item.resourceId === 'calendar-schedule-overview')) {
+      return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
+    }
     const skillSeedQuestion = options?.skillId === 'project_health_check'
       ? 'Look through the project work and tell me what is happening, blocked, and what still needs to happen.'
       : options?.skillId === 'meeting_follow_up' || options?.skillId === 'prepare_for_meeting'

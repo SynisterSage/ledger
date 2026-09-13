@@ -6148,6 +6148,37 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                     </div>
                   </section>
                   {localAIModelError && <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{localAIModelError}</p>}
+                  <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="lens-behavior">
+                    <h3 id="lens-behavior" className={settingsTheme.sectionTitle}>Lens</h3>
+                    <div className={settingsTheme.sectionRows}>
+                      <div className="px-4 py-3">
+                        <p className={settingsTheme.label}>Run Lens</p>
+                        <p className={settingsTheme.help}>
+                          Choose whether Lens runs when you enter a project or Overview, or only when you click it.
+                        </p>
+                        <div className="mt-3 grid max-w-md grid-cols-2 gap-1.5 rounded-lg bg-[var(--ledger-surface-muted)] p-1">
+                          {([
+                            ['on_entry', 'On entry'],
+                            ['manual', 'When clicked'],
+                          ] as const).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setLensAutoRunPreference(value)}
+                              className={`rounded-md px-3 py-2 text-[12px] font-medium transition ${
+                                lensAutoRun === value
+                                  ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
+                                  : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                              }`}
+                              aria-pressed={lensAutoRun === value}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
                 </section>
               )}
 
@@ -6310,39 +6341,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           disabled={!platform.capabilities.canUseNativeWindowControls}
                         />
                       </SettingsRow>
-                    </div>
-                  </section>
-                  <section aria-labelledby="lens-behavior">
-                    <h3 id="lens-behavior" className={settingsTheme.sectionTitle}>
-                      Lens
-                    </h3>
-                    <div className={settingsTheme.sectionRows}>
-                      <div className="px-4 py-3">
-                        <p className={settingsTheme.label}>Run Lens</p>
-                        <p className={settingsTheme.help}>
-                          Choose whether Lens runs when you enter a project or Overview, or only when you click it.
-                        </p>
-                        <div className="mt-3 grid max-w-md grid-cols-2 gap-1.5 rounded-lg bg-[var(--ledger-surface-muted)] p-1">
-                          {([
-                            ['on_entry', 'On entry'],
-                            ['manual', 'When clicked'],
-                          ] as const).map(([value, label]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() => setLensAutoRunPreference(value)}
-                              className={`rounded-md px-3 py-2 text-[12px] font-medium transition ${
-                                lensAutoRun === value
-                                  ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
-                                  : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
-                              }`}
-                              aria-pressed={lensAutoRun === value}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   </section>
                   <section aria-labelledby="sidebar-reset">

@@ -22,6 +22,7 @@ export type LedgerEmptyStateProps = {
   size?: LedgerEmptyStateSize;
   testId: string;
   className?: string;
+  contentClassName?: string;
   children?: ReactNode;
 };
 
@@ -38,6 +39,7 @@ export const LedgerEmptyState = ({
   size = 'default',
   testId,
   className = '',
+  contentClassName = '',
   children,
 }: LedgerEmptyStateProps) => {
   const compact = size === 'compact';
@@ -51,7 +53,7 @@ export const LedgerEmptyState = ({
       role={kindRole(state)}
       className={`flex w-full items-center justify-center ${compact ? 'px-3 py-5' : 'px-5 py-10'} ${className}`}
     >
-      <div className={`${compact ? 'max-w-xs' : 'max-w-sm'} text-center`}>
+      <div className={`${compact ? 'max-w-xs' : 'max-w-sm'} text-center ${contentClassName}`}>
         {Icon ? (
           <span
             aria-hidden="true"

@@ -1027,16 +1027,23 @@ export class AskLedgerService {
       const dateWindowInstruction = intent.kind === 'time_window'
         ? 'This is a month/date-window summary. Summarize the supplied dated Ledger records in a compact, human-friendly overview. Group repeated events with the same title and time into one pattern and list their dates once. Mention project deadlines and milestones separately. Preserve every supplied status exactly; do not infer project health or replace statuses with opinions. Do not expose the evidence layout or repeat one event per source record.'
         : '';
-      const scheduleOverview = intent.kind === 'weekly_overview' && !intent.window;
+      const normalizedQuestion = request.question.toLowerCase();
+      const wholeCalendarScheduleQuestion = /\b(?:weekly|workweek|work schedule|calendar schedule|days off|day off)\b/.test(normalizedQuestion)
+        || /\b(?:schedule|calendar)\b.*\b(?:look|looking|overview|pattern|off|work)\b/.test(normalizedQuestion);
+      const scheduleOverview = intent.kind === 'weekly_overview' && !intent.window && wholeCalendarScheduleQuestion;
       const scheduleOverviewItem = scheduleOverview
         ? buildCalendarScheduleOverview(request.documents, request.workspaceId, request.timeZone, request.timeFormat)
         : null;
+      const weeklyWorkInstruction = intent.kind === 'weekly_overview' && !scheduleOverviewItem
+        ? 'This is a current-week workspace overview. Cover both the calendar schedule and the work around it: active projects, open tasks, milestones, reminders, and deadlines. Explain the main workload and next actions; do not answer with calendar events alone.'
+        : '';
       const notesHomeInstruction = notesHomeScopeInstruction(explicitContext);
       const retrievalQuestion = [
         request.question,
         notesHomeInstruction,
         meetingAnchorInstruction,
         dateWindowInstruction,
+        weeklyWorkInstruction,
         scheduleOverviewItem
           ? 'This is a whole-calendar schedule question. Use the supplied calendar schedule overview as the authoritative summary. Explain the repeating weekly pattern, typical days off, item names, times, and any date-range caveats. Do not limit the answer to the current week.'
           : '',
@@ -1477,7 +1484,7 @@ export class AskLedgerService {
                 this.repairRequestIds.set(requestId, repairRequestId);
                 const repairChunks: string[] = [];
                 this.localAI.start(
-                  { question: request.question, context: buildAskLedgerRepairPrompt({ question: request.question, evidencePackage: evidence.package, answer: generatedAnswer, validationFailures: formatAskLedgerValidationFailures(validation), executionMode: route.executionMode, presentationProfile: skill?.presentationProfile }), generationBudget: Math.min(answerGenerationBudget, 256), timeoutMs: Math.min(generationTimeoutMs, 30_000), reasoningSignals: { answerDepth: 'brief', generationDepth: 'standard', retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: 'off', routeReason: 'answer_validation_repair' } },
+                  { question: request.question, context: buildAskLedgerRepairPrompt({ question: request.question, evidencePackage: evidence.package, answer: generatedAnswer, validationFailures: formatAskLedgerValidationFailures(validation), executionMode: route.executionMode, presentationProfile: intent.kind === 'weekly_overview' && !scheduleOverviewItem ? 'weekly_plan' : skill?.presentationProfile }), generationBudget: Math.min(answerGenerationBudget, 256), timeoutMs: Math.min(generationTimeoutMs, 30_000), reasoningSignals: { answerDepth: 'brief', generationDepth: 'standard', retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: 'off', routeReason: 'answer_validation_repair' } },
                   { onEvent: (repairEvent) => {
                     if (repairEvent.type === 'delta' && typeof repairEvent.text === 'string') repairChunks.push(repairEvent.text);
                     else if (repairEvent.type === 'activity') emit(repairEvent);
@@ -1502,7 +1509,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, dateWindowInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, dateWindowInstruction, weeklyWorkInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: intent.kind === 'weekly_overview' && !scheduleOverviewItem ? 'weekly_plan' : skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
         generationCallbacks,
         requestId,
       );

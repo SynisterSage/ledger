@@ -542,6 +542,10 @@ type LinkedNoteContextMenuState = {
   noteId: string;
   source: 'center' | 'right';
 };
+
+const isEditableContextTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  Boolean(target.closest('input, textarea, [contenteditable="true"]'));
 type WorkspaceMember = {
   user_id: string;
   email: string | null;
@@ -4993,6 +4997,7 @@ export const ProjectsWindow = ({
           if (!expanded) openActionInlineEditor(task);
         }}
         onContextMenu={(e) => {
+          if (isEditableContextTarget(e.target)) return;
           e.preventDefault();
           setTaskContextMenu({
             x: e.clientX,
@@ -5249,6 +5254,7 @@ export const ProjectsWindow = ({
           openMilestoneDetail(milestone.id, event.clientX, event.clientY);
         }}
         onContextMenu={(event) => {
+          if (isEditableContextTarget(event.target)) return;
           event.preventDefault();
           openMilestoneDetail(milestone.id, event.clientX, event.clientY);
         }}
@@ -5758,7 +5764,8 @@ export const ProjectsWindow = ({
               description="Add the next concrete step when this project is ready to move."
               size="compact"
               testId="project-next-actions-empty"
-              className="justify-start px-2 py-1 text-left"
+              className="mx-auto max-w-md justify-start px-2 py-1 text-left"
+              contentClassName="text-left"
             />
           ) : (
             <div className="space-y-1">
@@ -5784,7 +5791,8 @@ export const ProjectsWindow = ({
               description="Milestones will give the project’s larger steps a place on the timeline."
               size="compact"
               testId="project-milestones-empty"
-              className="justify-start px-2 py-1 text-left"
+              className="mx-auto max-w-md justify-start px-2 py-1 text-left"
+              contentClassName="text-left"
             />
           ) : (
             <div className="space-y-1">
@@ -5849,7 +5857,8 @@ export const ProjectsWindow = ({
             size="compact"
             testId="project-notes-empty"
             primaryAction={{ label: 'Add note', onClick: () => setIsCreateProjectNoteModalOpen(true) }}
-            className="justify-start px-0 py-1 text-left"
+            className="mx-auto max-w-md justify-start px-0 py-1 text-left"
+            contentClassName="text-left"
           />
         ) : (
           <div className="space-y-1">
@@ -6012,7 +6021,8 @@ export const ProjectsWindow = ({
           description="Project changes and progress will appear here."
           size="compact"
           testId="project-activity-empty"
-          className="justify-start px-0 py-1 text-left"
+          className="mx-auto max-w-md justify-start px-0 py-1 text-left"
+          contentClassName="text-left"
         />
       ) : (
         <div className="space-y-2">
@@ -6588,7 +6598,8 @@ export const ProjectsWindow = ({
           size="compact"
           testId="project-linked-notes-empty"
           primaryAction={{ label: 'Link note', onClick: () => void openLinkNoteModal() }}
-          className="justify-start px-0 py-1 text-left"
+          className="mx-auto max-w-md justify-start px-0 py-1 text-left"
+          contentClassName="text-left"
         />
       ) : (
         <div className="space-y-1">
@@ -6706,7 +6717,8 @@ export const ProjectsWindow = ({
           description="Events and reminders connected to this project will appear here."
           size="compact"
           testId="project-calendar-empty"
-          className="justify-start px-0 py-1 text-left"
+          className="mx-auto max-w-md justify-start px-0 py-1 text-left"
+          contentClassName="text-left"
         />
       ) : (
         <div className="space-y-1">

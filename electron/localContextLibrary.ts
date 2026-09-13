@@ -30,6 +30,7 @@ const SUPPORTED = new Map([
   ['jpeg', 'image/jpeg'],
   ['webp', 'image/webp'],
   ['gif', 'image/gif'],
+  ['doc', 'application/msword'],
   ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   ['txt', 'text/plain'],
   ['md', 'text/markdown'],
@@ -629,8 +630,8 @@ export class LocalContextLibrary {
     const record = await this.loadRecord(id);
     if (!record) throw new LocalContextLibraryError('Local file not found.');
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
-    if (record.extension !== 'docx')
-      throw new LocalContextLibraryError('Only DOCX files can be copied as editable text.');
+    if (!['doc', 'docx'].includes(record.extension))
+      throw new LocalContextLibraryError('Only Word documents can be copied as editable text.');
     const bytes = await fs.readFile(path.resolve(this.root, record.relativePath));
     const copyBytes = Buffer.from(
       (await extractAttachmentBlocks(bytes, record.name))
