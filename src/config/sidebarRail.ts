@@ -5,6 +5,7 @@ export const NORMAL_RAIL_ITEM_IDS = [
   'calendar',
   'projects',
   'notes',
+  'files',
 ] as const;
 
 export type NormalRailItemId = (typeof NORMAL_RAIL_ITEM_IDS)[number];

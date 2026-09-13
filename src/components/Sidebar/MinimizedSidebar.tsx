@@ -6,6 +6,7 @@ import {
   ChevronUp,
   ChevronDown,
   StickyNote,
+  FileText,
   Folder,
   Search,
   Sparkles,
@@ -95,6 +96,7 @@ export const MinimizedSidebar = ({
     calendar: <CalendarDays size={18} />,
     projects: <Folder size={18} />,
     notes: <StickyNote size={18} />,
+    files: <FileText size={18} />,
   } satisfies Record<NormalRailItemId, React.ReactNode>;
   const railActions: Record<NormalRailItemId, () => void> = {
     search: () => {
@@ -111,6 +113,7 @@ export const MinimizedSidebar = ({
     calendar: () => openModule('calendar'),
     projects: () => toggleModule('projects'),
     notes: () => toggleModule('notes'),
+    files: () => window.desktopWindow?.openModule('files', { kind: 'files' }),
   };
   const visibleRailOrder = isHorizontal ? [...NORMAL_RAIL_ITEM_IDS] : normalRailOrder;
 
@@ -155,7 +158,14 @@ export const MinimizedSidebar = ({
       dragStartOrderRef.current = null;
       setDraggedRailItem(null);
       if (!workspaceId || !previousOrder || nextOrder.join('|') === previousOrder.join('|')) return;
-      void api.updateWorkspaceNavigationSettings(workspaceId, { normalRailOrder: nextOrder }).catch(() => {
+      void api.updateWorkspaceNavigationSettings(workspaceId, { normalRailOrder: nextOrder }).then((payload) => {
+        const savedOrder = (payload as { navigation_settings?: { normalRailOrder?: unknown } } | null)
+          ?.navigation_settings?.normalRailOrder;
+        if (!Array.isArray(savedOrder)) return;
+        const normalizedSavedOrder = normalizeNormalRailOrder(savedOrder);
+        normalRailOrderRef.current = normalizedSavedOrder;
+        setNormalRailOrder(normalizedSavedOrder);
+      }).catch(() => {
         normalRailOrderRef.current = previousOrder;
         setNormalRailOrder(previousOrder);
       });
@@ -195,7 +205,7 @@ export const MinimizedSidebar = ({
       >
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3 self-center'}`}>
           {visibleRailOrder.map((itemId) => {
-            if (itemId === 'ask-ledger' && platform.kind !== 'desktop') return null;
+            if ((itemId === 'ask-ledger' || itemId === 'files') && platform.kind !== 'desktop') return null;
             return (
               <button
                 key={itemId}

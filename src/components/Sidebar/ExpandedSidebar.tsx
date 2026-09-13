@@ -2654,6 +2654,13 @@ export const ExpandedSidebar = ({
                 icon: CalendarDays,
                 action: () => openSidebarModule('calendar'),
               },
+              ...(platform.kind === 'desktop'
+                ? [{
+                    label: 'Files & links',
+                    icon: FileText,
+                    action: () => void window.desktopWindow?.openModule('files', { kind: 'files' }),
+                  }]
+                : []),
             ].map((item) => (
               <button
                 key={item.label}

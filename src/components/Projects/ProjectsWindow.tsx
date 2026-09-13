@@ -108,6 +108,7 @@ import {
   type ProjectResourceRef,
 } from '../../features/projects/projectLens';
 import { ProjectLensCache } from '../../features/projects/projectLensCache';
+import { loadLensPreferences, subscribeToLensPreferences } from '../../config/lensPreferences';
 import { LensRequestRegistry } from '../../features/lens/lensRequestRegistry';
 import {
   getProjectTimelineSpan,
@@ -961,6 +962,7 @@ export const ProjectsWindow = ({
   const projectLensCacheRef = useRef(projectLensCache);
   const projectsWindowMountedRef = useRef(true);
   const projectLensRequestRef = useRef(0);
+  const projectLensAutoRequestKeyRef = useRef<string | null>(null);
   const hasLoadedProjectsDataRef = useRef(false);
   const hasLoadedTasksDataRef = useRef(false);
 
@@ -1139,6 +1141,9 @@ export const ProjectsWindow = ({
   const [projectLensState, setProjectLensState] = useState<
     'idle' | 'loading' | 'ready' | 'unavailable'
   >('idle');
+  const [lensAutoRun, setLensAutoRun] = useState(
+    () => loadLensPreferences().autoRun === 'on_entry'
+  );
   const [projectLensLoadingStage, setProjectLensLoadingStage] = useState(0);
   const [projectLensResult, setProjectLensResult] = useState<ProjectLensResult | null>(null);
   const [projectLensUnavailableReason, setProjectLensUnavailableReason] = useState<
@@ -1814,6 +1819,14 @@ export const ProjectsWindow = ({
     [api]
   );
 
+  const refreshProjectLens = useCallback(() => {
+    if (!selectedProjectIntelligenceContext || !projectLensFingerprint) return;
+    projectLensCacheRef.current.invalidate(
+      `${selectedProjectIntelligenceContext.workspaceId}:${selectedProjectIntelligenceContext.projectId}`
+    );
+    void requestProjectLens(selectedProjectIntelligenceContext, projectLensFingerprint);
+  }, [projectLensFingerprint, requestProjectLens, selectedProjectIntelligenceContext]);
+
   const requestProjectLensAction = useCallback(
     async (action: ProjectLensAction, context: ProjectIntelligenceContext) => {
       const requestNumber = projectLensActionRequestRef.current + 1;
@@ -1882,12 +1895,27 @@ export const ProjectsWindow = ({
   );
 
   useEffect(() => {
+    const unsubscribe = subscribeToLensPreferences((preferences) => {
+      setLensAutoRun(preferences.autoRun === 'on_entry');
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     projectsWindowMountedRef.current = true;
     return () => {
       projectsWindowMountedRef.current = false;
       projectLensActionRequestRef.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    projectLensAutoRequestKeyRef.current = null;
+    projectLensRequestRef.current += 1;
+    setProjectLensResult(null);
+    setProjectLensUnavailableReason(null);
+    setProjectLensState('idle');
+  }, [activeWorkspaceId, selectedProject?.id]);
 
   useEffect(() => {
     if (
@@ -1899,20 +1927,17 @@ export const ProjectsWindow = ({
       isLoadingProjectActivity ||
       isLoadingTasks
     ) {
+      // Background workspace refreshes temporarily reload project context.
+      // Keep the last Lens result visible and wait for an explicit refresh;
+      // ordinary edits must not start another model request.
       projectLensRequestRef.current += 1;
-      projectLensActionRequestRef.current += 1;
-      setProjectLensResult(null);
-      setProjectLensUnavailableReason(null);
-      setProjectLensState('idle');
-      setProjectLensAction(null);
-      setProjectLensActionResult(null);
-      setProjectLensActionUnavailableReason(null);
-      setProjectLensActionState('idle');
-      setProjectLensReview([]);
-      setProjectLensReviewError(null);
-      setProjectLensReviewNotice(null);
+      if (!projectLensResult) projectLensAutoRequestKeyRef.current = null;
       return;
     }
+    if (!lensAutoRun) return;
+    const autoRequestKey = `${selectedProjectIntelligenceContext.workspaceId}:${selectedProjectIntelligenceContext.projectId}`;
+    if (projectLensAutoRequestKeyRef.current === autoRequestKey) return;
+    projectLensAutoRequestKeyRef.current = autoRequestKey;
     void requestProjectLens(selectedProjectIntelligenceContext, projectLensFingerprint);
   }, [
     isLoadingProjects,
@@ -1921,6 +1946,8 @@ export const ProjectsWindow = ({
     isLoadingProjectCalendarItems,
     isLoadingTasks,
     projectLensFingerprint,
+    lensAutoRun,
+    projectLensResult,
     requestProjectLens,
     selectedProjectIntelligenceContext,
   ]);
@@ -7024,10 +7051,17 @@ export const ProjectsWindow = ({
     return (
       <section ref={projectLensMenuRef} className="pb-2">
         <div className="relative flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={refreshProjectLens}
+            disabled={projectLensState === 'loading' || !selectedProjectIntelligenceContext}
+            className="flex items-center gap-2 rounded-md text-left transition hover:bg-[var(--ledger-surface-muted)] disabled:cursor-wait disabled:opacity-60"
+            aria-label={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
+            title={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
+          >
             <LedgerLensWheel size={18} state={projectLensState} label="Lens status" />
             <p className="text-[13px] font-semibold text-[var(--ledger-text-primary)]">Lens</p>
-          </div>
+          </button>
           <button
             type="button"
             aria-label="More Lens actions"
@@ -7058,15 +7092,7 @@ export const ProjectsWindow = ({
                 type="button"
                 onClick={() => {
                   setProjectLensMenuOpen(false);
-                  if (selectedProjectIntelligenceContext && projectLensFingerprint) {
-                    projectLensCacheRef.current.invalidate(
-                      `${selectedProjectIntelligenceContext.workspaceId}:${selectedProjectIntelligenceContext.projectId}`
-                    );
-                    void requestProjectLens(
-                      selectedProjectIntelligenceContext,
-                      projectLensFingerprint
-                    );
-                  }
+                  refreshProjectLens();
                 }}
                 className="block w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
@@ -7075,6 +7101,11 @@ export const ProjectsWindow = ({
             </div>
           )}
         </div>
+        {projectLensState === 'idle' && !lensAutoRun && (
+          <p className="mt-1.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+            Click Lens to review this project.
+          </p>
+        )}
         {projectLensState === 'loading' ? (
           <div className="mt-4 flex min-h-10 items-center gap-2" aria-label="Loading Lens">
             <LedgerLensWheel size={22} state="loading" label="Loading Lens" />

@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
-import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, Power, Sparkles } from 'lucide-react';
+import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, FileText, Funnel, ChevronUp, ChevronDown, Power, Sparkles } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -143,6 +143,16 @@ export const CollapsedSidebar = ({
             >
               <StickyNote size={18} />
             </button>
+            {platform.kind === 'desktop' && (
+              <button
+                aria-label="Open Files & links"
+                onClick={() => window.desktopWindow?.openModule('files', { kind: 'files' })}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={iconButtonClass}
+              >
+                <FileText size={18} />
+              </button>
+            )}
             
             <button
               onClick={handleClick}

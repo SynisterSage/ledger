@@ -132,6 +132,7 @@ import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
 import { LocalAIUnavailableState } from './components/Common/LocalAIUnavailableState';
 import { LedgerLensWheel } from './components/Common/LedgerLensWheel';
+import { loadLensPreferences, subscribeToLensPreferences } from './config/lensPreferences';
 import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
@@ -1682,10 +1683,20 @@ export function DashboardContent({
   const [overviewFocusResult, setOverviewFocusResult] = useState<OverviewFocusResult | null>(null);
   const overviewFocusResultRef = useRef<OverviewFocusResult | null>(null);
   const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
+  const [lensAutoRun, setLensAutoRun] = useState(
+    () => loadLensPreferences().autoRun === 'on_entry'
+  );
   const [overviewTryRotationTick, setOverviewTryRotationTick] = useState(0);
   const overviewFocusRequestRef = useRef(0);
   const overviewFocusSnapshotKeyRef = useRef('');
+  const overviewFocusAutoRequestKeyRef = useRef<string | null>(null);
+  const overviewFocusLastRefreshTokenRef = useRef(0);
+  const overviewFocusPreviousSnapshotKeyRef = useRef('');
   overviewFocusResultRef.current = overviewFocusResult;
+
+  useEffect(() => subscribeToLensPreferences((preferences) => {
+    setLensAutoRun(preferences.autoRun === 'on_entry');
+  }), []);
 
   useEffect(() => {
     if (overviewFocusStatus !== 'loading') {
@@ -2106,14 +2117,33 @@ export function DashboardContent({
   overviewFocusSnapshotKeyRef.current = overviewFocusSnapshotKey;
 
   const refreshOverviewFocus = useCallback(() => {
+    if (activeWorkspaceId) overviewLensCache.invalidate(`${activeWorkspaceId}:overview`);
     setOverviewFocusRefreshToken((current) => current + 1);
-  }, []);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     overviewFocusRequestRef.current += 1;
     setOverviewFocusResult(null);
     setOverviewFocusStatus('idle');
-  }, [activeWorkspaceId, overviewFocusSnapshotKey]);
+    overviewFocusAutoRequestKeyRef.current = null;
+    overviewFocusLastRefreshTokenRef.current = overviewFocusRefreshToken;
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!overviewFocusSnapshotKey) return;
+    const previousKey = overviewFocusPreviousSnapshotKeyRef.current;
+    overviewFocusPreviousSnapshotKeyRef.current = overviewFocusSnapshotKey;
+    if (previousKey && previousKey !== overviewFocusSnapshotKey) {
+      // Invalidate an in-flight answer after workspace data changes, but keep
+      // the last completed Lens result visible. The user can refresh when the
+      // new context is ready instead of paying for every edit.
+      overviewFocusRequestRef.current += 1;
+      if (!overviewFocusResultRef.current) {
+        overviewFocusAutoRequestKeyRef.current = null;
+        setOverviewFocusStatus('idle');
+      }
+    }
+  }, [overviewFocusSnapshotKey]);
 
   useEffect(() => {
     if (
@@ -2131,13 +2161,18 @@ export function DashboardContent({
     }
 
     const requestGeneration = overviewFocusRequestRef.current + 1;
+    const cacheKey = `${activeWorkspaceId}:overview`;
+    const explicitRefresh = overviewFocusLastRefreshTokenRef.current !== overviewFocusRefreshToken;
+    if (lensAutoRun === false && !explicitRefresh) return;
+    if (overviewFocusAutoRequestKeyRef.current === cacheKey && !explicitRefresh) return;
+    overviewFocusAutoRequestKeyRef.current = cacheKey;
+    overviewFocusLastRefreshTokenRef.current = overviewFocusRefreshToken;
     overviewFocusRequestRef.current = requestGeneration;
     let cancelled = false;
     setOverviewFocusStatus('loading');
 
     const generate = async () => {
       try {
-        const cacheKey = `${activeWorkspaceId}:overview`;
         const cached = overviewLensCache.get(cacheKey, overviewFocusSnapshotKey);
         if (cached) {
           console.info('[overview-lens] cache', { workspaceId: activeWorkspaceId, cache: 'hit' });
@@ -2201,6 +2236,7 @@ export function DashboardContent({
     isLoadingDashboard,
     overviewFocusRefreshToken,
     overviewFocusSnapshotKey,
+    lensAutoRun,
   ]);
 
   useEffect(() => {
@@ -8073,7 +8109,14 @@ export function DashboardContent({
                         aria-labelledby="overview-lens-heading"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={refreshOverviewFocus}
+                            disabled={overviewFocusStatus === 'loading'}
+                            className="flex items-center gap-1.5 rounded-md text-left transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-wait disabled:opacity-60"
+                            aria-label={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
+                            title={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
+                          >
                             <LedgerLensWheel
                               size={16}
                               state={overviewFocusStatus}
@@ -8085,7 +8128,7 @@ export function DashboardContent({
                             >
                               Lens
                             </p>
-                          </div>
+                          </button>
                           <button
                             type="button"
                             onClick={refreshOverviewFocus}
@@ -8100,6 +8143,11 @@ export function DashboardContent({
                             />
                           </button>
                         </div>
+                        {overviewFocusStatus === 'idle' && !lensAutoRun && (
+                          <p className="mt-1.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                            Click Lens to check what needs attention.
+                          </p>
+                        )}
                         {overviewFocusStatus === 'loading' && (
                           <p
                             className="mt-1 text-[11px] leading-4 text-[var(--ledger-text-muted)]"

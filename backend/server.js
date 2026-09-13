@@ -14317,6 +14317,7 @@ app.patch(
         'calendar',
         'projects',
         'notes',
+        'files',
       ]);
       if (
         !normalRailOrder ||
