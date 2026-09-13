@@ -119,7 +119,10 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
       id: 'attachments',
       purpose: 'Find the requested local files and their extracted text',
       resourceTypes: ['attachment'],
-      entityQuery: base.entityQuery,
+      // A named file kind is an authoritative attachment scope. Without it,
+      // a broad "what does the syllabus PDF say" query can admit an unrelated
+      // PDF whose extracted text happens to share generic course terms.
+      entityQuery: /\bsyllabus\b/.test(normalized) ? 'syllabus' : base.entityQuery,
       constraints: {},
       expandRelationships: false,
       dependsOn: [],

@@ -405,7 +405,12 @@ export class LedgerRetrievalService {
     });
     const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
     const isLocalLibraryAttachment = (document: AskLedgerContextItem) => document.resourceType === 'attachment' && document.metadata?.localFileId !== undefined;
-    const localAttachmentCanSupportPlan = isLocalLibraryAttachment;
+    const localAttachmentCanSupportPlan = (document: AskLedgerContextItem) =>
+      isLocalLibraryAttachment(document)
+      // A named attachment objective is authoritative. Do not let the
+      // general local-file supplemental-context allowance re-admit unrelated
+      // PDFs after the filename/entity scope has excluded them.
+      && !(plan?.primaryResourceTypes.includes('attachment') && plan.entityQuery);
     const entityProjectIds = new Set(resourceDocuments
       .filter((document) => document.resourceType === 'project' && plan?.entityQuery && entityMatch(plan.entityQuery, document))
       .map((document) => document.resourceId));

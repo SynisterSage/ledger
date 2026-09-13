@@ -55,6 +55,19 @@ test('keeps attachment evidence in compound project questions', async () => {
   await index.shutdown();
 });
 
+test('scopes named syllabus questions away from unrelated PDFs', async () => {
+  const syllabus = item({ resourceType: 'attachment', resourceId: 'attachment-syllabus', title: 'Dzenko HistoryOfPhotography syllabus.pdf', content: 'Week 2 syllabus quiz and discussion introductions are due.' });
+  const unrelated = item({ resourceType: 'attachment', resourceId: 'attachment-motion', title: 'AR390 Motion-26-FALL.pdf', content: 'Library orientation and evaluating sources.' });
+  const documents = [syllabus, unrelated];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'For my History of Photo project, what are the next actions and what does the syllabus PDF say?', [], 20, { documents });
+
+  assert.equal(result.mode, 'research');
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-syllabus'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-motion'), false);
+  await index.shutdown();
+});
+
 test('keeps narrow questions on the quick retrieval path', async () => {
   assert.equal(classifyAskLedgerRetrievalMode('When is Alfa due?'), 'quick');
   assert.equal(classifyAskLedgerRetrievalMode('Show my today tasks.'), 'quick');

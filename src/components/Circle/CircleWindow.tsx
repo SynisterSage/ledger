@@ -139,12 +139,11 @@ type CirclePersonActivityPayload = {
 };
 
 type CircleListTab = 'all' | 'active' | 'waiting_on' | 'shared_work' | 'pinned';
-type CircleDetailTab = 'overview' | 'assigned' | 'projects' | 'followups' | 'activity';
+type CircleDetailTab = 'overview' | 'assigned' | 'projects' | 'activity';
 type CircleWorkspaceSectionId =
   | 'needs_attention'
   | 'assigned_work'
   | 'shared_projects'
-  | 'follow_ups'
   | 'recent_activity'
   | 'pinned_people';
 type CircleDisplayMode =
@@ -177,15 +176,16 @@ const circleTheme = {
   leftPaneHeader:
     'border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]',
   leftList: 'ledger-pane-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
-  row: 'group flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]',
-  rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
+  row: 'group flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30',
+  rowSelected:
+    'border-l-2 border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-hover)] pl-2 hover:bg-[var(--ledger-surface-hover)]',
   rowTitle: 'text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]',
-  rowMeta: 'text-[10px] leading-3.5 text-[var(--ledger-text-muted)]',
-  rowMetaStrong: 'text-[10px] font-medium leading-3.5 text-[var(--ledger-text-secondary)]',
+  rowMeta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
+  rowMetaStrong: 'text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)]',
   content: 'min-w-0 flex-1 overflow-y-auto px-5 py-5 lg:px-6',
-  contentInner: 'mx-auto flex min-h-full w-full max-w-5xl flex-col gap-5',
+  contentInner: 'mx-auto flex min-h-full w-full max-w-[1180px] flex-col gap-5',
   panel:
-    'overflow-hidden rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]',
+    'overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_12px_32px_rgba(66,42,24,0.045)]',
   sectionTitle: 'text-xs font-medium text-[var(--ledger-text-primary)]',
   sectionLabel:
     'text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]',
@@ -195,19 +195,19 @@ const circleTheme = {
   chip: 'inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
   headerMeta: 'text-[11px] text-[var(--ledger-text-muted)]',
   subtleButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   compactButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   actionButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   primaryButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[11px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-[11px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   mutedButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   sectionActionText:
     'inline-flex h-7 items-center text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]',
   sectionRow:
-    'group grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+    'group grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30',
 };
 
 const circleTabs: Array<{ id: CircleListTab; label: string }> = [
@@ -222,7 +222,6 @@ const detailTabs: Array<{ id: CircleDetailTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'assigned', label: 'Assigned work' },
   { id: 'projects', label: 'Shared projects' },
-  { id: 'followups', label: 'Follow-ups' },
   { id: 'activity', label: 'Activity' },
 ];
 
@@ -380,7 +379,7 @@ const SummaryStrip = ({
     onClick?: () => void;
   }>;
 }) => (
-  <div className="overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
+  <div className="overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
     <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] md:grid-cols-4">
       {items.map((item) => (
         <SummaryCell
@@ -420,7 +419,7 @@ const WorkspaceSection = ({
         event.preventDefault();
         onToggle();
       }}
-      className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+      className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30"
     >
       <div className="flex min-w-0 items-center gap-2 text-left select-none">
         <ChevronDown
@@ -579,9 +578,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const [selectedProjects, setSelectedProjects] = useState<CirclePersonProjectsPayload | null>(
     null
   );
-  const [selectedFollowUps, setSelectedFollowUps] = useState<CirclePersonFollowUpsPayload | null>(
-    null
-  );
   const [selectedActivity, setSelectedActivity] = useState<CirclePersonActivityPayload | null>(
     null
   );
@@ -596,7 +592,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     needs_attention: false,
     assigned_work: false,
     shared_projects: false,
-    follow_ups: false,
     recent_activity: false,
     pinned_people: false,
   });
@@ -637,7 +632,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedPerson(null);
       setSelectedWork(null);
       setSelectedProjects(null);
-      setSelectedFollowUps(null);
       setSelectedActivity(null);
       return;
     }
@@ -668,7 +662,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         setSelectedPerson(null);
         setSelectedWork(null);
         setSelectedProjects(null);
-        setSelectedFollowUps(null);
         setSelectedActivity(null);
       }
     } catch (fetchError) {
@@ -678,7 +671,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedPerson(null);
       setSelectedWork(null);
       setSelectedProjects(null);
-      setSelectedFollowUps(null);
       setSelectedActivity(null);
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load people.');
     } finally {
@@ -696,7 +688,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedPerson(cached.person);
       setSelectedWork(cached.work);
       setSelectedProjects(cached.projects);
-      setSelectedFollowUps(cached.followUps);
       setSelectedActivity(cached.activity);
     }
     const token = ++selectedLoadTokenRef.current;
@@ -737,14 +728,12 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedPerson(nextSelectedPerson);
       setSelectedWork(nextSelectedWork);
       setSelectedProjects(nextSelectedProjects);
-      setSelectedFollowUps(nextSelectedFollowUps);
       setSelectedActivity(nextSelectedActivity);
     } catch (fetchError) {
       if (selectedLoadTokenRef.current !== token) return;
       setSelectedPerson(null);
       setSelectedWork(null);
       setSelectedProjects(null);
-      setSelectedFollowUps(null);
       setSelectedActivity(null);
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load person details.');
     } finally {
@@ -760,7 +749,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     setSelectedPerson(null);
     setSelectedWork(null);
     setSelectedProjects(null);
-    setSelectedFollowUps(null);
     setSelectedActivity(null);
     setActiveTab('overview');
     setSearchQuery('');
@@ -768,7 +756,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       needs_attention: false,
       assigned_work: false,
       shared_projects: false,
-      follow_ups: false,
       recent_activity: false,
       pinned_people: false,
     });
@@ -917,7 +904,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     selectedPerson ?? people.find((person) => person.id === selectedPersonId) ?? null;
   const selectedPersonTasks = selectedWork?.assigned_tasks ?? [];
   const selectedProjectsRows = selectedProjects?.shared_projects ?? [];
-  const selectedFollowUpItems = selectedFollowUps?.items ?? [];
   const selectedActivityRows = selectedActivity?.activity ?? [];
 
   const selectedPersonPrimaryTeam = selectedPersonDetails?.teams?.[0]?.name ?? null;
@@ -1106,7 +1092,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     setSelectedPerson(null);
     setSelectedWork(null);
     setSelectedProjects(null);
-    setSelectedFollowUps(null);
     setSelectedActivity(null);
     setIsLoadingSelected(false);
     setActiveTab('overview');
@@ -1119,6 +1104,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       <div className="px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
+            <h1 className="text-[20px] font-medium tracking-[-0.01em] text-[var(--ledger-text-primary)]">
+              Your circle
+            </h1>
             <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--ledger-text-muted)]">
               People connected to your work, follow-ups, and shared context.
             </p>
@@ -1129,12 +1117,11 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         </div>
       </div>
       <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-        <SummaryStrip
-          items={circleOverviewRows.summary.map((item) => ({
-            label: item.label,
-            value: item.value,
-          }))}
-        />
+        <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] md:grid-cols-4">
+          {circleOverviewRows.summary.map((item) => (
+            <SummaryCell key={item.label} label={item.label} value={item.value} />
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -1366,7 +1353,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             <PinActionButton
               objectType="person"
               objectId={selectedPersonDetails.id}
-              className={circleTheme.primaryButton}
+              className={circleTheme.mutedButton}
             />
             <button
               ref={moreMenuButtonRef}
@@ -1384,7 +1371,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           <button
             type="button"
             onClick={() => openCircleComposer('task')}
-            className={circleTheme.subtleButton}
+            className={circleTheme.primaryButton}
           >
             <Plus size={11} />
             Assign task
@@ -1395,7 +1382,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             className={circleTheme.subtleButton}
           >
             <ArrowRight size={11} />
-            Create follow-up
+            Assign follow-up task
           </button>
           <button
             type="button"
@@ -1429,13 +1416,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                   selectedPersonDetails.shared_project_count,
                 active: activeTab === 'projects',
                 onClick: () => setActiveTab('projects'),
-              },
-              {
-                label: 'Follow-ups',
-                value:
-                  selectedWork?.summary.follow_up_count ?? selectedPersonDetails.follow_up_count,
-                active: activeTab === 'followups',
-                onClick: () => setActiveTab('followups'),
               },
               {
                 label: 'Waiting on',
@@ -1629,34 +1609,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         </WorkspaceSection>
 
         <WorkspaceSection
-          title="Follow-ups"
-          collapsed={selectedFollowUpItems.length === 0 || isCollapsed('follow_ups')}
-          onToggle={() => toggleSection('follow_ups', selectedFollowUpItems.length)}
-          count={selectedFollowUpItems.length}
-          action={
-            <button
-              type="button"
-              onClick={() => setActiveTab('followups')}
-              className={circleTheme.sectionActionText}
-            >
-              View all
-            </button>
-          }
-        >
-          <div className="px-3 py-3">
-            {selectedFollowUpItems.length > 0 ? (
-              <p className="text-sm text-[var(--ledger-text-muted)]">
-                Follow-up records will appear here once that system is available.
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--ledger-text-muted)]">
-                No follow-ups with this person yet.
-              </p>
-            )}
-          </div>
-        </WorkspaceSection>
-
-        <WorkspaceSection
           title="Recent activity"
           collapsed={activity.length === 0 || isCollapsed('recent_activity')}
           onToggle={() => toggleSection('recent_activity', activity.length)}
@@ -1697,29 +1649,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         selectedProjectsRows.map(renderProjectRow)
       ) : (
         <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>
-      )}
-    </div>
-  );
-
-  const renderFollowUps = () => (
-    <div className="space-y-3 px-3 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-[var(--ledger-text-muted)]">
-          No follow-ups with this person yet.
-        </p>
-        <button
-          type="button"
-          onClick={() => openCircleComposer('follow-up')}
-          className={circleTheme.subtleButton}
-        >
-          <Plus size={11} />
-          Create follow-up
-        </button>
-      </div>
-      {!selectedFollowUpItems.length && (
-        <p className="text-xs text-[var(--ledger-text-muted)]">
-          The dedicated follow-up system is still pending, so this tab stays empty for now.
-        </p>
       )}
     </div>
   );
@@ -1796,21 +1725,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               ariaLabel="Open notifications"
             />
           </>
-        }
-        viewControls={
-          <ModuleHeaderSegmentedGroup compact>
-            {circleTabs.map((tab) => (
-              <ModuleHeaderSegmentedButton
-                key={tab.id}
-                compact
-                title={tab.label}
-                onClick={() => setListTab(tab.id)}
-                active={listTab === tab.id}
-              >
-                {tab.label}
-              </ModuleHeaderSegmentedButton>
-            ))}
-          </ModuleHeaderSegmentedGroup>
         }
         primaryActions={
           <div className="flex items-center gap-2">
@@ -1997,21 +1911,40 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
                 <ArrowLeft size={12} />
-                Overview
+                All people
               </button>
             ) : (
               <span className="shrink-0">
                 {isLoadingPeople ? 'Loading people…' : `${visiblePeople.length} people`}
               </span>
             )}
-            <div className="flex h-7 w-[150px] max-w-[48%] shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2">
+            <div className="flex h-7 w-[150px] max-w-[48%] shrink-0 items-center gap-1.5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2">
               <Search size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search Circle"
-                className="min-w-0 w-full bg-transparent text-[10px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
+                className="min-w-0 w-full bg-transparent text-[11px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
               />
+            </div>
+          </div>
+          <div className="border-b border-[color:var(--ledger-border-subtle)] px-2 py-2">
+            <div className="flex flex-wrap gap-1" aria-label="People views">
+              {circleTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setListTab(tab.id)}
+                  aria-pressed={listTab === tab.id}
+                  className={`inline-flex min-h-7 items-center rounded-md px-2 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30 ${
+                    listTab === tab.id
+                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
           </div>
           <div className={circleTheme.leftList}>
@@ -2088,9 +2021,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               <>
                 {renderPersonHeader()}
 
-                <section className={circleTheme.panel}>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                    <h3 className={circleTheme.sectionTitle}>Person workspace</h3>
+                <section className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-1">
+                    <h3 className={circleTheme.sectionTitle}>Shared context</h3>
                     <ModuleHeaderSegmentedGroup compact>
                       {detailTabs.map((tab) => (
                         <ModuleHeaderSegmentedButton
@@ -2105,7 +2038,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                       ))}
                     </ModuleHeaderSegmentedGroup>
                   </div>
-                  <div className="px-4 py-4">
+                  <div className="px-1 py-1">
                     {isLoadingSelected ? (
                       <p className="text-sm text-[var(--ledger-text-muted)]">
                         Loading person details…
@@ -2116,8 +2049,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                       renderAssignedWork()
                     ) : activeTab === 'projects' ? (
                       renderProjects()
-                    ) : activeTab === 'followups' ? (
-                      renderFollowUps()
                     ) : (
                       renderActivity()
                     )}
@@ -2142,7 +2073,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
               {composerMode === 'follow-up'
-                ? 'New follow-up'
+                ? 'New follow-up task'
                 : circleTaskType === 'focus'
                 ? 'New focus'
                 : circleTaskType === 'short_term'
@@ -2151,7 +2082,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             </p>
             <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
               {composerMode === 'follow-up'
-                ? 'Create a follow-up and assign it to this person.'
+                ? 'Create a follow-up task and assign it to this person.'
                 : circleTaskType === 'focus'
                 ? 'Create a priority for the day and assign it to this person.'
                 : circleTaskType === 'short_term'
@@ -2255,7 +2186,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             {isSavingComposer
               ? 'Saving…'
               : composerMode === 'follow-up'
-              ? 'Create follow-up'
+              ? 'Assign follow-up task'
               : circleTaskType === 'focus'
               ? 'Add focus'
               : circleTaskType === 'short_term'
