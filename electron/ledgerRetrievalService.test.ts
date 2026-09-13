@@ -164,6 +164,22 @@ test('deadline plans retain local library files as supporting context', async ()
   assert.ok(result.debug[0]?.why.includes('local-file-context'));
 });
 
+test('named syllabus retrieval excludes an unrelated local PDF from ranked evidence', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  const syllabus = resource({ resourceType: 'attachment', resourceId: 'local:history:0', title: 'History of Photography syllabus.pdf', content: 'Week 2 syllabus quiz and discussion introductions.', metadata: { localFileId: 'history' } });
+  const motion = resource({ resourceType: 'attachment', resourceId: 'local:motion:0', title: 'AR390 Motion-26-FALL.pdf', content: 'Library orientation and evaluating sources.', metadata: { localFileId: 'motion' } });
+  await index.replaceWorkspace('workspace-a', [syllabus, motion]);
+
+  const result = await retrieval.retrieve('workspace-a', 'what does the syllabus PDF say for History of Photo?', [], 8, {
+    plan: { ...buildRetrievalPlan('what does the syllabus PDF say for History of Photo?'), primaryResourceTypes: ['attachment'], entityQuery: 'syllabus' },
+    skipSemantic: true,
+  });
+
+  assert.equal(result.items.some((item) => item.resourceId === syllabus.resourceId), true);
+  assert.equal(result.items.some((item) => item.resourceId === motion.resourceId), false);
+});
+
 test('team-member intent prioritizes authoritative team and person resources', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);

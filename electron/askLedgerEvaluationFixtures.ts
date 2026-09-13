@@ -54,11 +54,23 @@ export const createAskLedgerEvaluationDocuments = (): AskLedgerContextItem[] => 
 ];
 
 const docs = createAskLedgerEvaluationDocuments();
+const historyOfPhotoDocuments = (): AskLedgerContextItem[] => [
+  { workspaceId, resourceType: 'project', resourceId: 'project-history-photo', title: 'History of Photo', content: 'AR347 History of Photography course project.', status: 'In Progress', projectId: 'project-history-photo', projectName: 'History of Photo', updatedAt: '2026-08-18T12:00:00Z' },
+  { workspaceId, resourceType: 'task', resourceId: 'task-history-wallace', title: 'Brian Wallace Reading', content: 'Complete the Brian Wallace reading before the next class.', projectId: 'project-history-photo', projectName: 'History of Photo', status: 'Open', dueAt: '2026-09-13', updatedAt: '2026-08-18T09:00:00Z' },
+  { workspaceId, resourceType: 'task', resourceId: 'task-history-discussion', title: 'Discussion Introduction Thread', content: 'Complete the discussion introduction thread.', projectId: 'project-history-photo', projectName: 'History of Photo', status: 'Open', dueAt: '2026-09-13', updatedAt: '2026-08-18T09:00:00Z' },
+  { workspaceId, resourceType: 'task', resourceId: 'task-history-quiz', title: 'Syllabus Quiz', content: 'Complete the History of Photo syllabus quiz.', projectId: 'project-history-photo', projectName: 'History of Photo', status: 'Open', dueAt: '2026-09-13', updatedAt: '2026-08-18T09:00:00Z' },
+  // This event is intentionally unlinked. The named project must remain an
+  // authoritative anchor instead of relying on event-to-project relations.
+  { workspaceId, resourceType: 'event', resourceId: 'event-history-class', title: 'History of Photo class', content: 'Next History of Photo class meeting.', timestamp: '2026-09-17T08:30:00Z', updatedAt: '2026-08-18T10:00:00Z' },
+  { workspaceId, resourceType: 'attachment', resourceId: 'attachment-history-syllabus', title: 'Dzenko_ar347_HistoryOfPhotography_syllabus_f26.pdf', content: 'Week 2: discuss the Wallis reading. The syllabus quiz and discussion board introductions are due. Week 3: bring a photograph for the Formal Analysis Paper.', metadata: { fileName: 'Dzenko_ar347_HistoryOfPhotography_syllabus_f26.pdf', localFileId: 'history-photo-syllabus' }, attachmentSource: { attachmentId: 'attachment-history-syllabus', fileName: 'Dzenko_ar347_HistoryOfPhotography_syllabus_f26.pdf', pageNumber: 2 } },
+  { workspaceId, resourceType: 'attachment', resourceId: 'attachment-motion-syllabus', title: 'AR390 Motion-26-FALL.pdf', content: 'Motion graphics course library orientation and source evaluation material.', metadata: { fileName: 'AR390 Motion-26-FALL.pdf', localFileId: 'motion-syllabus' }, attachmentSource: { attachmentId: 'attachment-motion-syllabus', fileName: 'AR390 Motion-26-FALL.pdf', pageNumber: 1 } },
+];
 const evaluationKeyAliases: Record<string, string> = {
   'project:alfa': 'project:project-alfa', 'project:watercolor': 'project:project-watercolor', 'project:unrelated': 'project:project-unrelated',
   'milestone:final-production': 'milestone:milestone-final-production', 'milestone:watercolor-assets': 'milestone:milestone-watercolor-assets',
   'task:review-proof': 'task:task-review-proof', 'task:archive-assets': 'task:task-archive-assets', 'task:overdue-copy': 'task:task-overdue-copy', 'task:completed-proof': 'task:task-completed-proof', 'task:watercolor-assets': 'task:task-watercolor-assets', 'task:watercolor-longterm': 'task:task-watercolor-longterm',
   'event:workday': 'event:event-workday', 'note:workday': 'note:note-workday', 'transcript:workday-1': 'transcript:transcript-workday-1', 'reminder:proof': 'reminder:reminder-proof', 'notification:proof': 'notification:notification-proof', 'activity:alfa': 'activity:activity-alfa', 'activity:circle': 'activity:activity-circle',
+  'project:history-photo': 'project:project-history-photo', 'task:history-wallace': 'task:task-history-wallace', 'task:history-discussion': 'task:task-history-discussion', 'task:history-quiz': 'task:task-history-quiz', 'event:history-class': 'event:event-history-class', 'attachment:history-syllabus': 'attachment:attachment-history-syllabus', 'attachment:motion-syllabus': 'attachment:attachment-motion-syllabus',
 };
 const canonicalKeys = (keys?: string[]) => keys?.map((key) => evaluationKeyAliases[key] ?? key);
 const expectations = (base: AskLedgerEvaluationExpectation, sourceDocuments = docs) => ({ workspaceId, documents: sourceDocuments, lexicalResults: sourceDocuments.map((item) => ({ type: item.resourceType, id: item.resourceId, title: item.title, match_source: 'evaluation-fixture' })), expectation: { ...base, primaryResourceKeys: canonicalKeys(base.primaryResourceKeys), contextResourceKeys: canonicalKeys(base.contextResourceKeys), forbiddenResourceKeys: canonicalKeys(base.forbiddenResourceKeys) } });
@@ -87,7 +99,8 @@ export const createAskLedgerEvaluationCases = (): AskLedgerEvaluationCase[] => [
     ['research-project-state', 'Tell me where my projects stand, including milestones and open work.', ['project:alfa', 'project:watercolor', 'milestone:final-production', 'task:review-proof'], ['project:unrelated'], ['projects', 'milestones', 'tasks']],
     ['research-week', 'What have I been working on this week?', ['task:review-proof', 'event:workday', 'activity:alfa'], ['project:unrelated'], ['tasks', 'meetings', 'activity']],
     ['research-tying-summary', 'Look through my meetings, projects, milestones, tasks and next actions and give me a tying summary.', ['event:workday', 'project:alfa', 'milestone:final-production', 'task:review-proof'], ['project:unrelated'], ['meetings', 'projects', 'milestones', 'tasks']],
-  ].map(([id, question, primaryResourceKeys, forbiddenResourceKeys, requiredCoverage]) => ({ id: id as string, category: 'cross_resource_research' as const, question: question as string, ...expectations({ primaryResourceKeys: primaryResourceKeys as string[], forbiddenResourceKeys: forbiddenResourceKeys as string[], requiredCoverage: requiredCoverage as string[] }) })),
+    ['research-history-photo-compound', 'I have a project History of Photo. What are the next actions, what is my next class, and what does the History of Photo syllabus PDF say?', ['project:history-photo', 'task:history-wallace', 'task:history-discussion', 'task:history-quiz', 'event:history-class', 'attachment:history-syllabus'], ['attachment:motion-syllabus'], ['meetings', 'projects', 'tasks', 'attachments']],
+  ].map(([id, question, primaryResourceKeys, forbiddenResourceKeys, requiredCoverage]) => ({ id: id as string, category: 'cross_resource_research' as const, question: question as string, ...(id === 'research-history-photo-compound' ? expectations({ primaryResourceKeys: primaryResourceKeys as string[], forbiddenResourceKeys: forbiddenResourceKeys as string[], requiredCoverage: requiredCoverage as string[] }, historyOfPhotoDocuments()) : expectations({ primaryResourceKeys: primaryResourceKeys as string[], forbiddenResourceKeys: forbiddenResourceKeys as string[], requiredCoverage: requiredCoverage as string[] })) })),
   ...[
     ['task-focus', 'What should I focus on today?', ['task:review-proof', 'task:overdue-copy'], ['task:archive-assets']],
     ['task-long-term', 'What long-term work is building up?', ['task:archive-assets', 'task:watercolor-longterm'], ['task:review-proof']],
@@ -117,4 +130,4 @@ export const createAskLedgerEvaluationCases = (): AskLedgerEvaluationCase[] => [
   }),
 ];
 
-export const ASK_LEDGER_EVALUATION_CASE_COUNT = 32;
+export const ASK_LEDGER_EVALUATION_CASE_COUNT = 33;

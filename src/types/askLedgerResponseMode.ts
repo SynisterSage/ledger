@@ -122,7 +122,8 @@ const priorTurns = (context: AskLedgerRoutingContext) =>
     context.previousQuestion ||
       context.previousAnswer ||
       context.recentExchanges?.length ||
-      context.previousSources?.length
+      context.previousSources?.length ||
+      context.resolvedWorkspaceEntities?.length
   );
 
 export const detectAskLedgerProductArea = (message: string) => normalize(message).match(productAreas)?.[1];

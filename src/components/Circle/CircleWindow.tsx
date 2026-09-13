@@ -178,7 +178,7 @@ const circleTheme = {
   leftList: 'ledger-pane-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
   row: 'group flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30',
   rowSelected:
-    'border-l-2 border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-hover)] pl-2 hover:bg-[var(--ledger-surface-hover)]',
+    'bg-[var(--ledger-surface-hover)] ring-1 ring-inset ring-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]',
   rowTitle: 'text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]',
   rowMeta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
   rowMetaStrong: 'text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)]',
@@ -1929,7 +1929,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             </div>
           </div>
           <div className="border-b border-[color:var(--ledger-border-subtle)] px-2 py-2">
-            <div className="flex flex-wrap gap-1" aria-label="People views">
+            <div className="ledger-pane-scrollbar flex min-w-max flex-nowrap gap-1 overflow-x-auto pb-0.5" aria-label="People views">
               {circleTabs.map((tab) => (
                 <button
                   key={tab.id}

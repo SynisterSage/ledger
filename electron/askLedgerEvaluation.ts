@@ -20,7 +20,7 @@ export type AskLedgerEvaluationScore = {
   passed: boolean;
 };
 
-export type AskLedgerEvaluationFailureCategory = 'wrong_seed' | 'missing_relationship_context' | 'missing_requested_category' | 'weak_evidence_selection' | 'context_budget_loss' | 'generation_omission' | 'unsupported_claim' | 'incorrect_structured_fact' | 'integration_unavailable' | 'answer_too_shallow' | 'answer_too_verbose' | 'repair_failed';
+export type AskLedgerEvaluationFailureCategory = 'wrong_seed' | 'forbidden_resource_context' | 'missing_relationship_context' | 'missing_requested_category' | 'weak_evidence_selection' | 'context_budget_loss' | 'generation_omission' | 'unsupported_claim' | 'incorrect_structured_fact' | 'integration_unavailable' | 'answer_too_shallow' | 'answer_too_verbose' | 'repair_failed';
 
 export type AskLedgerEvaluationResult = {
   caseId: string;
@@ -64,6 +64,7 @@ export const classifyAskLedgerEvaluationFailures = (input: { expectation: AskLed
   const failures: AskLedgerEvaluationFailureCategory[] = [];
   const retrieved = new Set(input.retrievedKeys); const evidence = new Set(input.evidenceKeys);
   if ((input.expectation.primaryResourceKeys ?? []).some((key) => !retrieved.has(key))) failures.push('wrong_seed');
+  if ((input.expectation.forbiddenResourceKeys ?? []).some((key) => retrieved.has(key) || evidence.has(key))) failures.push('forbidden_resource_context');
   if ((input.expectation.contextResourceKeys ?? []).some((key) => !evidence.has(key))) failures.push('missing_relationship_context');
   if (input.answer.trim().length > 0 && input.score.answerCompleteness === 0) failures.push('missing_requested_category');
   if (input.expectation.maxEvidenceResources !== undefined && evidence.size > input.expectation.maxEvidenceResources) failures.push('context_budget_loss');
@@ -95,6 +96,7 @@ export const evaluateAskLedgerFixtureCase = async (evaluationCase: AskLedgerEval
   const retrievedKeys = retrieval.items.map(keyFor);
   const primaryKeys = (retrieval.primaryItems?.length ? retrieval.primaryItems : retrieval.items).map(keyFor);
   const evidenceKeys = evidence.selectedItems.map(keyFor);
+  const forbiddenKeys = evaluationCase.expectation.forbiddenResourceKeys ?? [];
   const score: AskLedgerEvaluationScore = {
     retrievalCorrectness: score2((evaluationCase.expectation.primaryResourceKeys ?? []).filter((key) => retrievedKeys.includes(key)).length, evaluationCase.expectation.primaryResourceKeys?.length ?? 0),
     contextCoverage: score2((evaluationCase.expectation.contextResourceKeys ?? []).filter((key) => evidenceKeys.includes(key)).length, evaluationCase.expectation.contextResourceKeys?.length ?? 0),
@@ -103,7 +105,7 @@ export const evaluateAskLedgerFixtureCase = async (evaluationCase: AskLedgerEval
     groundedness: scoreParts.groundedness,
     synthesisQuality: scoreParts.synthesisQuality,
     usefulness: scoreParts.usefulness,
-    passed: Boolean((evaluationCase.expectation.primaryResourceKeys ?? []).every((key) => retrievedKeys.includes(key)) && (evaluationCase.expectation.contextResourceKeys ?? []).every((key) => evidenceKeys.includes(key)) && (validation?.passed ?? true) && scoreParts.forbiddenHits.length === 0),
+    passed: Boolean((evaluationCase.expectation.primaryResourceKeys ?? []).every((key) => retrievedKeys.includes(key)) && (evaluationCase.expectation.contextResourceKeys ?? []).every((key) => evidenceKeys.includes(key)) && forbiddenKeys.every((key) => !retrievedKeys.includes(key) && !evidenceKeys.includes(key)) && (validation?.passed ?? true) && scoreParts.forbiddenHits.length === 0),
   };
   const failures = classifyAskLedgerEvaluationFailures({ expectation: evaluationCase.expectation, retrievedKeys, evidenceKeys, answer, score, validationPassed: validation?.passed ?? null, repairAttempted: false });
   return { caseId: evaluationCase.id, category: evaluationCase.category, question: evaluationCase.question, score, failures, stages: { route: { mode: retrieval.mode, objectives: retrieval.orchestration.objectives.map((objective) => objective.id) }, retrieval: { candidates: retrieval.debug.length, selectedSeeds: retrieval.hybridRetrieval?.selectedSeeds?.length ? retrieval.hybridRetrieval.selectedSeeds : primaryKeys, primary: primaryKeys, integration: retrieval.integrationRetrieval }, graph: { expandedResources: retrieval.relatedItems?.length ?? 0, paths: retrieval.graphExpansion?.paths.length ?? 0 }, evidence: { retrieved: evidence.package.stats.retrieved, selected: evidence.package.stats.selected, tokens: evidence.package.stats.estimatedTokens, selectedKeys: evidenceKeys }, generation: { depth: generationDepth.depth, answer, validationPassed: validation?.passed ?? null, repairAttempted: false } }, latencyMs: { retrieval: retrievalMs, evidence: evidenceMs, validation: validationMs, total: performance.now() - totalStarted } };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveAskLedgerConversationState, resolveAskLedgerConversation } from './askLedgerConversationState.ts';
+import { deriveAskLedgerConversationState, isAskLedgerSourceCurrent, resolveAskLedgerConversation } from './askLedgerConversationState.ts';
 
 const sources = [
   { resourceType: 'project' as const, resourceId: 'project-alfa', title: 'Alfa 2026 Catalog', projectId: 'project-alfa' },
@@ -16,6 +16,25 @@ test('tracks bounded grounded entities by stable resource IDs', () => {
   assert.ok(state.activeEntities.some((entity) => entity.resourceId === 'project-alfa'));
   assert.ok(state.previousEvidenceSourceIds.includes('project:project-alfa'));
   assert.ok(state.activeResources.length <= 16);
+});
+
+test('carries the evidence context identity into restored conversation state', () => {
+  const withFingerprint = deriveAskLedgerConversationState(
+    'workspace-a',
+    'What is going on with Alfa?',
+    sources as never,
+    undefined,
+    undefined,
+    'ctx-evidence-1',
+  );
+  assert.equal(withFingerprint.contextFingerprint, 'ctx-evidence-1');
+});
+
+test('only treats prior evidence as reusable when its known revision is current', () => {
+  const source = { ...sources[0], updatedAt: '2026-09-12T20:00:00.000Z' };
+  assert.equal(isAskLedgerSourceCurrent(source, [source] as never), true);
+  assert.equal(isAskLedgerSourceCurrent(source, [{ ...source, updatedAt: '2026-09-12T21:00:00.000Z' }] as never), false);
+  assert.equal(isAskLedgerSourceCurrent(source, [] as never), false);
 });
 
 test('resolves project follow-ups and requests fresh mutable state', () => {
@@ -46,4 +65,18 @@ test('treats an explicitly named active project as a context switch', () => {
   const resolved = resolveAskLedgerConversation('And Watercolor?', watercolor, 'workspace-a');
   assert.equal(resolved.mode, 'switch_entity');
   assert.deepEqual(resolved.projectIds, ['project-watercolor']);
+});
+
+test('does not silently choose between multiple active projects for a pronoun follow-up', () => {
+  const multiProject = {
+    ...state,
+    activeEntities: [
+      ...state.activeEntities,
+      { resourceType: 'project' as const, resourceId: 'project-watercolor', title: 'Watercolor Exhibition' },
+    ],
+  };
+  const resolved = resolveAskLedgerConversation('What about that?', multiProject, 'workspace-a');
+  assert.deepEqual(resolved.resourceKeys, []);
+  assert.deepEqual(resolved.unresolvedReferences, ['referent']);
+  assert.deepEqual(resolved.ambiguityCandidates, ['project:project-alfa', 'project:project-watercolor']);
 });

@@ -36,6 +36,8 @@ export type AskLedgerResource = AskLedgerContextItem;
 export type AskLedgerDocumentInventory = Record<string, number>;
 
 export type AskLedgerDocumentDiagnostics = {
+  /** Stable identity for the evidence envelope used by this answer. */
+  contextFingerprint?: string;
   available: AskLedgerDocumentInventory;
   indexed: AskLedgerDocumentInventory;
   retrieved: AskLedgerDocumentInventory;

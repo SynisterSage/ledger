@@ -1,5 +1,6 @@
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerEvidencePackage } from '../src/types/askLedgerResourceContract.ts';
+import { buildAskLedgerQueryPlan } from '../src/types/askLedgerQueryPlan.ts';
 
 export type AskLedgerValidationIssueKind = 'coverage' | 'groundedness' | 'contradiction' | 'missing_evidence';
 export type AskLedgerValidationIssue = { kind: AskLedgerValidationIssueKind; code: string; message: string; category?: string; claim?: string; sourceKeys?: string[] };
@@ -53,6 +54,14 @@ const availabilityAcknowledged = (answer: string, provider: string) => {
   const p = normalize(provider); const a = normalize(answer);
   return a.includes(`${p} unavailable`) || a.includes(`could not verify ${p}`) || a.includes(`couldnt verify ${p}`) || a.includes(`${p} context was unavailable`) || a.includes(`${p} is not connected`);
 };
+const attachmentMatchesRequest = (question: string, resource: AskLedgerContextItem) => {
+  const plan = buildAskLedgerQueryPlan(question);
+  if (!plan.attachment) return true;
+  const haystack = normalize([resource.title, resource.metadata?.fileName].filter(Boolean).join(' '));
+  if (plan.attachment.kind === 'syllabus' && !haystack.includes('syllabus')) return false;
+  const entity = plan.entity?.name ? normalize(plan.entity.name).replace(/\s/g, '') : '';
+  return !entity || haystack.replace(/\s/g, '').includes(entity.slice(0, 6));
+};
 
 export class AskLedgerAnswerValidator {
   validate(input: { question: string; answer: string; evidencePackage: AskLedgerEvidencePackage; depth?: 'quick' | 'standard' | 'deep'; enforceCoverage?: boolean }): AskLedgerAnswerValidationResult {
@@ -65,6 +74,15 @@ export class AskLedgerAnswerValidator {
       const availableToAnswer = input.evidencePackage.coverage.found.includes(category) || input.evidencePackage.coverage.truncated.includes(category);
       const namedResourceMentioned = items.some(({ source }) => source.resourceType === (category === 'meetings' ? 'event' : category === 'transcripts' ? 'transcript' : category.replace(/s$/, '')) && answer.includes(normalize(source.title)));
       if (availableToAnswer && !categoryMentioned(input.answer, category) && !namedResourceMentioned) coverageIssues.push({ kind: 'coverage', code: 'missing_answer_coverage', message: `${category} was requested and available but is not represented in the answer.`, category });
+    }
+    for (const { resource } of items.filter(({ resource }) => resource.resourceType === 'attachment')) {
+      if (!attachmentMatchesRequest(input.question, resource)) groundednessIssues.push({
+        kind: 'groundedness',
+        code: 'wrong_attachment_identity',
+        message: `${resource.title} does not match the explicitly requested document or course context.`,
+        claim: resource.title,
+        sourceKeys: [keyFor(resource)],
+      });
     }
     for (const provider of [...(input.evidencePackage.coverage.unavailable ?? []), ...(input.evidencePackage.coverage.notConnected ?? [])]) if (explicitNegativeProviderClaim(input.answer, provider) && !availabilityAcknowledged(input.answer, provider)) missingEvidenceIssues.push({ kind: 'missing_evidence', code: 'unavailable_claimed_empty', message: `${provider} was unavailable or not connected, so the answer must not claim that it had no results.`, category: provider });
     for (const { resource } of items) {

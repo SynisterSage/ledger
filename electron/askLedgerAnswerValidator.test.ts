@@ -69,3 +69,27 @@ test('treats compact database statuses as their human-readable aliases', () => {
   });
   assert.equal(result.contradictionIssues.length, 0);
 });
+
+test('rejects a valid but wrong attachment for an explicitly named syllabus request', () => {
+  const packageValue = evidence();
+  const wrongAttachment = {
+    resourceType: 'attachment' as const,
+    resourceId: 'attachment-motion',
+    title: 'AR390 Motion-26-FALL.pdf',
+    content: 'Library orientation and evaluating sources.',
+  };
+  packageValue.coverage = { requested: ['attachments'], found: ['attachments'], missing: [], truncated: [] };
+  packageValue.sections = [{
+    category: 'attachments',
+    title: 'Attachments',
+    items: [{ resource: wrongAttachment, source: { resourceType: 'attachment', resourceId: wrongAttachment.resourceId, title: wrongAttachment.title, relationshipPath: [], score: { retrievalRelevance: 1, structuralRelevance: 1, temporalRelevance: 1, objectiveRelevance: 1, authority: 1, finalScore: 1, reasons: [] } } }],
+  }];
+  const result = new AskLedgerAnswerValidator().validate({
+    question: 'What does the History of Photo syllabus PDF say?',
+    answer: 'The syllabus covers course logistics.',
+    evidencePackage: packageValue,
+    depth: 'deep',
+  });
+  assert.equal(result.passed, false);
+  assert.equal(result.groundednessIssues[0]?.code, 'wrong_attachment_identity');
+});

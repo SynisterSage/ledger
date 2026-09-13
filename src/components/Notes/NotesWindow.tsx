@@ -3600,6 +3600,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       resourceId: selectedNote.id,
       title: selectedNote.title,
       contextType: 'meeting',
+      aiSurface: 'notes_ask',
       workspaceId: activeWorkspaceId,
       meetingNoteId: selectedNote.id,
       calendarSeriesId: meetingMetadata?.calendar_series_id ?? undefined,
@@ -3618,6 +3619,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       resourceId: selectedNote.id,
       title: selectedNote.title,
       workspaceId: activeWorkspaceId,
+      aiSurface: 'notes_ask',
       linkedProjectId: selectedNoteProjectLinks[0]?.project_id ?? undefined,
       initialQuestion: question,
     });

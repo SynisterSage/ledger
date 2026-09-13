@@ -4,6 +4,7 @@ import { buildRetrievalPlan, type RetrievalPlan } from './askLedgerRetrievalPlan
 import { LedgerRetrievalService, type LedgerRetrievalResult } from './ledgerRetrievalService.ts';
 import { CachedAskLedgerIntegrationRetriever } from './askLedgerIntegrationRetrieval.ts';
 import type { AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
+import { buildAskLedgerQueryPlan } from '../src/types/askLedgerQueryPlan.ts';
 
 export type AskLedgerRetrievalMode = 'quick' | 'research';
 
@@ -55,14 +56,10 @@ const resourceCategory = (type: AskLedgerResourceType) => type === 'event' ? 'me
 
 export const classifyAskLedgerRetrievalMode = (question: string): AskLedgerRetrievalMode => {
   const normalized = normalize(question);
+  const queryPlan = buildAskLedgerQueryPlan(question);
   const requestedCategories = [
-    /\bmeetings?\b/.test(normalized),
-    /\bprojects?\b/.test(normalized),
-    /\bmilestones?\b/.test(normalized),
-    /\b(?:tasks?|next actions?)\b/.test(normalized),
-    /\bnotes?|transcripts?\b/.test(normalized),
-    /\breminders?\b/.test(normalized),
-  ].filter(Boolean).length;
+    ...queryPlan.categories,
+  ].filter((category) => !['integrations', 'activity', 'notifications'].includes(category)).length;
   const compoundSignal = /\b(connect|tie|tying|across|everything stands|what(?:'s| is) going on|what still needs|where .* stands|look through|summari[sz]e .* and|and (?:tell|what|how|where))\b/.test(normalized);
   const teamWorkloadSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
     && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
@@ -90,16 +87,17 @@ const planMyWeekQueries: PlanMyWeekQuery[] = [
 
 export const decomposeRetrievalObjectives = (question: string): RetrievalObjective[] => {
   const normalized = normalize(question);
-  const base = buildRetrievalPlan(question);
-  const hasMeetings = /\bmeetings?\b/.test(normalized);
-  const hasProjects = /\bprojects?\b|\bproject work\b/.test(normalized) || /\bwhat(?:'s| is) going on with\b|\bwhat still needs to happen\b/.test(normalized);
-  const hasMilestones = /\bmilestones?\b/.test(normalized);
-  const hasTasks = /\b(?:tasks?|next actions?)\b/.test(normalized);
-  const hasNotes = /\bnotes?|transcripts?\b/.test(normalized);
-  const hasFileContext = /\b(?:pdfs?|files?|documents?|attachments?)\b/.test(normalized);
+  const queryPlan = buildAskLedgerQueryPlan(question);
+  const base = buildRetrievalPlan(question, new Date(), queryPlan);
   const boundedRecentNotes = /\b(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/.test(normalized);
+  const hasMeetings = queryPlan.categories.includes('events') && !boundedRecentNotes;
+  const hasProjects = queryPlan.categories.includes('projects') || /\bwhat(?:'s| is) going on with\b|\bwhat still needs to happen\b/.test(normalized);
+  const hasMilestones = queryPlan.categories.includes('milestones');
+  const hasTasks = queryPlan.categories.includes('tasks');
+  const hasNotes = queryPlan.categories.includes('notes');
+  const hasFileContext = queryPlan.categories.includes('attachments');
   const meetingEvidenceRequest = hasMeetings && !boundedRecentNotes;
-  const hasReminders = /\breminders?\b/.test(normalized);
+  const hasReminders = queryPlan.categories.includes('reminders');
   const hasActivity = /\b(?:activity|what changed|changes|happening)\b/.test(normalized);
   const hasNotifications = /\bnotifications?\b/.test(normalized);
   const hasTeamWorkload = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
@@ -111,6 +109,18 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const integrationProviders = base.integrationProviders ?? [];
   const hasInternalLedger = integrationProviders.length > 0 && /\bledger\b/.test(normalized);
   const includesProjectContext = hasProjects || hasInternalLedger;
+  // A named project remains an authoritative anchor even when the same
+  // question also asks about events. Calendar records are often not linked
+  // back to the project, so making project retrieval depend on event discovery
+  // can incorrectly erase the project's tasks from a compound answer.
+  const explicitProjectQueryCandidate = normalized.match(/\bproject\s+(.+?)(?=\s+(?:what|and|for|where|when|how|is|has)\b|[,?.]|$)/)?.[1]?.trim();
+  const explicitProjectQuery = explicitProjectQueryCandidate
+    && !/^(?:work|context|management|planning)$/i.test(explicitProjectQueryCandidate)
+    && !/\b(?:what|are|next|actions?|does|say)\b/i.test(explicitProjectQueryCandidate)
+    ? explicitProjectQueryCandidate
+    : undefined;
+  const namedProjectQuery = queryPlan.entity?.name?.replace(/^(?:with|for|about|on)\s+/i, '').trim() ?? explicitProjectQuery;
+  const hasExplicitProjectAnchor = Boolean(namedProjectQuery && namedProjectQuery.length >= 3);
   const projectWorkIntent = includesProjectContext && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|stuck|needs? to happen|needs? attention)\b/.test(normalized);
   const objectives: RetrievalObjective[] = [];
 
@@ -122,7 +132,9 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
       // A named file kind is an authoritative attachment scope. Without it,
       // a broad "what does the syllabus PDF say" query can admit an unrelated
       // PDF whose extracted text happens to share generic course terms.
-      entityQuery: /\bsyllabus\b/.test(normalized) ? 'syllabus' : base.entityQuery,
+      entityQuery: /\bsyllabus\b/.test(normalized)
+        ? (hasExplicitProjectAnchor ? `${namedProjectQuery} syllabus` : 'syllabus')
+        : base.entityQuery,
       constraints: {},
       expandRelationships: false,
       dependsOn: [],
@@ -206,8 +218,8 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
     });
   }
 
-  if (includesProjectContext && !meetingEvidenceRequest) {
-    addObjective(objectives, { id: 'projects', purpose: 'Find authoritative project records', resourceTypes: ['project'], entityQuery: base.entityQuery, expandRelationships: true, dependsOn: [] });
+  if (includesProjectContext && (!meetingEvidenceRequest || hasExplicitProjectAnchor)) {
+    addObjective(objectives, { id: 'projects', purpose: 'Find authoritative project records', resourceTypes: ['project'], entityQuery: hasExplicitProjectAnchor ? namedProjectQuery : base.entityQuery, expandRelationships: true, dependsOn: [] });
   } else if (meetingEvidenceRequest || /\bwhat(?:'s| is) going on\b|\bconnect .*project\b/.test(normalized)) {
     addObjective(objectives, { id: 'linked-projects', purpose: 'Retrieve projects discovered through meeting evidence', resourceTypes: ['project'], expandRelationships: true, dependsOn: meetingEvidenceRequest ? ['meetings', 'meeting-context'] : [], graphRelationshipTypes: ['linked_project', 'belongs_to_project', 'has_milestone', 'has_task', 'has_note', 'has_event', 'has_reminder', 'has_external_resource'] });
   }
@@ -215,7 +227,9 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const projectDependency = objectives.some((objective) => ['projects', 'linked-projects'].includes(objective.id)) ? [objectives.some((objective) => objective.id === 'linked-projects') ? 'linked-projects' : 'projects'] : [];
   // Meeting names are anchors for the meeting objective, not project names.
   // Dependent project work is constrained by discovered project IDs instead.
-  const projectEntityQuery = includesProjectContext && !meetingEvidenceRequest ? base.entityQuery : undefined;
+  const projectEntityQuery = includesProjectContext && (!meetingEvidenceRequest || hasExplicitProjectAnchor)
+    ? (hasExplicitProjectAnchor ? namedProjectQuery : base.entityQuery)
+    : undefined;
   const projectEntity = projectEntityQuery ? { entityQuery: projectEntityQuery } : {};
   if (hasMilestones || includesProjectContext || meetingEvidenceRequest) {
     addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
@@ -235,8 +249,8 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   return objectives;
 };
 
-const buildObjectivePlan = (question: string, objective: RetrievalObjective, projectIds: string[], teamIds: string[] = [], assigneeIds: string[] = []): RetrievalPlan => {
-  const base = buildRetrievalPlan(question);
+const buildObjectivePlan = (question: string, objective: RetrievalObjective, projectIds: string[], teamIds: string[] = [], assigneeIds: string[] = [], canonicalPlan?: ReturnType<typeof buildAskLedgerQueryPlan>): RetrievalPlan => {
+  const base = buildRetrievalPlan(question, new Date(), canonicalPlan);
   return {
     ...base,
     primaryResourceTypes: objective.resourceTypes,
@@ -434,7 +448,7 @@ export class AskLedgerRetrievalOrchestrator {
           completed.add(objective.id);
           continue;
         }
-        const plan = buildObjectivePlan(searchQuestion, objective, projectIds, teamIds, assigneeIds);
+        const plan = buildObjectivePlan(searchQuestion, objective, projectIds, teamIds, assigneeIds, buildAskLedgerQueryPlan(orchestrationQuestion));
         const objectiveStartedAt = Date.now();
         const provider = objective.id.startsWith('integration-') ? objective.id.slice('integration-'.length) : null;
         const integrationBoostKeys: string[] = [];

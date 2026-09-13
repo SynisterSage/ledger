@@ -3,9 +3,18 @@ import test from 'node:test';
 import { buildRetrievalPlan, matchesRetrievalScope } from './askLedgerRetrievalPlan.ts';
 import { EmbeddingIndexService, LedgerRetrievalService } from './ledgerRetrievalService.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import { buildAskLedgerQueryPlan } from '../src/types/askLedgerQueryPlan.ts';
 
 const item = (overrides: Partial<AskLedgerContextItem>): AskLedgerContextItem => ({
   workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-default', title: 'Note', content: 'Content.', ...overrides,
+});
+
+test('uses the canonical query plan for operation and entity identity', () => {
+  const question = 'What is going on with Alfa?';
+  const canonical = buildAskLedgerQueryPlan(question);
+  const plan = buildRetrievalPlan(question, new Date(), canonical);
+  assert.equal(plan.operation, canonical.operation);
+  assert.equal(plan.entityQuery, 'Alfa');
 });
 
 test('builds a note container plan with ordering and count constraints', () => {

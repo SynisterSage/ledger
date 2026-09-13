@@ -43,13 +43,23 @@ export const lexicalMatch = (question: string, item: Pick<AskLedgerContextItem, 
   return { score: Math.min(1, titleTokenCoverage * 0.72 + contentCoverage * 0.28 + (phraseMatch ? 0.18 : 0)), phraseMatch, titleTokenCoverage };
 };
 
-export const entityMatch = (entityQuery: string | undefined, item: Pick<AskLedgerContextItem, 'title' | 'projectName' | 'containerName'>) => {
+export const entityMatch = (entityQuery: string | undefined, item: Pick<AskLedgerContextItem, 'title' | 'projectName' | 'containerName' | 'metadata'>) => {
   if (!entityQuery) return false;
   const query = normalizeHybridText(entityQuery);
   if (!query) return false;
   const queryTokens = unique(meaningfulTokens(query));
   const fields = [item.title, item.projectName, item.containerName].map(normalizeHybridText).filter(Boolean);
-  return fields.some((field) => field === query || (queryTokens.length > 0 && queryTokens.every((token) => field.split(' ').includes(token))));
+  const tokenMatch = fields.some((field) => field === query || (queryTokens.length > 0 && queryTokens.every((token) => field.split(' ').includes(token))));
+  if (tokenMatch) return true;
+  // Local attachment filenames often collapse words (for example
+  // HistoryOfPhotography). Use compact comparison only for an explicit
+  // filename so ordinary resource matching does not become fuzzy.
+  const fileName = item.metadata && typeof item.metadata.fileName === 'string'
+    ? normalizeHybridText(item.metadata.fileName).replace(/\s/g, '')
+    : '';
+  const compactQuery = query.split(' ').filter((token) => !['syllabus', 'pdf', 'file', 'document', 'attachment'].includes(token)).join('');
+  const compactFields = fields.map((field) => field.replace(/\s/g, ''));
+  return Boolean(compactQuery.length >= 6 && (fileName.includes(compactQuery) || compactFields.some((field) => field.includes(compactQuery))));
 };
 
 export const scoreHybridCandidate = (signals: HybridCandidateSignals): HybridCandidateEvidence => {

@@ -512,7 +512,8 @@ export class LedgerRetrievalService {
     let candidatesRemovedByStructured = 0;
     documents.forEach((document) => {
       if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !isLocalLibraryAttachment(document) && !plan) { candidatesRemovedByResourceType += 1; return; }
-      if (plan?.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType) && !isLocalLibraryAttachment(document)) { candidatesRemovedByResourceType += 1; return; }
+      if (plan?.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType)
+        && (!isLocalLibraryAttachment(document) || !localAttachmentCanSupportPlan(document))) { candidatesRemovedByResourceType += 1; return; }
       const key = `${document.resourceType}:${document.resourceId}`;
       const lexical = lexicalByResource.get(key);
       const semantic = queryVector && document.embedding ? cosineSimilarity(queryVector, document.embedding) : 0;

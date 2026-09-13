@@ -30,6 +30,14 @@ test('Lens request keeps authoritative structured facts separate from semantic e
   assert.equal(request.currentWork.overdueTasks[0]?.id, 'task-a');
 });
 
+test('selects semantic context deterministically instead of trusting API arrival order', () => {
+  const current = context({ semanticContext: [
+    { workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-older', title: 'Older', content: 'Older context', projectId: 'project-a', updatedAt: '2026-08-20T10:00:00Z' },
+    { workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-newer', title: 'Newer', content: 'Newer context', projectId: 'project-a', updatedAt: '2026-08-22T10:00:00Z' },
+  ], maxSemanticContext: 1 });
+  assert.deepEqual(current.semanticContext.map((item) => item.resourceId), ['note-newer']);
+});
+
 test('rejects unsupported source IDs and structured fact conflicts', () => {
   const current = context();
   const request = buildProjectLensRequest(current);

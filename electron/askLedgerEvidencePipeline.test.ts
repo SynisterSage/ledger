@@ -70,6 +70,33 @@ test('deduplicates identical transcript content and retains provenance', () => {
   assert.deepEqual(result.package.sources[0].relationshipPath, ['transcript:transcript-1']);
 });
 
+test('limits attachment chunks per file so one PDF cannot consume compound evidence', () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-photo', title: 'History of Photo' });
+  const event = item({ resourceType: 'event', resourceId: 'event-photo', title: 'History of Photo class', timestamp: '2026-09-17T12:30:00Z' });
+  const chunks = Array.from({ length: 8 }, (_, index) => item({
+    resourceType: 'attachment',
+    resourceId: `local:file-photo:${index}`,
+    title: 'History of Photography syllabus.pdf',
+    content: `Syllabus section ${index} discusses the course schedule and reading.`,
+    metadata: { localFileId: 'file-photo' },
+  }));
+  const result = compileAskLedgerEvidence({
+    question: 'For my History of Photo project, what are the next actions, what events do I have, and what does the syllabus PDF say?',
+    result: {
+      mode: 'research',
+      items: [project, event, ...chunks],
+      primaryItems: [project, event, ...chunks],
+      debug: [project, event, ...chunks].map((resource, index) => debug(resource, 1 - index / 100, ['objective:compound'])),
+      orchestration: {
+        mode: 'research', objectives: [], retrievalRounds: 1, discoveredEntities: [], coverage: { projects: 'found', tasks: 'not_found', meetings: 'found', attachments: 'found' }, resourcesCollected: 10, resourcesDiscarded: 0, stopReason: 'objectives_satisfied', provenance: [],
+      },
+    },
+  });
+  assert.ok(result.selectedItems.filter((resource) => resource.resourceType === 'attachment').length <= 4);
+  assert.equal(result.selectedItems.some((resource) => resource.resourceType === 'event'), true);
+  assert.ok((result.diagnostics.dropReasons.attachment_file_diversity ?? 0) > 0);
+});
+
 test('prioritizes unread attention signals and collapses duplicate activity notifications', () => {
   const activity = item({ resourceType: 'activity', resourceId: 'activity-1', title: 'Task due date changed', content: 'Review proof changed.', activityType: 'task_due_date_changed', projectId: 'project-1', metadata: { sourceType: 'task', sourceId: 'task-1', notificationType: 'task_due' } });
   const notification = item({ resourceType: 'notification', resourceId: 'notification-1', title: 'Review proof is due', content: 'Review proof changed.', read: false, priority: 'high', metadata: { sourceType: 'task', sourceId: 'task-1', notificationType: 'task_due' } });

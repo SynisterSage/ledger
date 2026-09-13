@@ -16,6 +16,7 @@ import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import { retrieveProjectSemanticContext } from './projectIntelligenceContext.ts';
 import type { LedgerRetrievalService } from './ledgerRetrievalService.ts';
 import type { LocalAIService, LocalAIStreamEvent } from './localAIService.ts';
+import { buildAIContextFingerprint } from '../src/types/aiContextEnvelope.ts';
 
 export type ProjectLensGenerationInput = {
   workspaceId: string;
@@ -136,7 +137,7 @@ export class ProjectLensService {
           console.warn('[project-lens] output rejected', { workspaceId: input.workspaceId, projectId: context.projectId, modelTier: tier, rejectionReasons: validation.rejectionReasons });
           continue;
         }
-        console.info('[project-lens] served', { workspaceId: input.workspaceId, projectId: context.projectId, modelTier: tier, semanticEvidenceCount: request.semanticEvidence.length, promptChars: prompt.length, retrievalMs, ...generated.timing, rejectionReasons: validation.rejectionReasons });
+        console.info('[project-lens] served', { workspaceId: input.workspaceId, projectId: context.projectId, contextFingerprint: buildAIContextFingerprint({ workspaceId: input.workspaceId, surface: 'project_lens', selectedResource: { resourceType: 'project', resourceId: context.projectId, revision: `${context.project.updated_at ?? ''}:${context.project.completeness ?? ''}` }, resources: [{ resourceType: 'project', resourceId: context.projectId, revision: context.project.updated_at }, ...context.tasks.map((item) => ({ resourceType: 'task' as const, resourceId: item.id, revision: item.updated_at })), ...context.milestones.map((item) => ({ resourceType: 'milestone' as const, resourceId: item.id, revision: item.updated_at })), ...context.events.map((item) => ({ resourceType: 'event' as const, resourceId: item.id, revision: item.updated_at })), ...context.reminders.map((item) => ({ resourceType: 'reminder' as const, resourceId: item.id, revision: item.updated_at })), ...context.linkedNotes.map((item) => ({ resourceType: 'note' as const, resourceId: item.resourceId, revision: item.updatedAt }))] }), modelTier: tier, semanticEvidenceCount: request.semanticEvidence.length, promptChars: prompt.length, retrievalMs, ...generated.timing, rejectionReasons: validation.rejectionReasons });
         return { status: 'ready', tier, result: validation.result, rejectionReasons: validation.rejectionReasons };
       } catch (error) {
         if (!this.isCurrent(requestEpoch)) return { status: 'unavailable', reason: 'superseded' };

@@ -1,5 +1,6 @@
 import type { AskLedgerContextItem, AskLedgerResourceType } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerIntegrationSource } from './askLedgerIntegrationRetrieval.ts';
+import type { AskLedgerQueryPlan } from '../src/types/askLedgerQueryPlan.ts';
 
 export type RetrievalOperation = 'lookup' | 'summarize' | 'compare' | 'analyze' | 'plan';
 export type RetrievalOrdering = 'relevance' | 'newest' | 'oldest';
@@ -218,7 +219,7 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
   return withMatch?.[1]?.trim();
 };
 
-export const buildRetrievalPlan = (question: string, now = new Date()): RetrievalPlan => {
+export const buildRetrievalPlan = (question: string, now = new Date(), canonicalPlan?: AskLedgerQueryPlan): RetrievalPlan => {
   const primaryResourceTypes = resourceTypesFor(question);
   const personalWeekOverview = /\bmy week\b/.test(normalize(question))
     && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalize(question));
@@ -273,18 +274,21 @@ export const buildRetrievalPlan = (question: string, now = new Date()): Retrieva
     }
   }
   const ordering: RetrievalOrdering = /\b(oldest|first)\b/i.test(question) ? 'oldest' : /\b(last|latest|newest|recent|past)\b/i.test(question) || isLastWorkday ? 'newest' : 'relevance';
-  const operation: RetrievalOperation = /\b(compare|versus|vs\.?|difference)\b/i.test(question)
+  const detectedOperation: RetrievalOperation = /\b(compare|versus|vs\.?|difference)\b/i.test(question)
     ? 'compare'
     : /\b(summarize|summary|recap|look through|review)\b/i.test(question)
       ? 'summarize'
       : /\b(analy[sz]e|where things stand|what changed|blocking|blocked)\b/i.test(question)
         ? 'analyze'
         : /\b(plan|prioritize|what should)\b/i.test(question) ? 'plan' : 'lookup';
+  const operation: RetrievalOperation = canonicalPlan?.operation ?? detectedOperation;
+  const canonicalEntity = canonicalPlan?.entity?.name?.replace(/^(?:with|for|about|on)\s+/i, '').trim();
+  const resolvedEntityQuery = canonicalEntity || entityQuery;
   const containerQuery = containerQueryFor(question, primaryResourceTypes);
   return {
     operation,
     primaryResourceTypes,
-    entityQuery,
+    entityQuery: resolvedEntityQuery,
     containerQuery,
     ordering,
     requestedCount: isLastWorkday ? 1 : requestedCountFor(question),
@@ -360,5 +364,12 @@ export const matchesRetrievalScope = (item: AskLedgerContextItem, plan: Retrieva
   if (!query) return true;
   const haystack = normalize(`${item.containerName ?? ''} ${item.title} ${item.content} ${item.projectName ?? ''} ${item.provenance ?? ''}`);
   const queryTokens = query.split(' ').filter((token) => token.length > 2);
-  return queryTokens.length > 0 && queryTokens.every((token) => haystack.includes(token));
+  if (queryTokens.length > 0 && queryTokens.every((token) => haystack.includes(token))) return true;
+  if (item.resourceType !== 'attachment') return false;
+  const compactQuery = query.split(' ')
+    .filter((token) => !['syllabus', 'pdf', 'file', 'document', 'attachment'].includes(token))
+    .join('');
+  const compactFileName = typeof item.metadata?.fileName === 'string' ? normalize(item.metadata.fileName).replace(/\s/g, '') : '';
+  const compactTitle = normalize(item.title).replace(/\s/g, '');
+  return compactQuery.length >= 6 && (compactFileName.includes(compactQuery) || compactTitle.includes(compactQuery));
 };

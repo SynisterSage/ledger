@@ -118,6 +118,16 @@ test('prefers grounding for ambiguous references', () => {
   assert.equal(route.retrievalRequired, true);
 });
 
+test('uses resolved conversation entities when the source preview is empty', () => {
+  const route = routeAskLedgerMessage('What about that?', {
+    previousExecutionMode: 'workspace_lookup',
+    resolvedWorkspaceEntities: [{ resourceType: 'project', resourceId: 'project-photo' }],
+  });
+  assert.equal(route.mode, 'follow_up');
+  assert.equal(route.diagnostics.resolvedFollowUpReference, 'workspace:project-photo');
+  assert.equal(route.diagnostics.contextReused, false);
+});
+
 test('selected skills, attachments, and explicit context force grounding', () => {
   assert.equal(routeAskLedgerMessage('thanks', { hasSelectedSkill: true }).retrievalRequired, true);
   assert.equal(routeAskLedgerMessage('hey', { attachmentCount: 1 }).retrievalRequired, true);

@@ -14,6 +14,7 @@ test('creates a workspace-wide Notes Home context without using the visible list
     resourceId: 'notes-home:workspace-a',
     title: 'Notes workspace',
     contextType: 'notes_home',
+    aiSurface: 'notes_ask',
     workspaceId: 'workspace-a',
     origin: 'notes_home',
     initialQuestion: 'What did I write about mobile recently?',

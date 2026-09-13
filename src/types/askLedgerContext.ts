@@ -63,6 +63,8 @@ export type AskLedgerInitialContext = {
   calendarSeriesId?: string;
   linkedProjectId?: string;
   origin?: 'projects' | 'notes_home';
+  /** Identifies the module surface that owns this AI context. */
+  aiSurface?: import('./aiContextEnvelope.ts').AIContextEnvelope['surface'];
   /** Optional one-shot question for contextual entry points. */
   initialQuestion?: string;
   handoff?: {

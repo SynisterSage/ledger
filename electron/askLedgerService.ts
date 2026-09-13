@@ -15,7 +15,8 @@ import type { LocalAIAssetManager } from './localAIAssets.ts';
 import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent.ts';
 import type { AskLedgerInitialContext } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
-import { resolveAskLedgerConversation } from '../src/types/askLedgerConversationState.ts';
+import { buildAIContextFingerprint } from '../src/types/aiContextEnvelope.ts';
+import { isAskLedgerSourceCurrent, resolveAskLedgerConversation } from '../src/types/askLedgerConversationState.ts';
 import { buildAskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import { buildSkillPromptContext, getAskLedgerSkill, validateSkillContext } from './askLedgerSkills.ts';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
@@ -575,6 +576,7 @@ export class AskLedgerService {
       explicitContext: request.explicitContext,
       hasSelectedSkill: Boolean(skill),
       attachmentCount: request.attachmentIds?.length,
+      resolvedWorkspaceEntities: conversationResolution.reusedEntities,
     });
     if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
     await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
@@ -790,11 +792,21 @@ export class AskLedgerService {
         previousProductArea: request.conversation?.productArea,
         previousProductFeature: request.conversation?.productFeature,
         previousSkill: request.conversation?.previousSkill,
+        resolvedWorkspaceEntities: conversationResolution.reusedEntities,
       });
       // An explicit context is an anchor, not evidence. Workspace questions
       // from Notes, projects, transcripts, and other contextual entry points
       // must still load the bounded records needed to answer them.
       const route = routed;
+      if (!skill && !request.explicitContext && conversationResolution.ambiguityCandidates?.length) {
+        const labels = conversationResolution.ambiguityCandidates
+          .map((key) => request.conversation?.previousSources?.find((source) => `${source.resourceType}:${source.resourceId}` === key)?.title)
+          .filter(Boolean);
+        const suffix = labels.length ? ` (${labels.join(' or ')})` : '';
+        emit({ type: 'delta', requestId, text: `I found more than one possible resource${suffix}. Which one do you mean?` });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        return;
+      }
       const conversationForCurrentTurn = route.diagnostics.contextReset || route.executionMode === 'ledger_product_help'
         ? undefined
         : request.conversation;
@@ -829,7 +841,7 @@ export class AskLedgerService {
       // it must not turn an otherwise conversational follow-up into retrieval.
       // When sources exist, every referenced resource must still be present in
       // the current workspace corpus before grounded context can be reused.
-      const reusableContextAvailable = !reuseRequested || !previousSourcesForReuse?.length || previousSourcesForReuse.every((source) => request.documents.some((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId));
+      const reusableContextAvailable = !reuseRequested || !previousSourcesForReuse?.length || previousSourcesForReuse.every((source) => isAskLedgerSourceCurrent(source, request.documents));
       // A conversational reaction is allowed to reuse the immediately prior
       // answer even when its synthetic/derived source is not present in the
       // current document snapshot. Requiring that source to be rediscovered
@@ -1225,6 +1237,20 @@ export class AskLedgerService {
         retrieved: retrieval.items,
         selected: normalized.items,
       });
+      const contextFingerprint = buildAIContextFingerprint({
+        workspaceId: request.workspaceId,
+        surface: request.explicitContext?.aiSurface ?? 'ask_ledger',
+        selectedResource: request.explicitContext
+          ? { resourceType: request.explicitContext.resourceType, resourceId: request.explicitContext.resourceId }
+          : undefined,
+        resources: normalized.items.map((item) => ({
+          resourceType: item.resourceType,
+          resourceId: item.resourceId,
+          revision: item.updatedAt,
+        })),
+        corpusVersion: 'ask-ledger-v1',
+      });
+      documentDiagnostics.contextFingerprint = contextFingerprint;
       const activityInventory = request.documents.filter((item) => item.resourceType === 'activity').length;
       const notificationInventory = request.documents.filter((item) => item.resourceType === 'notification').length;
       const activityRetrieved = retrieval.items.filter((item) => item.resourceType === 'activity').length;

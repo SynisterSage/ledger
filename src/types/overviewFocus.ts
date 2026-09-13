@@ -1,3 +1,5 @@
+import { buildAIContextFingerprint } from './aiContextEnvelope.ts';
+
 export type OverviewFocusResourceType = 'task' | 'project' | 'event' | 'note';
 
 export type OverviewFocusSnapshot = {
@@ -19,12 +21,16 @@ export type OverviewFocusInsight = { id: string; title: string; summary: string;
  */
 export const buildOverviewFocusFingerprint = (snapshot: OverviewFocusSnapshot): string => {
   const byId = <T extends { id: string }>(items: T[]) => [...items].sort((left, right) => left.id.localeCompare(right.id));
-  return JSON.stringify({
+  return buildAIContextFingerprint({
     workspaceId: snapshot.workspaceId,
-    tasks: byId(snapshot.tasks),
-    projects: byId(snapshot.projects),
-    events: byId(snapshot.events),
-    recentNotes: byId(snapshot.recentNotes),
+    surface: 'overview_lens',
+    corpusVersion: 'overview-focus-v1',
+    resources: [
+      ...byId(snapshot.tasks).map((item) => ({ resourceType: 'task' as const, resourceId: item.id, revision: JSON.stringify(item) })),
+      ...byId(snapshot.projects).map((item) => ({ resourceType: 'project' as const, resourceId: item.id, revision: JSON.stringify(item) })),
+      ...byId(snapshot.events).map((item) => ({ resourceType: 'event' as const, resourceId: item.id, revision: JSON.stringify(item) })),
+      ...byId(snapshot.recentNotes).map((item) => ({ resourceType: 'note' as const, resourceId: item.id, revision: JSON.stringify(item) })),
+    ],
   });
 };
 export type OverviewFocusResult = { insights: OverviewFocusInsight[] };

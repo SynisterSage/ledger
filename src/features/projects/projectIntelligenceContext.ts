@@ -49,7 +49,7 @@ const semanticRows = (rows: AskLedgerContextItem[] | undefined, workspaceId: str
     if (row.workspaceId && row.workspaceId !== workspaceId) return false;
     if (row.projectId && row.projectId !== projectId) return false;
     return allowExplicitlyLinked || row.metadata?.context_scope === 'workspace_related_context' || (row.resourceType === 'project' ? row.resourceId === projectId : Boolean(row.projectId === projectId || row.relationships?.some((relationship) => relationship.resourceType === 'project' && relationship.resourceId === projectId)));
-  }).slice(0, limit);
+  }).sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')) || `${left.resourceType}:${left.resourceId}`.localeCompare(`${right.resourceType}:${right.resourceId}`)).slice(0, limit);
 
 export const buildProjectIntelligenceContext = (input: BuildProjectIntelligenceContextInput): ProjectIntelligenceContext => {
   const limits = {

@@ -17,6 +17,7 @@ export const createNotesHomeAskContext = (
     resourceId: `notes-home:${normalizedWorkspaceId}`,
     title: 'Notes workspace',
     contextType: 'notes_home',
+    aiSurface: 'notes_ask',
     workspaceId: normalizedWorkspaceId,
     origin: 'notes_home',
     initialQuestion: normalizedQuestion,

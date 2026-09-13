@@ -26,6 +26,19 @@ test('classifies pipeline failures without embedding evaluation questions into p
   assert.deepEqual(failures, ['wrong_seed', 'missing_relationship_context', 'missing_requested_category', 'unsupported_claim', 'repair_failed']);
 });
 
+test('fails evaluation when a forbidden resource enters retrieval or evidence', () => {
+  const failures = classifyAskLedgerEvaluationFailures({
+    expectation: { forbiddenResourceKeys: ['attachment:motion-graphics-syllabus'] },
+    retrievedKeys: ['project:project-history-photo', 'attachment:motion-graphics-syllabus'],
+    evidenceKeys: ['project:project-history-photo'],
+    answer: 'The project is in progress.',
+    score: { retrievalCorrectness: 2, contextCoverage: 2, evidenceQuality: 2, answerCompleteness: 2, groundedness: 2, synthesisQuality: 2, usefulness: 2, passed: false },
+    validationPassed: true,
+    repairAttempted: false,
+  });
+  assert.deepEqual(failures, ['forbidden_resource_context']);
+});
+
 test('runs a deterministic fixture through retrieval, orchestration, evidence, and validation stages', async () => {
   const evaluationCase = createAskLedgerEvaluationCases().find((candidate) => candidate.id === 'research-tying-summary')!;
   const result = await evaluateAskLedgerFixtureCase(evaluationCase, 'Alfa includes the Final Production milestone and Review Final Proof task.');
@@ -35,6 +48,15 @@ test('runs a deterministic fixture through retrieval, orchestration, evidence, a
   assert.ok(result.stages.retrieval.candidates > 0);
   assert.ok(result.stages.evidence.selected > 0);
   assert.ok(result.latencyMs.total >= result.latencyMs.retrieval);
+});
+
+test('keeps the History of Photo compound query on the matching project, class event, and syllabus', async () => {
+  const evaluationCase = createAskLedgerEvaluationCases().find((candidate) => candidate.id === 'research-history-photo-compound')!;
+  const result = await evaluateAskLedgerFixtureCase(evaluationCase);
+  assert.equal(result.score.passed, true, result.failures.join(', '));
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.stages.retrieval.primary.includes('attachment:attachment-history-syllabus'), true);
+  assert.equal(result.stages.evidence.selectedKeys.includes('attachment:attachment-motion-syllabus'), false);
 });
 
 test('summarizes pass rate, category performance, latency, evidence efficiency, and failures', () => {

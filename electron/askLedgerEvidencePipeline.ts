@@ -17,6 +17,7 @@ export type AskLedgerEvidenceBudget = {
   maxTokens: number;
   maxItemTokens: number;
   maxTranscriptSegmentsPerParent: number;
+  maxAttachmentChunksPerFile: number;
 };
 
 export type RankedEvidence = {
@@ -30,14 +31,17 @@ export interface AskLedgerReranker {
 }
 
 const DEFAULT_BUDGETS: Record<'quick' | 'standard' | 'research', AskLedgerEvidenceBudget> = {
-  quick: { maxResources: 6, maxTokens: 1800, maxItemTokens: 420, maxTranscriptSegmentsPerParent: 2 },
-  standard: { maxResources: ASK_LEDGER_DESKTOP_BUDGET.selectedResourceLimit, maxTokens: ASK_LEDGER_DESKTOP_BUDGET.evidenceTokenBudget, maxItemTokens: ASK_LEDGER_DESKTOP_BUDGET.maxItemTokens, maxTranscriptSegmentsPerParent: ASK_LEDGER_DESKTOP_BUDGET.maxTranscriptSegmentsPerParent },
-  research: { maxResources: 20, maxTokens: 4200, maxItemTokens: 720, maxTranscriptSegmentsPerParent: 3 },
+  quick: { maxResources: 6, maxTokens: 1800, maxItemTokens: 420, maxTranscriptSegmentsPerParent: 2, maxAttachmentChunksPerFile: 3 },
+  standard: { maxResources: ASK_LEDGER_DESKTOP_BUDGET.selectedResourceLimit, maxTokens: ASK_LEDGER_DESKTOP_BUDGET.evidenceTokenBudget, maxItemTokens: ASK_LEDGER_DESKTOP_BUDGET.maxItemTokens, maxTranscriptSegmentsPerParent: ASK_LEDGER_DESKTOP_BUDGET.maxTranscriptSegmentsPerParent, maxAttachmentChunksPerFile: 4 },
+  research: { maxResources: 20, maxTokens: 4200, maxItemTokens: 720, maxTranscriptSegmentsPerParent: 3, maxAttachmentChunksPerFile: 4 },
 };
 
 const keyFor = (item: Pick<AskLedgerContextItem, 'resourceType' | 'resourceId'>) => `${item.resourceType}:${item.resourceId}`;
 const normalize = (value: unknown) => String(value ?? '').toLowerCase().replace(/<[^>]*>/g, ' ').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const categoryFor = (type: AskLedgerResourceType) => type === 'event' ? 'meetings' : type === 'transcript' ? 'transcripts' : type === 'activity' ? 'activity' : `${type}s`;
+const diversityKeyFor = (item: AskLedgerContextItem) => item.resourceType === 'attachment'
+  ? `attachment-file:${String(item.metadata?.localFileId ?? item.metadata?.fileId ?? item.resourceId).split(':').slice(0, 2).join(':')}`
+  : keyFor(item);
 const estimatedTokens = (value: string) => Math.ceil(value.length / 4);
 
 const compactResourceText = (item: AskLedgerContextItem, maxTokens: number, options?: { timeZone?: string; timeFormat?: '12h' | '24h'; now?: Date }) => {
@@ -157,11 +161,25 @@ export const compileAskLedgerEvidence = (input: {
 
   const selected: RankedEvidence[] = [];
   const selectedKeys = new Set<string>();
+  const selectedDiversity = new Map<string, number>();
+  const selectedCategories = new Map<string, number>();
+  const requestedCategoryCap = requested.size >= 3 ? 4 : Number.POSITIVE_INFINITY;
   const transcriptCounts = new Map<string, number>();
   let usedTokens = 0;
   const trySelect = (candidate: RankedEvidence, _required = false) => {
     const key = keyFor(candidate.resource);
     if (selectedKeys.has(key)) return false;
+    const diversityKey = diversityKeyFor(candidate.resource);
+    const diversityCount = selectedDiversity.get(diversityKey) ?? 0;
+    if (candidate.resource.resourceType === 'attachment' && diversityCount >= budget.maxAttachmentChunksPerFile) {
+      dropReasons.attachment_file_diversity = (dropReasons.attachment_file_diversity ?? 0) + 1;
+      return false;
+    }
+    const category = categoryFor(candidate.resource.resourceType);
+    if ((selectedCategories.get(category) ?? 0) >= requestedCategoryCap) {
+      dropReasons.category_diversity = (dropReasons.category_diversity ?? 0) + 1;
+      return false;
+    }
     const parent = candidate.resource.parentResourceId ?? candidate.resource.projectId ?? 'unparented';
     if (candidate.resource.resourceType === 'transcript' && (transcriptCounts.get(parent) ?? 0) >= budget.maxTranscriptSegmentsPerParent) { dropReasons.redundant_transcript = (dropReasons.redundant_transcript ?? 0) + 1; return false; }
     const tokens = estimatedTokens(compactResourceText(candidate.resource, budget.maxItemTokens, { timeZone: input.timeZone, timeFormat: input.timeFormat, now: input.now }));
@@ -170,6 +188,8 @@ export const compileAskLedgerEvidence = (input: {
       return false;
     }
     selected.push(candidate); selectedKeys.add(key); usedTokens += tokens;
+    selectedDiversity.set(diversityKey, diversityCount + 1);
+    selectedCategories.set(category, (selectedCategories.get(category) ?? 0) + 1);
     if (candidate.resource.resourceType === 'transcript') transcriptCounts.set(parent, (transcriptCounts.get(parent) ?? 0) + 1);
     return true;
   };

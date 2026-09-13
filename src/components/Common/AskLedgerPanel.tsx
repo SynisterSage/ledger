@@ -41,6 +41,7 @@ import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
 import { openLocalAISettings } from './LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
+import { buildAIContextFingerprint } from '../../types/aiContextEnvelope';
 import {
   deriveAskLedgerConversationState,
   type AskLedgerConversationState,
@@ -213,6 +214,24 @@ const conversationStateSources = (sources: AskLedgerSource[]) =>
     updatedAt: source.updatedAt,
   }));
 
+const conversationContextFingerprint = (
+  workspaceId: string,
+  sources: AskLedgerSource[],
+  selectedResource?: AskLedgerInitialContext | null,
+) => buildAIContextFingerprint({
+  workspaceId,
+  surface: selectedResource?.aiSurface ?? 'ask_ledger',
+  selectedResource: selectedResource
+    ? { resourceType: selectedResource.resourceType, resourceId: selectedResource.resourceId }
+    : undefined,
+  resources: sources.map((source) => ({
+    resourceType: source.type,
+    resourceId: source.resourceId ?? source.id,
+    revision: source.updatedAt,
+  })),
+  corpusVersion: 'ask-ledger-v1',
+});
+
 export type AskLedgerState =
   | { status: 'idle' | 'focused' }
   | { status: 'submitting'; request: AskLedgerRequest }
@@ -328,6 +347,12 @@ const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
   linked_resource: 'Linked resource',
 };
 
+const sourceDisplayKey = (source: AskLedgerSource) => {
+  if (source.type !== 'attachment') return `${source.type}:${source.resourceId}`;
+  const localChunk = String(source.resourceId).match(/^local:([^:]+):\d+$/);
+  return localChunk ? `attachment-file:${localChunk[1]}` : `${source.type}:${source.resourceId}`;
+};
+
 type AskLedgerStreamEvent = {
   type: 'start' | 'activity' | 'sources' | 'delta' | 'replace' | 'done' | 'error';
   requestId: string;
@@ -345,6 +370,7 @@ type AskLedgerStreamEvent = {
   };
   text?: string;
   sources?: Array<Record<string, unknown>>;
+  diagnostics?: { contextFingerprint?: string };
   error?: { code?: string; message?: string };
   metrics?: { totalMs?: number; performance?: Record<string, unknown> };
   skillResult?: {
@@ -1152,6 +1178,7 @@ export const AskLedgerPanel = ({
   const activityStartedAtRef = useRef<number | null>(null);
   const requestWatchdogTimerRef = useRef<number | null>(null);
   const activityStepsRef = useRef<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
+  const contextFingerprintRef = useRef<string | undefined>();
   const [activityNow, setActivityNow] = useState(() => Date.now());
   const [messages, setMessages] = useState<AskLedgerMessage[]>([]);
   const [loadedCustomSkills, setLoadedCustomSkills] = useState<AskLedgerCustomSkill[]>([]);
@@ -1767,7 +1794,12 @@ export const AskLedgerPanel = ({
       ? deriveAskLedgerConversationState(
           workspaceIdRef.current ?? '',
           lastTurn.question,
-          conversationStateSources(lastTurn.sources) as never
+          conversationStateSources(lastTurn.sources) as never,
+          undefined,
+          undefined,
+          lastTurn.sources.length
+            ? conversationContextFingerprint(workspaceIdRef.current ?? '', lastTurn.sources, initialContextRef.current)
+            : undefined
         )
       : undefined;
     conversationRef.current = lastTurn
@@ -1852,7 +1884,8 @@ export const AskLedgerPanel = ({
           return;
         }
         if (value.type === 'sources') {
-          sourceItemsRef.current = (value.sources ?? [])
+          contextFingerprintRef.current = value.diagnostics?.contextFingerprint;
+          const mappedSources = (value.sources ?? [])
             .map((source) => {
               const type = sourceType(source.resourceType);
               return type
@@ -1882,6 +1915,13 @@ export const AskLedgerPanel = ({
                 : null;
             })
             .filter(Boolean) as AskLedgerSource[];
+          const seenDisplaySources = new Set<string>();
+          sourceItemsRef.current = mappedSources.filter((source) => {
+            const displayKey = sourceDisplayKey(source);
+            if (seenDisplaySources.has(displayKey)) return false;
+            seenDisplaySources.add(displayKey);
+            return true;
+          });
           liveResponseRef.current = { ...liveResponseRef.current, sources: sourceItemsRef.current };
           return;
         }
@@ -2026,7 +2066,9 @@ export const AskLedgerPanel = ({
             workspaceIdRef.current ?? '',
             completedState.request.question,
             conversationStateSources(completedResponse.sources) as never,
-            conversationRef.current?.state
+            conversationRef.current?.state,
+            undefined,
+            contextFingerprintRef.current
           );
           conversationRef.current = {
             id: conversationIdRef.current,
@@ -2430,6 +2472,7 @@ export const AskLedgerPanel = ({
     setComposerAttachments([]);
     setAttachmentMenuOpen(false);
     setResourcePickerOpen(false);
+    contextFingerprintRef.current = undefined;
     activityStartedAtRef.current = Date.now();
     clearRequestWatchdog();
     setRequestWatchdogStatus(null);

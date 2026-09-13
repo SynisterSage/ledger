@@ -1,4 +1,4 @@
-import type { AskLedgerResourceType, AskLedgerSource } from './askLedgerContext.ts';
+import type { AskLedgerContextItem, AskLedgerResourceType, AskLedgerSource } from './askLedgerContext.ts';
 
 export type AskLedgerGroundedEntity = {
   resourceType: AskLedgerResourceType;
@@ -19,6 +19,7 @@ export type AskLedgerConversationCoverage = {
 
 export type AskLedgerConversationState = {
   workspaceId: string;
+  contextFingerprint?: string;
   activeEntities: AskLedgerGroundedEntity[];
   activeResources: AskLedgerGroundedEntity[];
   activeTopics: string[];
@@ -41,9 +42,21 @@ export type AskLedgerResolvedConversation = {
   retrievalQuestion?: string;
   contextReset: boolean;
   unresolvedReferences: string[];
+  ambiguityCandidates?: string[];
 };
 
 const keyFor = (entity: Pick<AskLedgerGroundedEntity, 'resourceType' | 'resourceId'>) => `${entity.resourceType}:${entity.resourceId}`;
+
+/**
+ * A previous source can only be reused when it still exists in the current
+ * workspace snapshot and its known revision has not changed.
+ */
+export const isAskLedgerSourceCurrent = (source: AskLedgerSource, documents: AskLedgerContextItem[]) => {
+  const current = documents.find((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId);
+  if (!current) return false;
+  if (source.updatedAt && current.updatedAt) return source.updatedAt === current.updatedAt;
+  return true;
+};
 const normalize = (value: string) => value.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const providerPattern = /\b(slack|github|figma|google drive|drive|google calendar|apple calendar|apple reminders|mcp)\b/i;
 const referencePattern = /\b(?:it|its|that|those|these|the project|the meeting|the other (?:one|project)|them|they)\b|\bwhat about\b|\band\s+(?:watercolor|alfa)\b/i;
@@ -56,7 +69,7 @@ const entityMatchesQuestion = (entity: AskLedgerGroundedEntity, normalizedQuesti
   return title.length >= 3 && (normalizedQuestion.includes(title) || titleTokens.slice(0, 2).some((token) => normalizedQuestion.includes(token)));
 };
 
-export const deriveAskLedgerConversationState = (workspaceId: string, question: string, sources: AskLedgerSource[], previous?: AskLedgerConversationState, coverage?: AskLedgerConversationCoverage): AskLedgerConversationState => {
+export const deriveAskLedgerConversationState = (workspaceId: string, question: string, sources: AskLedgerSource[], previous?: AskLedgerConversationState, coverage?: AskLedgerConversationCoverage, contextFingerprint?: string): AskLedgerConversationState => {
   const seen = new Set<string>();
   const activeResources = sources
     .filter((source) => source.resourceId && source.title)
@@ -77,6 +90,7 @@ export const deriveAskLedgerConversationState = (workspaceId: string, question: 
   ].slice(0, 8);
   return {
     workspaceId,
+    ...(contextFingerprint ? { contextFingerprint } : {}),
     activeEntities,
     activeResources,
     activeTopics,
@@ -96,11 +110,16 @@ export const resolveAskLedgerConversation = (question: string, state?: AskLedger
   const activeProjects = state.activeEntities.filter((entity) => entity.resourceType === 'project');
   const explicitEntity = state.activeEntities.find((entity) => entityMatchesQuestion(entity, normalizedQuestion));
   const referenceMentioned = referencePattern.test(normalizedQuestion);
+  const ambiguousCandidates = referenceMentioned && !explicitEntity && activeProjects.length > 1
+    ? activeProjects.slice(0, 4).map(keyFor)
+    : [];
   const providerMatch = normalizedQuestion.match(providerPattern);
   const provider = providerMatch?.[1]?.replace('google drive', 'google_drive').replace('google calendar', 'google_calendar').replace('apple calendar', 'apple_calendar').replace('apple reminders', 'apple_reminders');
   const priorProvider = state.activeEntities.find((entity) => entity.integrationProvider)?.integrationProvider;
   const switchedEntity = Boolean(explicitEntity && (!activeProjects.length || explicitEntity.resourceId !== activeProjects[0]?.resourceId));
-  const reusedEntities = explicitEntity
+  const reusedEntities = ambiguousCandidates.length
+    ? []
+    : explicitEntity
     ? [explicitEntity]
     : referenceMentioned
       ? state.activeEntities.filter((entity) => ['project', 'event', 'note', 'milestone', 'task', 'external'].includes(entity.resourceType)).slice(0, 8)
@@ -130,5 +149,5 @@ export const resolveAskLedgerConversation = (question: string, state?: AskLedger
     }
     if (/\b(?:those|these|them|they|which one|the other)\b/.test(normalizedQuestion)) resolvedReferences.those = resourceKeys.join(',');
   }
-  return { isFollowUp, mode, resolvedReferences, reusedEntities, resourceKeys, projectIds: [...new Set(projectIds)].slice(0, 8), ...(provider ? { provider } : {}), contextReset: !isFollowUp && !workspacePattern.test(normalizedQuestion), unresolvedReferences: referenceMentioned && !reusedEntities.length ? ['referent'] : [] };
+  return { isFollowUp, mode, resolvedReferences, reusedEntities, resourceKeys, projectIds: [...new Set(projectIds)].slice(0, 8), ...(provider ? { provider } : {}), contextReset: !isFollowUp && !workspacePattern.test(normalizedQuestion), unresolvedReferences: referenceMentioned && !reusedEntities.length ? ['referent'] : [], ...(ambiguousCandidates.length ? { ambiguityCandidates: ambiguousCandidates } : {}) };
 };

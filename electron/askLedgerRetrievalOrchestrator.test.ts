@@ -68,6 +68,39 @@ test('scopes named syllabus questions away from unrelated PDFs', async () => {
   await index.shutdown();
 });
 
+test('keeps an explicitly named project authoritative beside unlinked events', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-photo', title: 'History of Photo', content: 'Photography class project.' });
+  const task = item({ resourceType: 'task', resourceId: 'task-photo', title: 'Syllabus Quiz', content: 'Complete the syllabus quiz.', projectId: 'project-photo', projectName: 'History of Photo', status: 'Open' });
+  const event = item({ resourceType: 'event', resourceId: 'event-photo', title: 'History of Photo class', content: 'Next class meeting.' });
+  const syllabus = item({ resourceType: 'attachment', resourceId: 'attachment-syllabus', title: 'Dzenko HistoryOfPhotography syllabus_f26.pdf', content: 'Week 2 syllabus quiz and discussion introductions are due.' });
+  const motion = item({ resourceType: 'attachment', resourceId: 'attachment-motion', title: 'AR390 Motion-26-FALL.pdf', content: 'Library orientation and evaluating sources.' });
+  const documents = [project, task, event, syllabus, motion];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'now i have a project history of photo what are next actions, and for my events, history of photo what does the syllabus pdf say', [], 20, { documents });
+
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'projects' && objective.status === 'found'));
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'meetings' && objective.status === 'found'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'project-photo'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-photo'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'event-photo'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-syllabus'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-motion'), false);
+  await index.shutdown();
+});
+
+test('uses the named project to select the matching syllabus filename', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-photo', title: 'History of Photo', content: 'Photography class project.' });
+  const historySyllabus = item({ resourceType: 'attachment', resourceId: 'attachment-history', title: 'Dzenko_ar347_HistoryOfPhotography_syllabus_f26.pdf', content: 'History of Photography Week 2.', metadata: { fileName: 'Dzenko_ar347_HistoryOfPhotography_syllabus_f26.pdf', localFileId: 'history' } });
+  const motionSyllabus = item({ resourceType: 'attachment', resourceId: 'attachment-motion', title: 'AR390 Motion syllabus.pdf', content: 'Motion Graphics Week 2.', metadata: { fileName: 'AR390 Motion syllabus.pdf', localFileId: 'motion' } });
+  const documents = [project, historySyllabus, motionSyllabus];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'now i have a project history of photo what does the syllabus pdf say', [], 20, { documents });
+
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-history'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-motion'), false);
+  await index.shutdown();
+});
+
 test('keeps narrow questions on the quick retrieval path', async () => {
   assert.equal(classifyAskLedgerRetrievalMode('When is Alfa due?'), 'quick');
   assert.equal(classifyAskLedgerRetrievalMode('Show my today tasks.'), 'quick');
