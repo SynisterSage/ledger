@@ -50,6 +50,26 @@ test('routes direct workspace-overview requests through retrieval', () => {
   assert.equal(route.retrievalRequired, true);
 });
 
+test('routes informal personal-week questions through workspace retrieval', () => {
+  for (const message of [
+    'hows my week look like',
+    "how's my week looking?",
+    'what does my week look like?',
+    'show me my week',
+  ]) {
+    const route = routeAskLedgerMessage(message);
+    assert.equal(route.executionMode, 'workspace_synthesis', message);
+    assert.equal(route.retrievalRequired, true, message);
+    assert.equal(route.reason, 'workspace_fact_or_entity', message);
+  }
+});
+
+test('does not mistake Plan My Week product help for a personal schedule request', () => {
+  const route = routeAskLedgerMessage('What does Plan My Week do?');
+  assert.equal(route.executionMode, 'ledger_product_help');
+  assert.equal(route.retrievalRequired, false);
+});
+
 test('keeps meeting-planning requests grounded despite capability wording', () => {
   const route = routeAskLedgerMessage('Can you help me plan a meeting I have soon? Look through my recent notes and help me be detailed.');
   assert.equal(route.mode, 'workspace_grounded');

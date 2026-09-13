@@ -15,6 +15,7 @@ export type ContextMenuItem = {
 export type ContextMenuGroup = {
   label?: string;
   items: ContextMenuItem[];
+  content?: ReactNode;
 };
 
 type ContextMenuProps = {
@@ -49,7 +50,7 @@ export const ContextMenu = ({
           ...group,
           items: group.items.filter((item) => !item.hidden),
         }))
-        .filter((group) => group.items.length > 0),
+        .filter((group) => group.items.length > 0 || group.content),
     [groups]
   );
 
@@ -92,7 +93,7 @@ export const ContextMenu = ({
 
   if (!open || typeof document === 'undefined') return null;
 
-  const estimatedHeight = Math.max(120, visibleGroups.reduce((sum, group) => sum + group.items.length * 36 + (group.label ? 20 : 0) + 8, 0));
+  const estimatedHeight = Math.max(120, visibleGroups.reduce((sum, group) => sum + group.items.length * 36 + (group.label ? 20 : 0) + (group.content ? 56 : 0) + 8, 0));
   const left = Math.max(
     VIEWPORT_PADDING,
     Math.min(x, window.innerWidth - width - VIEWPORT_PADDING)
@@ -189,6 +190,7 @@ export const ContextMenu = ({
               </button>
             );
           })}
+          {group.content}
           {groupIndex < visibleGroups.length - 1 && <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />}
         </div>
       ))}

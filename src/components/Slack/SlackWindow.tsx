@@ -160,6 +160,13 @@ const formatRelative = (value?: string | null) => {
   return `${days}d ago`;
 };
 
+const localDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const titleCase = (value?: string | null) =>
   String(value ?? '')
     .replace(/_/g, ' ')
@@ -203,7 +210,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const [selectedConversationIds, setSelectedConversationIds] = useState<string[]>([]);
   const [watchBusy, setWatchBusy] = useState<string | null>(null);
   const [settingsWatchId, setSettingsWatchId] = useState<string | null>(null);
-  const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
+  const [activityDate, setActivityDate] = useState(localDateKey());
   const [activityFilter, setActivityFilter] = useState('all');
   const [activities, setActivities] = useState<SlackActivity[]>([]);
   const [recap, setRecap] = useState<SlackRecap | null>(null);
@@ -314,7 +321,8 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     setIsLoadingActivity(true);
     setActivityError(null);
     try {
-      const [activityResult, recapResult] = await Promise.all([api.getSlackActivity(workspaceId, { date: activityDate, filter: activityFilter === 'unread' ? 'all' : activityFilter, unread: activityFilter === 'unread', limit: 50 }), api.getSlackActivityRecap(workspaceId, activityDate)]);
+      const timezoneOffsetMinutes = new Date().getTimezoneOffset();
+      const [activityResult, recapResult] = await Promise.all([api.getSlackActivity(workspaceId, { date: activityDate, timezoneOffsetMinutes, filter: activityFilter === 'unread' ? 'all' : activityFilter, unread: activityFilter === 'unread', limit: 50 }), api.getSlackActivityRecap(workspaceId, activityDate, timezoneOffsetMinutes)]);
       setActivities(Array.isArray(activityResult?.rows) ? activityResult.rows as SlackActivity[] : []);
       setRecap(recapResult as SlackRecap);
     } catch {
@@ -382,6 +390,18 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     };
   }, [loadIdentity, loadWatches]);
 
+  useEffect(() => {
+    const handleConnectionChange = () => {
+      void loadStatus();
+      void loadCaptures();
+      void loadActivity();
+    };
+    window.ledgerIpc?.events?.onSlackConnectionChanged(handleConnectionChange as any);
+    return () => {
+      window.ledgerIpc?.events?.offSlackConnectionChanged(handleConnectionChange as any);
+    };
+  }, [loadActivity, loadCaptures, loadStatus]);
+
   const visibleCaptures = useMemo(() => {
     return captures.filter((capture) => {
       if (filter === 'failed') return capture.capture_status === 'failed' || isStaleSlackCapture(capture);
@@ -431,7 +451,10 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     setIsConnecting(true);
     try {
       const result = (await api.getSlackInstallUrl(workspaceId)) as { url?: string };
-      if (result.url) await window.desktopWindow?.openExternal(result.url);
+      if (result.url) {
+        if (window.desktopWindow?.openExternal) await window.desktopWindow.openExternal(result.url);
+        else window.open(result.url, '_blank', 'noopener,noreferrer');
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -444,7 +467,8 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     try {
       const result = (await api.getSlackIdentityConnectUrl(workspaceId)) as { url?: string };
       if (!result.url) throw new Error('Slack identity authorization is unavailable.');
-      await window.desktopWindow?.openExternal(result.url);
+      if (window.desktopWindow?.openExternal) await window.desktopWindow.openExternal(result.url);
+      else window.open(result.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       setIdentityError(error instanceof Error ? error.message : 'Ledger could not start Slack identity linking.');
     } finally {
@@ -478,10 +502,13 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     if (!workspaceId || selectedConversationIds.length === 0) return;
     setWatchBusy(`create-${watchType}`);
     try {
-      for (const conversationId of selectedConversationIds) await api.createSlackWatch(workspaceId, { slack_conversation_id: conversationId, watch_type: watchType });
+      const results = await Promise.allSettled(selectedConversationIds.map((conversationId) => api.createSlackWatch(workspaceId, { slack_conversation_id: conversationId, watch_type: watchType })));
+      const failed = results.filter((result) => result.status === 'rejected');
+      if (failed.length === results.length) throw (failed[0] as PromiseRejectedResult).reason;
       setSelectedConversationIds([]);
       setIsWatchPickerOpen(false);
       await loadWatches();
+      if (failed.length) setWatchError(`${failed.length} conversation${failed.length === 1 ? '' : 's'} could not be added.`);
     } catch (error) {
       setConversationError(error instanceof Error ? error.message : 'Ledger could not start watching these conversations.');
     } finally {
@@ -526,6 +553,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     setActivityBusy(`unread-${activity.id}`);
     try { await api.markSlackActivityUnread(workspaceId, activity.id); setActivities((current) => current.map((row) => row.id === activity.id ? { ...row, is_read: false } : row)); } catch { setActivityError('Ledger could not update this Slack activity.'); } finally { setActivityBusy(null); }
   };
+
 
   const toggleActivityFollow = async (activity: SlackActivity) => {
     if (!workspaceId || !activity.context_id) return;
@@ -584,8 +612,8 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
 
   const linkActivityContext = async (target: { id: string; targetType: string }) => {
     if (!workspaceId || !linkActivity) return;
-    setActivityBusy(`link-${linkActivity.id}`);
     if (linkActivity.conversation_type === 'private_channel' && !window.confirm('This Slack conversation is private. Linking it here may make its captured content visible to people with access to this Ledger item.')) return;
+    setActivityBusy(`link-${linkActivity.id}`);
     try { await api.linkSlackActivityContext(workspaceId, linkActivity.id, target.targetType, target.id); setLinkActivity(null); } catch { setActivityError('Ledger could not link this Slack context.'); } finally { setActivityBusy(null); }
   };
 
@@ -671,19 +699,23 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
 
       <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--ledger-background)] px-4 py-4 lg:px-5 lg:py-5">
         {status?.needs_reauthorization ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)]"><span className="flex min-w-0 items-center gap-2"><CircleAlert size={14} className="shrink-0 text-[var(--ledger-warning)]" /><span className="truncate">Slack needs additional permissions to monitor activity.</span></span>{canManage ? <button type="button" onClick={openSettings} className="shrink-0 font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)] hover:underline">Reauthorize</button> : <span className="shrink-0 text-[var(--ledger-text-muted)]">Ask an admin</span>}</div> : null}
-        <div className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
+        <div className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_12px_32px_rgba(66,42,24,0.045)]">
           {isLoading ? <SlackSkeleton /> : isDisconnected ? (
             <DisconnectedState canManage={canManage} isConnecting={isConnecting} onConnect={connectSlack} onBack={close} onSettings={openSettings} />
           ) : (
             <>
-              <header className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                <p className="text-[13px] text-[var(--ledger-text-muted)]">Slack activity across {activeWorkspace?.name ?? 'this workspace'}.</p>
+              <header className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3.5 sm:px-5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Slack activity</p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">Across {activeWorkspace?.name ?? 'this workspace'}</p>
+                </div>
+                <span className="hidden shrink-0 items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)] sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Connected</span>
               </header>
-              <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_250px]">
-                <main className="slack-content min-h-0 min-w-0 overflow-y-auto px-3 py-3" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('article')) { event.preventDefault(); openActivityMenuFromPointer(event); } }} onClick={openActivityMenuFromClick}>
-                  <div className="flex items-center gap-5 border-b border-[var(--ledger-border-subtle)] px-1">
+              <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_280px]">
+                <main className="slack-content min-h-0 min-w-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('article')) { event.preventDefault(); openActivityMenuFromPointer(event); } }} onClick={openActivityMenuFromClick}>
+                  <div className="-mx-1 flex min-w-max items-center gap-5 overflow-x-auto border-b border-[var(--ledger-border-subtle)] px-1">
                     {([['activity', 'Activity'], ['watched', 'Watched'], ['captures', 'Sent to Intake']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setPageView(value)} className={`border-b-2 px-0.5 py-2 text-xs font-medium transition ${pageView === value ? 'border-[var(--ledger-text-primary)] text-[var(--ledger-text-primary)]' : 'border-transparent text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'}`}>{label}</button>)}
-                    <button type="button" onClick={openSettings} className="ml-auto inline-flex items-center gap-1.5 px-1 py-2 text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"><Settings2 size={13} /> Manage</button>
+                    <button type="button" onClick={openSettings} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"><Settings2 size={13} /> Manage</button>
                   </div>
                   {pageView === 'activity' ? <SlackActivitySection date={activityDate} onDateChange={setActivityDate} recap={recap} activities={activities} filter={activityFilter} onFilterChange={setActivityFilter} isLoading={isLoadingActivity} error={activityError} onRetry={() => void loadActivity()} onOpenSlack={openSlack} onRead={(activity) => void markActivityRead(activity)} onSendToIntake={(activity) => void sendActivityToIntake(activity)} onLinkContext={(activity) => void openActivityLinker(activity)} onOpenIntake={openIntake} busy={activityBusy} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(status?.needs_reauthorization)} onConnect={() => void connectIdentity()} onReauthorize={openSettings} /> : pageView === 'watched' ? <WatchedConversationsSection watches={watches} isLoading={isLoadingWatches} error={watchError} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(identity?.status === 'reauthorization_required' || identity?.status === 'error' || status?.needs_reauthorization)} canManageShared={canManage && !activeWorkspace?.is_personal} onWatch={openWatchPicker} onRemove={(watch) => void removeWatch(watch)} onToggleSettings={(watchId) => setSettingsWatchId((current) => current === watchId ? null : watchId)} settingsWatchId={settingsWatchId} busy={watchBusy} onUpdatePreference={(watch, field, value) => void updateWatchPreference(watch, field, value)} onOpenSlack={openSlack} onConnect={() => void connectIdentity()} onReauthorize={openSettings} canConnect={routeMatchesActiveWorkspace} /> : <CaptureView captures={visibleCaptures} filter={filter} onFilterChange={setFilter} search={search} onSearch={setSearch} error={captureError} loading={isLoadingCaptures} onRetry={() => void loadCaptures()} onOpenSlack={openSlack} onOpenIntake={openIntake} onOpenConverted={openConvertedItem} onRemoveCapture={(capture) => void removeCapture(capture)} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(status?.needs_reauthorization)} onConnect={() => void connectIdentity()} onReauthorize={openSettings} canConnect={routeMatchesActiveWorkspace} />}
                 </main>
@@ -746,10 +778,13 @@ function getSlackActivityMenuGroups(activity: SlackActivity, actions: { onOpenSl
 }
 
 function SlackActivitySection({ date, onDateChange, activities, filter, onFilterChange, isLoading, error, onRetry, onOpenSlack, onRead, onSendToIntake, onLinkContext, onOpenIntake, busy, identityConnected, needsReauthorization, onConnect, onReauthorize }: { date: string; onDateChange: (date: string) => void; recap: SlackRecap | null; activities: SlackActivity[]; filter: string; onFilterChange: (filter: string) => void; isLoading: boolean; error: string | null; onRetry: () => void; onOpenSlack: (url?: string | null) => void; onRead: (activity: SlackActivity) => void; onSendToIntake: (activity: SlackActivity) => void; onLinkContext: (activity: SlackActivity) => void; onOpenIntake: (id?: string | null) => void; busy: string | null; identityConnected: boolean; needsReauthorization: boolean; onConnect: () => void; onReauthorize: () => void }) {
+  const [search, setSearch] = useState('');
   const moveDate = (amount: number) => { const next = new Date(`${date}T00:00:00.000Z`); next.setUTCDate(next.getUTCDate() + amount); onDateChange(next.toISOString().slice(0, 10)); };
   const isToday = date === new Date().toISOString().slice(0, 10);
   const labels: Record<string, string> = { all: 'All', mentions: 'Mentions', replies: 'Replies', threads: 'Threads', unread: 'Unread' };
-  const groups = activities.reduce<Record<string, SlackActivity[]>>((result, activity) => {
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleActivities = normalizedSearch ? activities.filter((activity) => [activity.message_text, activity.author_slack_user_id, activity.slack_conversation_id].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch))) : activities;
+  const groups = visibleActivities.reduce<Record<string, SlackActivity[]>>((result, activity) => {
     const time = activity.source_created_at ? new Date(activity.source_created_at).getTime() : Date.now();
     const age = Date.now() - time;
     const group = !activity.is_read ? 'Needs attention' : age < 86_400_000 ? 'Earlier today' : 'Yesterday';
@@ -767,7 +802,8 @@ function SlackActivitySection({ date, onDateChange, activities, filter, onFilter
         <button type="button" onClick={() => moveDate(1)} disabled={isToday} className="rounded-md p-1.5 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] disabled:opacity-30" aria-label="Next day"><ArrowRight size={14} /></button>
       </div>
     </div>
-    {error ? <InlineError message={error} onRetry={onRetry} /> : isLoading ? <div className="h-20 animate-pulse rounded-lg bg-[var(--ledger-surface-muted)]" /> : activities.length === 0 ? <SlackEmptyState icon={<MessageCircle size={18} />} title={identityConnected ? (filter === 'all' ? 'Nothing new today' : `No ${filter} activity`) : needsReauthorization ? 'Reconnect Slack to see activity' : 'Connect Slack to see activity'} description={identityConnected ? (filter === 'all' ? 'Your Slack activity will appear here.' : 'Try another filter or check back later.') : 'Link your Slack identity to view mentions, replies, and watched conversations.'} actionLabel={!identityConnected ? (needsReauthorization ? 'Reauthorize Slack' : 'Connect account') : undefined} onAction={!identityConnected ? (needsReauthorization ? onReauthorize : onConnect) : undefined} /> : <div className="space-y-3 pt-1">{Object.entries(groups).map(([group, rows]) => <div key={group}><div className="flex h-8 items-center gap-2 rounded-lg bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)]"><ChevronDown size={14} /><span>{group}</span><span className="text-[var(--ledger-text-muted)]">{rows.length}</span></div><div className="divide-y divide-[var(--ledger-border-subtle)]">{rows.map((activity) => <SlackActivityRow key={activity.id} activity={activity} busy={busy} onOpenSlack={onOpenSlack} onRead={onRead} onSendToIntake={onSendToIntake} onLinkContext={onLinkContext} onOpenIntake={onOpenIntake} />)}</div></div>)}</div>}
+    <label className="flex items-center gap-2 rounded-lg border border-[var(--ledger-border-subtle)] px-3 text-xs text-[var(--ledger-text-muted)]"><Search size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search activity" aria-label="Search Slack activity" className="h-9 min-w-0 flex-1 bg-transparent text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]" /></label>
+    {error ? <InlineError message={error} onRetry={onRetry} /> : isLoading ? <div className="h-20 animate-pulse rounded-lg bg-[var(--ledger-surface-muted)]" /> : visibleActivities.length === 0 ? <SlackEmptyState icon={<MessageCircle size={18} />} title={search ? 'No matching activity' : identityConnected ? (filter === 'all' ? 'Nothing new today' : `No ${filter} activity`) : needsReauthorization ? 'Reconnect Slack to see activity' : 'Connect Slack to see activity'} description={search ? 'Try a different search or clear the field.' : identityConnected ? (filter === 'all' ? 'Your Slack activity will appear here.' : 'Try another filter or check back later.') : 'Link your Slack identity to view mentions, replies, and watched conversations.'} actionLabel={!identityConnected ? (needsReauthorization ? 'Reauthorize Slack' : 'Connect account') : undefined} onAction={!identityConnected ? (needsReauthorization ? onReauthorize : onConnect) : undefined} /> : <div className="space-y-3 pt-1">{Object.entries(groups).map(([group, rows]) => <div key={group}><div className="flex h-8 items-center gap-2 rounded-lg bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)]"><ChevronDown size={14} /><span>{group}</span><span className="text-[var(--ledger-text-muted)]">{rows.length}</span></div><div className="divide-y divide-[var(--ledger-border-subtle)]">{rows.map((activity) => <SlackActivityRow key={activity.id} activity={activity} busy={busy} onOpenSlack={onOpenSlack} onRead={onRead} onSendToIntake={onSendToIntake} onLinkContext={onLinkContext} onOpenIntake={onOpenIntake} />)}</div></div>)}</div>}
   </section>;
 }
 
@@ -777,7 +813,10 @@ function SlackActivityRow({ activity, busy, onOpenSlack, onRead, onSendToIntake,
 }
 
 function SlackActivityLinkModal({ targets, onClose, onLink, busy }: { targets: Array<{ id: string; targetType: string; title: string }>; onClose: () => void; onLink: (target: { id: string; targetType: string }) => void; busy: string | null }) {
-  return <ModalOverlay isOpen onClose={onClose} backdropBorderRadius="inherit" disablePortal manageWindowChrome={false} classNameContainer="w-full max-w-[520px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"><div className="flex max-h-[min(560px,calc(100vh-48px))] flex-col"><div className="flex items-center justify-between border-b border-[var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="text-base font-semibold">Link Slack context</h2><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Choose a Ledger object for this stored Slack activity.</p></div><ModalCloseButton onClick={onClose} ariaLabel="Close link Slack context" /></div><div className="min-h-0 overflow-y-auto p-3">{targets.length === 0 ? <p className="p-4 text-sm text-[var(--ledger-text-muted)]">No Ledger objects available.</p> : targets.map((target) => <button key={`${target.targetType}-${target.id}`} type="button" onClick={() => onLink(target)} disabled={Boolean(busy)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--ledger-surface-hover)]"><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-primary)]">{target.title}</span><span className="text-[11px] capitalize text-[var(--ledger-text-muted)]">{target.targetType}</span></button>)}</div></div></ModalOverlay>;
+  const [search, setSearch] = useState('');
+  const query = search.trim().toLowerCase();
+  const visibleTargets = query ? targets.filter((target) => `${target.title} ${target.targetType}`.toLowerCase().includes(query)) : targets;
+  return <ModalOverlay isOpen onClose={onClose} backdropBorderRadius="inherit" disablePortal manageWindowChrome={false} classNameContainer="w-full max-w-[520px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"><div className="flex max-h-[min(560px,calc(100vh-48px))] flex-col"><div className="flex items-center justify-between border-b border-[var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="text-base font-semibold">Link Slack context</h2><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Choose a Ledger object for this stored Slack activity.</p></div><ModalCloseButton onClick={onClose} ariaLabel="Close link Slack context" /></div><div className="min-h-0 overflow-y-auto p-3"><label className="mb-2 flex items-center gap-2 rounded-lg border border-[var(--ledger-border-subtle)] px-3 text-xs text-[var(--ledger-text-muted)]"><Search size={14} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes, projects, or tasks" aria-label="Search Ledger objects" className="h-9 min-w-0 flex-1 bg-transparent text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]" /></label>{visibleTargets.length === 0 ? <p className="p-4 text-sm text-[var(--ledger-text-muted)]">{query ? 'No matching Ledger objects.' : 'No Ledger objects available.'}</p> : visibleTargets.map((target) => <button key={`${target.targetType}-${target.id}`} type="button" onClick={() => onLink(target)} disabled={Boolean(busy)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--ledger-surface-hover)]"><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-primary)]">{target.title}</span><span className="text-[11px] capitalize text-[var(--ledger-text-muted)]">{target.targetType}</span></button>)}</div></div></ModalOverlay>;
 }
 
 const conversationTypeLabel = (type: string) => type === 'private_channel' ? 'Private channel' : type === 'group_conversation' ? 'Group conversation' : type === 'direct_message' ? 'Direct message' : 'Public channel';
@@ -796,7 +835,7 @@ function WatchedConversationsSection({ watches, isLoading, error, identityConnec
 }
 
 function WatchConversationPicker({ conversations, search, onSearch, selectedIds, onToggle, isLoading, error, canManageShared, onClose, onCreatePersonal, onCreateShared, busy }: { conversations: SlackConversation[]; search: string; onSearch: (value: string) => void; selectedIds: string[]; onToggle: (id: string) => void; isLoading: boolean; error: string | null; canManageShared: boolean; onClose: () => void; onCreatePersonal: () => void; onCreateShared: () => void; busy: string | null }) {
-  return <ModalOverlay isOpen onClose={onClose} backdropBorderRadius="inherit" disablePortal manageWindowChrome={false} classNameContainer="w-full max-w-[680px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"><div className="flex h-[min(640px,calc(100vh-48px))] flex-col"><div className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">Watch conversations</h2><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Only conversations your linked Slack identity can access are shown.</p></div><ModalCloseButton onClick={onClose} ariaLabel="Close watch conversations" /></div><div className="min-h-0 flex-1 overflow-y-auto p-5"><div className="flex items-center gap-2 rounded-lg border border-[var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search conversations" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{error ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}<div className="mt-3 overflow-hidden rounded-xl bg-[var(--ledger-surface-muted)]">{isLoading ? <div className="space-y-1 p-2">{[1, 2, 3, 4].map((row) => <div key={row} className="h-12 animate-pulse rounded-lg bg-[var(--ledger-surface)]" />)}</div> : conversations.length === 0 ? <p className="p-5 text-center text-xs text-[var(--ledger-text-muted)]">No accessible conversations found.</p> : conversations.map((conversation) => { const selected = selectedIds.includes(conversation.id); const personalWatched = Boolean(conversation.personal_watch); const sharedWatched = Boolean(conversation.shared_watch); return <button type="button" key={conversation.id} onClick={() => onToggle(conversation.id)} disabled={Boolean(busy) || personalWatched || sharedWatched} className={`flex w-full items-center gap-3 border-b border-[var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-default disabled:opacity-70 ${selected ? 'bg-[color:rgba(255,95,64,0.07)]' : ''}`}><span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)] text-white' : 'border-[var(--ledger-border-subtle)]'}`}>{selected ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">{conversation.name}</span><span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-[var(--ledger-text-muted)]">{conversation.is_private ? <LockKeyhole size={11} /> : null}{conversationTypeLabel(conversation.conversation_type)}{conversation.member_count ? ` · ${conversation.member_count} members` : ''}{personalWatched ? ' · Already watching' : sharedWatched ? ' · Workspace watched' : ''}</span></span><ChevronDown size={14} className="-rotate-90 text-[var(--ledger-text-muted)]" /></button>; })}</div></div><div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--ledger-border-subtle)] px-5 py-3"><p className="text-xs text-[var(--ledger-text-muted)]">{selectedIds.length} selected</p><div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={onCreatePersonal} disabled={!selectedIds.length || Boolean(busy)} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{busy === 'create-personal' ? 'Watching…' : 'Watch for me'}</button>{canManageShared ? <button type="button" onClick={onCreateShared} disabled={!selectedIds.length || Boolean(busy)} className="rounded-lg border border-[var(--ledger-border-subtle)] px-3 py-2 text-xs font-medium text-[var(--ledger-text-primary)] disabled:opacity-50">{busy === 'create-shared' ? 'Watching…' : 'Watch for workspace'}</button> : null}</div></div></div></ModalOverlay>;
+  return <ModalOverlay isOpen onClose={onClose} backdropBorderRadius="inherit" disablePortal manageWindowChrome={false} classNameContainer="w-full max-w-[680px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"><div className="flex h-[min(640px,calc(100vh-48px))] flex-col"><div className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">Watch conversations</h2><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Only conversations your linked Slack identity can access are shown.</p></div><ModalCloseButton onClick={onClose} ariaLabel="Close watch conversations" /></div><div className="min-h-0 flex-1 overflow-y-auto p-5"><div className="flex items-center gap-2 rounded-lg border border-[var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search conversations" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{error ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}<div className="mt-3 overflow-hidden rounded-xl bg-[var(--ledger-surface-muted)]">{isLoading ? <div className="space-y-1 p-2">{[1, 2, 3, 4].map((row) => <div key={row} className="h-12 animate-pulse rounded-lg bg-[var(--ledger-surface)]" />)}</div> : conversations.length === 0 ? <p className="p-5 text-center text-xs text-[var(--ledger-text-muted)]">No accessible conversations found.</p> : conversations.map((conversation) => { const selected = selectedIds.includes(conversation.id); const personalWatched = Boolean(conversation.personal_watch); const sharedWatched = Boolean(conversation.shared_watch); return <button type="button" key={conversation.id} onClick={() => onToggle(conversation.id)} disabled={Boolean(busy)} className={`flex w-full items-center gap-3 border-b border-[var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-default disabled:opacity-70 ${selected ? 'bg-[color:rgba(255,95,64,0.07)]' : ''}`}><span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)] text-white' : 'border-[var(--ledger-border-subtle)]'}`}>{selected ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">{conversation.name}</span><span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-[var(--ledger-text-muted)]">{conversation.is_private ? <LockKeyhole size={11} /> : null}{conversationTypeLabel(conversation.conversation_type)}{conversation.member_count ? ` · ${conversation.member_count} members` : ''}{personalWatched ? ' · Already watching' : sharedWatched ? ' · Workspace watched' : ''}</span></span><ChevronDown size={14} className="-rotate-90 text-[var(--ledger-text-muted)]" /></button>; })}</div></div><div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--ledger-border-subtle)] px-5 py-3"><p className="text-xs text-[var(--ledger-text-muted)]">{selectedIds.length} selected</p><div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={onCreatePersonal} disabled={!selectedIds.length || Boolean(busy)} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{busy === 'create-personal' ? 'Watching…' : 'Watch for me'}</button>{canManageShared ? <button type="button" onClick={onCreateShared} disabled={!selectedIds.length || Boolean(busy)} className="rounded-lg border border-[var(--ledger-border-subtle)] px-3 py-2 text-xs font-medium text-[var(--ledger-text-primary)] disabled:opacity-50">{busy === 'create-shared' ? 'Watching…' : 'Watch for workspace'}</button> : null}</div></div></div></ModalOverlay>;
 }
 
 function CaptureView({ captures, filter, onFilterChange, search, onSearch, error, loading, onRetry, onOpenSlack, onOpenIntake, onOpenConverted, onRemoveCapture, identityConnected, needsReauthorization, onConnect, onReauthorize, canConnect }: { captures: SlackCapture[]; filter: CaptureFilter; onFilterChange: (filter: CaptureFilter) => void; search: string; onSearch: (value: string) => void; error: string | null; loading: boolean; onRetry: () => void; onOpenSlack: (url?: string | null) => void; onOpenIntake: (id?: string | null) => void; onOpenConverted: (capture: SlackCapture) => void; onRemoveCapture: (capture: SlackCapture) => void; identityConnected: boolean; needsReauthorization: boolean; onConnect: () => void; onReauthorize: () => void; canConnect: boolean }) {

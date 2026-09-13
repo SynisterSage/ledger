@@ -830,7 +830,15 @@ export class AskLedgerService {
       // When sources exist, every referenced resource must still be present in
       // the current workspace corpus before grounded context can be reused.
       const reusableContextAvailable = !reuseRequested || !previousSourcesForReuse?.length || previousSourcesForReuse.every((source) => request.documents.some((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId));
-      const shouldRetrieve = route.retrievalRequired || (reuseRequested && !reusableContextAvailable);
+      // A conversational reaction is allowed to reuse the immediately prior
+      // answer even when its synthetic/derived source is not present in the
+      // current document snapshot. Requiring that source to be rediscovered
+      // turns a normal follow-up into an unrelated workspace search (often
+      // attachment retrieval) and then produces a false abstention.
+      const shouldRefreshMissingContext = reuseRequested
+        && !reusableContextAvailable
+        && route.executionMode !== 'conversation';
+      const shouldRetrieve = route.retrievalRequired || shouldRefreshMissingContext;
       performanceTrace.set('retrievalRequired', shouldRetrieve);
       if (route.executionMode === 'ledger_product_help') {
         const productPerformance = { indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: 0, workspaceSources: 0 };
@@ -878,7 +886,7 @@ export class AskLedgerService {
         ? 120_000
         : 120_000;
       performanceTrace.set('timeoutMs', generationTimeoutMs);
-      if (reuseRequested && !reusableContextAvailable) {
+      if (shouldRefreshMissingContext) {
         askLedgerDiagnostic('[local-ai] Ask Ledger grounded context invalidated', {
           requestId,
           messageId: request.messageId,

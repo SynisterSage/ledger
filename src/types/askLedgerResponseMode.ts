@@ -104,6 +104,10 @@ const notesPeopleCapabilitySignals = /\b(?:mention|mentions|people|ppl|person)\b
 const notesDateCapabilitySignals = /\bhow\s+does\s+(?:that\s+)?date\s+thing\s+work\b/i;
 const workspaceDataIntentSignals = /\b(?:my|mine|our|today|yesterday|tomorrow|this\s+(?:task|project|meeting|note|event|reminder)|on my|show|list|find|due|overdue|have i|what did i\s+(?:write|put|save|capture|say|do)|(?:what|which) .* (?:do i have|is due))\b/i;
 const workspaceOverviewSignals = /\b(?:this|my|our|the)\s+workspace\b[\s\S]{0,100}\b(?:view|show|look|review|breakdown|summari[sz]e|recap|what(?:s| is) in|contents?|so far)\b|\b(?:view|show|look|review|breakdown|summari[sz]e|recap)\b[\s\S]{0,80}\b(?:this|my|our|the)\s+workspace\b/i;
+// Informal schedule questions such as "hows my week look like" need to reach
+// workspace retrieval even though they may not contain a canonical question
+// word ("how's" normalizes to "hows") or an explicit calendar noun.
+const personalWeekOverviewSignals = /\b(?:what|whats|how|hows|show|give|tell)\b[\s\S]{0,40}\b(?:my|this|our)\s+week\b|\b(?:my|this|our)\s+week\b[\s\S]{0,40}\b(?:look|like|schedule|calendar|overview|busy|free|plan|going|happening)\b/i;
 const workspaceResourceWords = /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/i;
 const workspaceResourceStateSignals = /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|remaining|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/i;
 const researchSignals = /\b(?:across (?:all|the workspace|Atlas)|look through|actually blocking|where .* really stand\b|where .* really stands\b|connect|analy[sz]e .*dependencies|dependencies|compare .* and|compare .* evidence|all the context|contradictions?|cross[- ]resource|biggest .* risks?|keeping .* from moving)\b/i;
@@ -274,6 +278,21 @@ export const routeAskLedgerMessage = (
       { conversational: true }
     );
   if (workspaceOverviewSignals.test(normalized)) {
+    return withDepth({
+      mode: 'workspace_grounded',
+      executionMode: 'workspace_synthesis',
+      retrievalRequired: true,
+      reusePreviousGroundedContext: false,
+      reason: 'workspace_fact_or_entity',
+    });
+  }
+  // Keep personal week/schedule questions grounded before the conversational
+  // fallback. This is intentionally narrow so product questions such as
+  // "What does Plan My Week do?" can still route to product help below.
+  const personalWeekOverviewQuestion = personalWeekOverviewSignals.test(normalized)
+    && !/\b(?:what|how)\s+does\s+(?:the\s+)?plan\s+my\s+week\b/i.test(normalized)
+    && !/\b(?:skill|feature|page|ledger)\b/i.test(normalized);
+  if (personalWeekOverviewQuestion) {
     return withDepth({
       mode: 'workspace_grounded',
       executionMode: 'workspace_synthesis',

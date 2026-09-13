@@ -74,6 +74,13 @@ export function LocalContextLinks({
     }
   };
 
+  const openInFiles = (fileId: string) => {
+    void window.desktopWindow?.openModule('files', {
+      kind: 'files',
+      focusContext: `focus-file:${fileId}`,
+    });
+  };
+
   return (
     <section className={`space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4 ${className}`} aria-label="Local files">
       <div className="flex items-center justify-between gap-2">
@@ -88,7 +95,7 @@ export function LocalContextLinks({
           <button type="button" onClick={() => void window.desktopWindow?.openModule('files', { kind: 'files' })} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" title="Open Files & links" aria-label="Open Files & links"><FolderOpen size={13} /></button>
         </div>
       </div>
-      {files.length ? <div className="space-y-1">{files.map((file) => <div key={file.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] hover:bg-[var(--ledger-surface-hover)]"><button type="button" onClick={() => void window.localContext?.open({ ownerUserId: user?.id ?? '', workspaceId, fileId: file.id })} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[var(--ledger-text-secondary)]"><ExternalLink size={11} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="truncate">{file.name}</span></button><button type="button" onClick={() => void unlink(file)} disabled={busy} className="rounded p-0.5 text-[var(--ledger-text-muted)] hover:text-[var(--ledger-danger)] disabled:opacity-50" title={`Remove ${file.name}`} aria-label={`Remove ${file.name}`}><X size={12} /></button></div>)}</div> : <p className="rounded-md bg-[var(--ledger-surface)] px-2 py-2 text-[11px] text-[var(--ledger-text-muted)]">No local files linked yet.</p>}
+      {files.length ? <div className="space-y-1">{files.map((file) => <div key={file.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] hover:bg-[var(--ledger-surface-hover)]"><button type="button" onClick={() => openInFiles(file.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[var(--ledger-text-secondary)]" title="Open in Files & links"><ExternalLink size={11} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="truncate">{file.name}</span></button><button type="button" onClick={() => void unlink(file)} disabled={busy} className="rounded p-0.5 text-[var(--ledger-text-muted)] hover:text-[var(--ledger-danger)] disabled:opacity-50" title={`Remove ${file.name}`} aria-label={`Remove ${file.name}`}><X size={12} /></button></div>)}</div> : <p className="rounded-md bg-[var(--ledger-surface)] px-2 py-2 text-[11px] text-[var(--ledger-text-muted)]">No local files linked yet.</p>}
       {error ? <p className="text-[11px] text-[var(--ledger-danger)]">{error}</p> : null}
     </section>
   );

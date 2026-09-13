@@ -43,6 +43,12 @@ import { SkeletonCompactRow } from '../Common/Skeleton';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, usePlatform } from '../../platform';
 import type { LocalContextFile } from '../../types/localContextLibrary';
 import {
+  folderColorDotClass,
+  folderColorOptions,
+  normalizeFolderColor,
+  type FolderColor,
+} from '../../utils/folderColors';
+import {
   mergeAskLedgerSessions,
   sessionMatchesAskLedgerResource,
 } from '../../utils/askLedgerSessionRestore';
@@ -419,7 +425,10 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       if (requestId !== loadRequestRef.current || workspaceId !== activeWorkspaceIdRef.current)
         return;
       setFiles(localSummary.files ?? []);
-      setFolders(localSummary.folders ?? []);
+      setFolders((localSummary.folders ?? []).map((folder) => ({
+        ...folder,
+        color: normalizeFolderColor(folder.color),
+      })));
       setReferences(Array.isArray(connected) ? (connected as ExternalReference[]) : []);
       setLoadedWorkspaceId(workspaceId);
     } catch (cause) {
@@ -473,10 +482,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
           window.localAskSessions?.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: knownId }),
         ]);
+        const candidates: AskLedgerSession[] = [];
         if (cloudResult.status === 'fulfilled' && cloudResult.value?.session)
-          restored = cloudResult.value.session;
+          candidates.push(cloudResult.value.session);
         if (localResult.status === 'fulfilled' && localResult.value?.session)
-          restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
+          candidates.push({ ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession);
+        restored = mergeAskLedgerSessions(candidates)
+          .filter((session) => sessionMatchesAskLedgerResource(session, activeAskResource))[0] ?? null;
         if (!restored) {
           // The in-memory pointer can outlive a deleted local/cloud record.
           // Clear it and use the same discovery path as a cold restore.
@@ -840,6 +852,21 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       setFolders((current) => current.map((item) => item.id === folderId ? updated : item));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename that folder.'); }
   };
+  const updateFolderColor = async (folderId: string, color: FolderColor) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext?.updateFolderColor) return;
+    const folder = folderById.get(folderId);
+    if (!folder) return;
+    const previous = folders;
+    const safeColor = normalizeFolderColor(color);
+    setFolders((current) => current.map((item) => item.id === folderId ? { ...item, color: safeColor } : item));
+    try {
+      const updated = await window.localContext.updateFolderColor({ ownerUserId: user.id, workspaceId: activeWorkspaceId, folderId, color: safeColor });
+      setFolders((current) => current.map((item) => item.id === folderId ? { ...item, ...updated, color: normalizeFolderColor(updated.color) } : item));
+    } catch (cause) {
+      setFolders(previous);
+      setError(cause instanceof Error ? cause.message : 'Could not update that folder color.');
+    }
+  };
   const deleteFolder = async (folderId: string) => {
     if (!user?.id || !activeWorkspaceId || !window.localContext?.removeFolder) return;
     const folder = folderById.get(folderId);
@@ -884,7 +911,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setLocalFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: folder.id }); }}
         >
           <button type="button" onClick={() => toggleFolder(folder.id)} className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-expanded={!isCollapsed}>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-text-muted)]/55" />
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${folderColorDotClass[normalizeFolderColor(folder.color)]}`} />
             <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="min-w-0 flex-1 truncate">{folder.name}</span>
             <ChevronRight size={14} className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${!isCollapsed ? 'rotate-90' : ''}`} />
@@ -1900,6 +1927,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     </div>
                   ) : activeAskResource ? (
                     <AskLedgerPanel
+                        key={`files-ask-panel-${activeAskResourceKey}-${askSession?.id ?? 'new'}-${askPaneResetKey}`}
                         resetKey={askPaneResetKey}
                         workspaceId={activeWorkspaceId}
                         initialSession={askSession}
@@ -1996,6 +2024,30 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
             { id: 'rename-folder', label: 'Rename folder', icon: <Folder size={14} />, hidden: !localFolderContextMenu?.folderId, onClick: () => { if (localFolderContextMenu?.folderId) void renameFolder(localFolderContextMenu.folderId); } },
             { id: 'delete-folder', label: 'Delete folder', icon: <Trash2 size={14} />, destructive: true, hidden: !localFolderContextMenu?.folderId, onClick: () => { if (localFolderContextMenu?.folderId) void deleteFolder(localFolderContextMenu.folderId); } },
           ],
+        }, {
+          label: 'Folder color',
+          items: [],
+          content: localFolderContextMenu?.folderId ? (
+            <div className="flex flex-wrap gap-1.5 px-3 pb-2 pt-1.5">
+              {folderColorOptions.map((color) => {
+                const folder = folderById.get(localFolderContextMenu.folderId!);
+                const activeColor = normalizeFolderColor(folder?.color);
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={`Set folder color to ${color}`}
+                    title={`Set folder color to ${color}`}
+                    onClick={() => {
+                      void updateFolderColor(localFolderContextMenu.folderId!, color);
+                      setLocalFolderContextMenu(null);
+                    }}
+                    className={`h-5 w-5 rounded-full ${folderColorDotClass[color]} transition ${activeColor === color ? 'border-2 border-[var(--ledger-text-primary)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.9)]' : 'border border-[color:var(--ledger-border-subtle)] hover:border-[color:var(--ledger-border-strong)]'}`}
+                  />
+                );
+              })}
+            </div>
+          ) : null,
         }]}
       />
     </div>

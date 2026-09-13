@@ -233,6 +233,34 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
 
   const taskSummary = (row) => ({ id: row.id, title: row.title, status: row.status, priority: row.priority ?? undefined, dueDate: row.due_date ?? undefined, dueTime: row.due_time ?? undefined, updatedAt: row.updated_at, url: `ledger://tasks/${encodeURIComponent(row.id)}`, route: workspaceRoute(workspaceId, 'task', row.id) });
 
+  const linkedResourceSummary = (row, links = []) => {
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const provider = String(row.provider ?? 'external').replace(/_/g, ' ');
+    const type = String(row.external_type ?? 'resource').replace(/_/g, ' ');
+    const title = String(
+      metadata.title ?? metadata.name ?? metadata.fileName ?? `${provider} ${type}`
+    ).trim();
+    const folder = [
+      metadata.folderPath,
+      metadata.parentPath,
+      metadata.folderName,
+      metadata.parentName,
+      metadata.parent?.name,
+    ].find((value) => typeof value === 'string' && value.trim());
+    return {
+      id: row.id,
+      title: title || 'Linked resource',
+      provider,
+      type,
+      folder: folder || undefined,
+      url: row.normalized_url ?? row.external_url ?? undefined,
+      accessStatus: row.access_status ?? undefined,
+      updatedAt: row.updated_at ?? row.created_at ?? undefined,
+      linkedTo: links.map((link) => ({ type: link.target_type, id: link.target_id })).filter((link) => link.type && link.id),
+      route: workspaceRoute(workspaceId, 'external', row.id),
+    };
+  };
+
   const fetchWorkspace = async () => {
     const result = await supabase.from('workspaces').select('id, name, is_personal').eq('id', workspaceId).maybeSingle();
     if (result.error || !result.data) throw new Error('Workspace access is no longer available.');
@@ -482,6 +510,72 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     }
     await timed('get_note', 'audit', () => audit('tool.invoked', { toolName: 'get_note' }));
     return textResult({ note: payload });
+  });
+
+  server.registerTool('list_linked_resources', {
+    description: 'List bounded connected files, links, and folder names from the approved workspace. This reads synced integration metadata only; device-local Files & links never leave the Ledger desktop app through MCP.',
+    annotations: readAnnotations,
+    inputSchema: z.object({ query: z.string().trim().min(1).max(200).optional(), provider: z.string().trim().max(80).optional(), limit: limitSchema, cursor: z.string().max(100).optional() }).strict(),
+  }, async ({ query: rawQuery, provider: rawProvider, limit, cursor }) => {
+    requireScope('links:read');
+    const offset = decodeCursor(cursor);
+    if (offset === null) throw new Error('Invalid cursor.');
+    const [referencesResult, foldersResult] = await Promise.all([
+      timed('list_linked_resources', 'references', () => queryTable('external_references', 'id, provider, external_type, external_url, normalized_url, metadata, access_status, updated_at, created_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(500)),
+      timed('list_linked_resources', 'folders', () => queryTable('connected_external_sources', 'id, provider, source_type, provider_source_id, name, canonical_url, status, updated_at, created_at').eq('source_type', 'folder').order('updated_at', { ascending: false }).limit(250)),
+    ]);
+    if (referencesResult.error || foldersResult.error) throw new Error('Could not load linked resources.');
+    const referenceIds = (referencesResult.data ?? []).map((row) => row.id).filter(Boolean);
+    const linksResult = referenceIds.length
+      ? await timed('list_linked_resources', 'relationships', () => queryTable('external_reference_links', 'external_reference_id, target_type, target_id').in('external_reference_id', referenceIds))
+      : { data: [], error: null };
+    if (linksResult.error) throw new Error('Could not load linked-resource relationships.');
+    const linksByReference = new Map();
+    for (const link of linksResult.data ?? []) {
+      const current = linksByReference.get(String(link.external_reference_id)) ?? [];
+      current.push(link);
+      linksByReference.set(String(link.external_reference_id), current);
+    }
+    const provider = String(rawProvider ?? '').trim().toLowerCase();
+    const queryText = String(rawQuery ?? '').trim().toLowerCase();
+    const matches = (value) => !queryText || JSON.stringify(value).toLowerCase().includes(queryText);
+    const resources = (referencesResult.data ?? [])
+      .filter((row) => !provider || String(row.provider ?? '').toLowerCase() === provider)
+      .map((row) => linkedResourceSummary(row, linksByReference.get(String(row.id)) ?? []))
+      .filter(matches);
+    const folders = (foldersResult.data ?? [])
+      .filter((folder) => !provider || String(folder.provider ?? '').toLowerCase() === provider)
+      .map((folder) => ({ id: folder.id, name: folder.name || 'Connected folder', provider: folder.provider, status: folder.status, url: folder.canonical_url ?? undefined, updatedAt: folder.updated_at ?? folder.created_at ?? undefined, route: workspaceRoute(workspaceId, 'external', folder.id, { sourceType: 'folder' }) }))
+      .filter(matches);
+    const combined = [...folders.map((folder) => ({ kind: 'folder', ...folder })), ...resources.map((resource) => ({ kind: 'resource', ...resource }))];
+    const page = combined.slice(offset, offset + limit);
+    await timed('list_linked_resources', 'audit', () => audit('tool.invoked', { toolName: 'list_linked_resources' }));
+    return textResult({ items: page, ...(offset + limit < combined.length ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+  });
+
+  server.registerTool('get_linked_resource', {
+    description: 'Get one synced linked file or URL with its name, folder metadata, and Ledger links. It does not retrieve or export the body of a device-local file.',
+    annotations: readAnnotations,
+    inputSchema: z.object({ resourceId: uuidSchema }).strict(),
+  }, async ({ resourceId }) => {
+    requireScope('links:read');
+    const [referenceResult, folderResult] = await Promise.all([
+      timed('get_linked_resource', 'reference', () => queryTable('external_references', 'id, provider, external_type, external_url, normalized_url, metadata, access_status, updated_at, created_at').eq('id', resourceId).is('deleted_at', null).maybeSingle()),
+      timed('get_linked_resource', 'folder', () => queryTable('connected_external_sources', 'id, provider, source_type, provider_source_id, name, canonical_url, status, updated_at, created_at').eq('id', resourceId).eq('source_type', 'folder').maybeSingle()),
+    ]);
+    if (referenceResult.error || folderResult.error) throw new Error('Could not load linked resource.');
+    if (referenceResult.data) {
+      const linksResult = await timed('get_linked_resource', 'relationships', () => queryTable('external_reference_links', 'target_type, target_id').eq('external_reference_id', resourceId));
+      if (linksResult.error) throw new Error('Could not load linked-resource relationships.');
+      await timed('get_linked_resource', 'audit', () => audit('tool.invoked', { toolName: 'get_linked_resource' }));
+      return textResult({ resource: linkedResourceSummary(referenceResult.data, linksResult.data ?? []) });
+    }
+    if (folderResult.data) {
+      const folder = folderResult.data;
+      await timed('get_linked_resource', 'audit', () => audit('tool.invoked', { toolName: 'get_linked_resource' }));
+      return textResult({ folder: { id: folder.id, name: folder.name || 'Connected folder', provider: folder.provider, status: folder.status, url: folder.canonical_url ?? undefined, updatedAt: folder.updated_at ?? folder.created_at ?? undefined, route: workspaceRoute(workspaceId, 'external', folder.id, { sourceType: 'folder' }) } });
+    }
+    throw new Error('Object not found or inaccessible.');
   });
 
   server.registerTool('list_upcoming_events', { description: 'List bounded upcoming events and reminders.', annotations: readAnnotations, inputSchema: { from: z.string().date().optional(), to: z.string().date().optional(), limit: limitSchema, cursor: z.string().max(100).optional() } }, async ({ from, to, limit, cursor }) => {

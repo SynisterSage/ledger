@@ -10,6 +10,7 @@ const labels: Record<string, string> = {
   'tasks:write': 'Create and update tasks',
   'notes:write': 'Create notes',
   'daily:write': 'Update Today’s focus',
+  'links:read': 'View connected files and folders',
 };
 
 export const McpScopeUpgradeAuthorizationPage = ({ sessionId, code }: { sessionId: string; code: string }) => {

@@ -41,6 +41,7 @@ export type LocalContextFolder = {
   ownerUserId: string;
   workspaceId: string;
   name: string;
+  color?: import('../utils/folderColors').FolderColor;
   parentId?: string | null;
   sortOrder: number;
   createdAt: string;

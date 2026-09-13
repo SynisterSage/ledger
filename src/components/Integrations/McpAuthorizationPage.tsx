@@ -19,6 +19,7 @@ const scopeLabels: Record<string, string> = {
   'notes:read': 'View notes',
   'calendar:read': 'View calendar items',
   'daily:read': 'View daily planning data',
+  'links:read': 'View connected files and folders',
   'intake:write': 'Send items to Intake',
   'tasks:write': 'Create and update tasks',
   'notes:write': 'Create notes',

@@ -67,6 +67,14 @@ test('MCP exposes workspace-scoped bounded note search', () => {
   assert.match(mcpSource, /server\.registerTool\('list_notes'/);
 });
 
+test('MCP exposes consent-scoped linked resource metadata without device-local file access', () => {
+  assert.match(mcpSource, /server\.registerTool\('list_linked_resources'/);
+  assert.match(mcpSource, /server\.registerTool\('get_linked_resource'/);
+  assert.match(mcpSource, /requireScope\('links:read'\)/);
+  assert.match(mcpSource, /device-local Files & links never leave/);
+  assert.match(serverSource, /'links:read'/);
+});
+
 test('MCP exposes append-only note writing with note scope and concurrency controls', () => {
   assert.match(mcpSource, /server\.registerTool\('append_to_note'/);
   assert.match(mcpSource, /mutation\('append_to_note', 'notes:write'/);

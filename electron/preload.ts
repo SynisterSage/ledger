@@ -1287,6 +1287,9 @@ contextBridge.exposeInMainWorld('localContext', {
   renameFolder(payload: { ownerUserId: string; workspaceId: string; folderId: string; name: string }) {
     return ipcRenderer.invoke('local-context:rename-folder', payload);
   },
+  updateFolderColor(payload: { ownerUserId: string; workspaceId: string; folderId: string; color: string }) {
+    return ipcRenderer.invoke('local-context:update-folder-color', payload);
+  },
   moveFile(payload: { ownerUserId: string; workspaceId: string; fileId: string; folderId: string | null }) {
     return ipcRenderer.invoke('local-context:move-file', payload);
   },

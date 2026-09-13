@@ -1249,6 +1249,10 @@ ipcMain.handle('local-context:rename-folder', async (_event, payload: { ownerUse
   if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.folderId !== 'string' || typeof payload?.name !== 'string') throw new LocalContextLibraryError('A valid folder is required.');
   return localContextLibrary.renameFolder(payload.folderId, payload.name, payload.ownerUserId, payload.workspaceId);
 });
+ipcMain.handle('local-context:update-folder-color', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; folderId?: unknown; color?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.folderId !== 'string' || typeof payload?.color !== 'string') throw new LocalContextLibraryError('A valid folder color is required.');
+  return localContextLibrary.updateFolderColor(payload.folderId, payload.color as import('../src/utils/folderColors.ts').FolderColor, payload.ownerUserId, payload.workspaceId);
+});
 ipcMain.handle('local-context:move-file', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; folderId?: unknown }) => {
   if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || (payload.folderId !== null && typeof payload.folderId !== 'string')) throw new LocalContextLibraryError('A valid file move is required.');
   return localContextLibrary.moveFile(payload.fileId, payload.folderId as string | null, payload.ownerUserId, payload.workspaceId);
@@ -8663,6 +8667,11 @@ function installApplicationMenu() {
           type: 'checkbox',
           checked: sidebarIsVisible,
           click: () => applySidebarVisibility(!sidebarIsVisible, true),
+        },
+        {
+          label: 'Refresh',
+          role: 'reload',
+          accelerator: isMac ? 'Command+R' : 'Ctrl+R',
         },
         { type: 'separator' },
         { label: 'Dashboard', click: () => openModuleWindow('dashboard') },

@@ -32,6 +32,9 @@ test('persists nested folders, moves files, and keeps contents when a folder is 
   const library = new LocalContextLibrary(path.join(dir, 'library'));
   const root = await library.createFolder('Work', 'user-a', 'workspace-a');
   const child = await library.createFolder('Planning', 'user-a', 'workspace-a', root.id);
+  assert.equal(root.color, 'gray');
+  const coloredRoot = await library.updateFolderColor(root.id, 'orange', 'user-a', 'workspace-a');
+  assert.equal(coloredRoot.color, 'orange');
   const [file] = await library.importFiles([source], 'user-a', 'workspace-a');
   const moved = await library.moveFile(file!.id, child.id, 'user-a', 'workspace-a');
   assert.equal(moved.folderId, child.id);
@@ -49,12 +52,32 @@ test('returns indexed local content as private Ask Ledger context', async () => 
 
   const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
   const documents = await library.contextDocuments('user-a', 'workspace-a');
+  const attachment = documents.find((document) => document.resourceType === 'attachment');
 
-  assert.equal(documents.length, 1);
-  assert.equal(documents[0]?.resourceType, 'attachment');
-  assert.equal(documents[0]?.metadata?.localFileId, record?.id);
-  assert.equal(documents[0]?.provenance, 'Local file library');
-  assert.match(documents[0]?.content ?? '', /required text/);
+  assert.ok(attachment);
+  assert.equal(attachment?.metadata?.localFileId, record?.id);
+  assert.equal(attachment?.provenance, 'Local file library');
+  assert.match(attachment?.content ?? '', /required text/);
+});
+
+test('includes local file and nested folder names as inventory context without treating names as file text', async () => {
+  const dir = await tempDir();
+  const source = path.join(dir, 'syllabus.md');
+  await fs.writeFile(source, '# Course plan\nRead chapter one.');
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const school = await library.createFolder('School', 'user-a', 'workspace-a');
+  const art = await library.createFolder('Art', 'user-a', 'workspace-a', school.id);
+  const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
+  await library.moveFile(record!.id, art.id, 'user-a', 'workspace-a');
+
+  const documents = await library.contextDocuments('user-a', 'workspace-a');
+  const folder = documents.find((document) => document.resourceId === `local-folder:${art.id}`);
+  const file = documents.find((document) => document.resourceId === `local-file:${record!.id}`);
+  const attachment = documents.find((document) => document.resourceType === 'attachment');
+  assert.match(folder?.content ?? '', /School \/ Art/);
+  assert.match(file?.content ?? '', /syllabus\.md/);
+  assert.equal(attachment?.containerName, 'School / Art');
+  assert.match(attachment?.content ?? '', /Read chapter one/);
 });
 
 test('rebuilds a stale local index when Ask Ledger reads Files & links', async () => {
@@ -69,8 +92,11 @@ test('rebuilds a stale local index when Ask Ledger reads Files & links', async (
   );
 
   const documents = await library.contextDocuments('user-a', 'workspace-a');
-  assert.equal(documents.length, 1);
-  assert.match(documents[0]?.content ?? '', /launch date/);
+  assert.equal(documents.filter((document) => document.resourceType === 'attachment').length, 1);
+  assert.match(
+    documents.find((document) => document.resourceType === 'attachment')?.content ?? '',
+    /launch date/
+  );
 });
 
 test('cleans expired local files without touching another workspace', async () => {
@@ -168,7 +194,9 @@ test('saves editable local text and refreshes its Ask index', async () => {
   assert.equal(updated.sizeBytes, Buffer.byteLength('# After\nNew content'));
   assert.equal((await library.preview(record!.id, 'user-a', 'workspace-a'))?.kind, 'text');
   assert.match(
-    (await library.contextDocuments('user-a', 'workspace-a'))[0]?.content ?? '',
+    (await library.contextDocuments('user-a', 'workspace-a')).find(
+      (document) => document.resourceType === 'attachment'
+    )?.content ?? '',
     /New content/
   );
   await assert.rejects(
@@ -221,5 +249,10 @@ test('imports image-only PDFs for preview even when text extraction is unavailab
   const preview = await library.preview(record!.id, 'user-a', 'workspace-a');
   assert.equal(preview?.kind, 'binary');
   assert.match((preview as { fileUrl?: string }).fileUrl ?? '', /^file:\/\//);
-  assert.equal((await library.contextDocuments('user-a', 'workspace-a')).length, 0);
+  assert.equal(
+    (await library.contextDocuments('user-a', 'workspace-a')).filter(
+      (document) => document.resourceType === 'attachment'
+    ).length,
+    0
+  );
 });

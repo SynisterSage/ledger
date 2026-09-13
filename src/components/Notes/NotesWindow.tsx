@@ -2865,10 +2865,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
           window.localAskSessions?.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: knownId }),
         ]);
+        const candidates: AskLedgerSession[] = [];
         if (cloudResult.status === 'fulfilled' && cloudResult.value?.session)
-          restored = cloudResult.value.session;
+          candidates.push(cloudResult.value.session);
         if (localResult.status === 'fulfilled' && localResult.value?.session)
-          restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
+          candidates.push({ ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession);
+        restored = mergeAskLedgerSessions(candidates)
+          .filter((session) => sessionMatchesAskLedgerResource(session, meetingAskContext))[0] ?? null;
         if (!restored) askSessionIdsRef.current.delete(askResourceKey);
       }
       if (!restored && !isFreshConversation) {
@@ -11417,6 +11420,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       </div>
                     ) : meetingAskContext ? (
                       <AskLedgerPanel
+                        key={`notes-ask-panel-${askResourceKey}-${askSession?.id ?? 'new'}-${askPaneResetKey}`}
                         workspaceId={activeWorkspaceId}
                         resetKey={askPaneResetKey}
                         initialSession={askSession}

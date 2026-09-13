@@ -12,6 +12,7 @@ import type {
   LocalContextTargetType,
 } from '../src/types/localContextLibrary.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import { normalizeFolderColor, type FolderColor } from '../src/utils/folderColors.ts';
 import {
   chunkAttachmentBlocks,
   extractAttachmentBlocks,
@@ -277,7 +278,7 @@ export class LocalContextLibrary {
       throw new LocalContextLibraryError('A folder with that name already exists here.');
     const siblings = folders.filter((folder) => folder.ownerUserId === ownerUserId && folder.workspaceId === workspaceId && (folder.parentId ?? null) === (parentId ?? null));
     const timestamp = now();
-    const folder: LocalContextFolder = { id: randomUUID(), ownerUserId, workspaceId, name: trimmed, parentId: parentId ?? null, sortOrder: siblings.length, createdAt: timestamp, updatedAt: timestamp };
+    const folder: LocalContextFolder = { id: randomUUID(), ownerUserId, workspaceId, name: trimmed, color: 'gray', parentId: parentId ?? null, sortOrder: siblings.length, createdAt: timestamp, updatedAt: timestamp };
     await this.writeFolders([...folders, folder]);
     return folder;
   }
@@ -290,6 +291,16 @@ export class LocalContextLibrary {
     if (!folder) throw new LocalContextLibraryError('Folder not found.');
     this.validateFolderOwnerAndWorkspace(folder, ownerUserId, workspaceId);
     const updated = { ...folder, name: trimmed, updatedAt: now() };
+    await this.writeFolders(folders.map((candidate) => candidate.id === id ? updated : candidate));
+    return updated;
+  }
+
+  async updateFolderColor(id: string, color: FolderColor, ownerUserId: string, workspaceId: string) {
+    const folders = await this.readFolders();
+    const folder = folders.find((candidate) => candidate.id === id);
+    if (!folder) throw new LocalContextLibraryError('Folder not found.');
+    this.validateFolderOwnerAndWorkspace(folder, ownerUserId, workspaceId);
+    const updated = { ...folder, color: normalizeFolderColor(color), updatedAt: now() };
     await this.writeFolders(folders.map((candidate) => candidate.id === id ? updated : candidate));
     return updated;
   }
@@ -333,8 +344,54 @@ export class LocalContextLibrary {
     workspaceId: string
   ): Promise<AskLedgerContextItem[]> {
     const records = await this.list(ownerUserId, workspaceId);
+    const folders = await this.listFolders(ownerUserId, workspaceId);
     const documents: AskLedgerContextItem[] = [];
+    const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+    const folderPathFor = (folderId?: string | null) => {
+      const names: string[] = [];
+      const seen = new Set<string>();
+      let current = folderId ? foldersById.get(folderId) : undefined;
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        names.unshift(current.name);
+        current = current.parentId ? foldersById.get(current.parentId) : undefined;
+      }
+      return names.join(' / ');
+    };
+
+    // Keep the file-system inventory separate from extracted document text.
+    // This lets Ask Ledger answer questions about names and folders without
+    // pretending that a file name is evidence of a document's contents.
+    for (const folder of folders) {
+      const folderPath = folderPathFor(folder.id);
+      const directFiles = records.filter((record) => record.folderId === folder.id);
+      documents.push({
+        workspaceId,
+        resourceType: 'linked_resource',
+        resourceId: `local-folder:${folder.id}`,
+        title: folder.name,
+        content: `Local folder: ${folderPath || folder.name}. Contains ${directFiles.length} file${directFiles.length === 1 ? '' : 's'}${directFiles.length ? `: ${directFiles.slice(0, 40).map((file) => file.name).join(', ')}` : ''}.`,
+        containerName: folderPath || folder.name,
+        provenance: 'Local file library',
+        sourceLabel: 'On this device · Folder',
+        route: { kind: 'local-context-folder', folderId: folder.id },
+        metadata: { localFolderId: folder.id, localFolderPath: folderPath || folder.name, localContextKind: 'folder' },
+      });
+    }
     for (const record of records) {
+      const folderPath = folderPathFor(record.folderId);
+      documents.push({
+        workspaceId,
+        resourceType: 'linked_resource',
+        resourceId: `local-file:${record.id}`,
+        title: record.name,
+        content: `Local file: ${record.name}. Type: ${record.extension.toUpperCase() || record.mimeType}.${folderPath ? ` Folder: ${folderPath}.` : ' Not in a folder.'} Extracted text is available only when the file has readable content.`,
+        containerName: folderPath || undefined,
+        provenance: 'Local file library',
+        sourceLabel: `On this device · ${record.extension.toUpperCase() || 'File'}`,
+        route: { kind: 'local-context-file', fileId: record.id },
+        metadata: { localFileId: record.id, localFileName: record.name, localFolderId: record.folderId ?? undefined, localFolderPath: folderPath || undefined, localContextKind: 'file' },
+      });
       // Older local manifests can survive an app update with a missing or
       // stale sidecar index. Rebuild it on the read path so Files & links can
       // become Ask Ledger context without requiring the user to re-import.
@@ -365,13 +422,14 @@ export class LocalContextLibrary {
             resourceType: 'attachment',
             resourceId: `local:${record.id}:${index}`,
             title: record.name,
-            content: block.text,
+            content: `${folderPath ? `Folder: ${folderPath}\n` : ''}${block.text}`,
+            containerName: folderPath || undefined,
             sourceLabel: `On this device · ${record.extension.toUpperCase()}${
               block.source.pageNumber ? ` · Page ${block.source.pageNumber}` : ''
             }`,
             provenance: 'Local file library',
             route: { kind: 'local-context-file', fileId: record.id, ...block.source },
-            metadata: { localFileId: record.id, localFileName: record.name },
+            metadata: { localFileId: record.id, localFileName: record.name, localFolderId: record.folderId ?? undefined, localFolderPath: folderPath || undefined },
           })
         );
       } catch {

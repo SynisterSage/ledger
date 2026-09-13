@@ -25,6 +25,20 @@ test('extracts an explicit folder before a count question', () => {
   assert.equal(plan.containerQuery, 'wokrdaymeetings');
 });
 
+test('plans local file, folder, and linked-resource inventory lookups separately from document text', () => {
+  const plan = buildRetrievalPlan('List the PDFs and files in my School folder');
+  assert.deepEqual(plan.primaryResourceTypes, ['attachment', 'linked_resource', 'external']);
+  assert.equal(plan.containerQuery, 'School');
+  assert.equal(plan.expandRelatedContext, true);
+});
+
+test('treats overdue questions as authoritative attention lookups', () => {
+  const plan = buildRetrievalPlan('what is overdue i was sick');
+  assert.deepEqual(plan.primaryResourceTypes, ['notification', 'task', 'milestone', 'project', 'reminder']);
+  assert.equal(plan.structuredConstraints.overdue, true);
+  assert.equal(plan.structuredConstraints.openOnly, true);
+});
+
 test('builds resource-aware plans for common constrained requests', () => {
   assert.deepEqual(buildRetrievalPlan('Summarize my last 3 notes').primaryResourceTypes, ['note']);
   assert.equal(buildRetrievalPlan('Summarize my last 3 notes').requestedCount, 3);
@@ -48,6 +62,13 @@ test('recognizes a named month schedule as a calendar time window', () => {
   assert.deepEqual(plan.primaryResourceTypes, ['event', 'reminder', 'task', 'milestone', 'project']);
   assert.equal(plan.structuredConstraints.dueAfter, '2026-09-01');
   assert.equal(plan.structuredConstraints.dueBefore, '2026-09-30');
+});
+
+test('treats a plain-language personal week question as a dated work overview', () => {
+  const plan = buildRetrievalPlan('whats my week look like', new Date('2026-09-12T12:00:00'));
+  assert.deepEqual(plan.primaryResourceTypes, ['event', 'reminder', 'task', 'milestone', 'project']);
+  assert.equal(plan.structuredConstraints.dueAfter, undefined);
+  assert.equal(plan.structuredConstraints.dueBefore, undefined);
 });
 
 test('builds attention and notification plans from authoritative fields', () => {

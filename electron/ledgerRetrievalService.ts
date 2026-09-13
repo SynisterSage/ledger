@@ -461,7 +461,11 @@ export class LedgerRetrievalService {
       const dueDate = dateValueFor(document);
       const dueDay = dateOnlyValue(dueDate);
       if (constraints.overdue) {
-        if (!document.dueAt || !Number.isFinite(Date.parse(document.dueAt)) || Date.parse(document.dueAt) >= Date.now()) return false;
+        if (document.resourceType === 'notification') {
+          const notificationType = String(document.metadata?.notificationType ?? '').toLowerCase();
+          const notificationText = `${document.status ?? ''} ${document.title ?? ''} ${document.content ?? ''}`.toLowerCase();
+          if (!notificationType.includes('overdue') && !/\boverdue\b|\bover due\b/.test(notificationText)) return false;
+        } else if (!document.dueAt || !Number.isFinite(Date.parse(document.dueAt)) || Date.parse(document.dueAt) >= Date.now()) return false;
       }
       if (constraints.dueAfter && (!dueDay || dueDay < constraints.dueAfter)) return false;
       if (constraints.dueBefore && (!dueDay || dueDay > constraints.dueBefore)) return false;

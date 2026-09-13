@@ -1,6 +1,6 @@
 # Ledger Slack Integration
 
-Phase 8 supports intentional capture, personal Slack identities, watched conversations, asynchronous activity ingestion, and one-way syncing for captured or linked threads. Ledger does not act as a Slack client or bulk-import channel history.
+Ledger supports intentional capture, personal Slack identities, watched conversations, asynchronous activity ingestion, daily activity recaps, and one-way syncing for captured or linked threads. Ledger does not act as a Slack client or bulk-import channel history.
 
 `ledgerworkspace.com` is the marketing site. `api.ledgerworkspace.com` is the backend host for Slack OAuth and interactivity.
 
@@ -89,7 +89,5 @@ Thread synchronization is one-way (`Slack → Ledger`). Ledger never posts comme
 - Automatic task extraction
 - AI summarization
 - Slack channel sync or search
-- Full Slack activity page and daily recap UI
-- Automatic Intake creation from activity
-- Calendar/reminder creation from Slack
+- Automatic calendar or reminder creation from Slack
 - Production Slack marketplace submission

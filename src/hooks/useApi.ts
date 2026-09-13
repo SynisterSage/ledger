@@ -429,9 +429,10 @@ export const useApi = () => {
         request(`/api/integrations/slack/watches/${encodeURIComponent(watchId)}?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
       updateSlackWatchPreferences: (workspaceId: string, watchId: string, payload: Record<string, boolean>) =>
         request(`/api/integrations/slack/watches/${encodeURIComponent(watchId)}/preferences?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'PATCH', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
-      getSlackActivity: (workspaceId: string, params: { date?: string; filter?: string; search?: string; watchId?: string; unread?: boolean; limit?: number } = {}) => {
+      getSlackActivity: (workspaceId: string, params: { date?: string; timezoneOffsetMinutes?: number; filter?: string; search?: string; watchId?: string; unread?: boolean; limit?: number } = {}) => {
         const query = new URLSearchParams({ workspaceId });
         if (params.date) query.set('date', params.date);
+        if (typeof params.timezoneOffsetMinutes === 'number') query.set('timezone_offset_minutes', String(params.timezoneOffsetMinutes));
         if (params.filter) query.set('filter', params.filter);
         if (params.search) query.set('search', params.search);
         if (params.watchId) query.set('watch_id', params.watchId);
@@ -439,7 +440,7 @@ export const useApi = () => {
         if (params.limit) query.set('limit', String(params.limit));
         return request(`/api/integrations/slack/activity?${query}`, { skipWorkspaceHeader: true });
       },
-      getSlackActivityRecap: (workspaceId: string, date: string) => request(`/api/integrations/slack/activity/recap?workspaceId=${encodeURIComponent(workspaceId)}&date=${encodeURIComponent(date)}`, { skipWorkspaceHeader: true }),
+      getSlackActivityRecap: (workspaceId: string, date: string, timezoneOffsetMinutes?: number) => request(`/api/integrations/slack/activity/recap?workspaceId=${encodeURIComponent(workspaceId)}&date=${encodeURIComponent(date)}${typeof timezoneOffsetMinutes === 'number' ? `&timezone_offset_minutes=${encodeURIComponent(String(timezoneOffsetMinutes))}` : ''}`, { skipWorkspaceHeader: true }),
       markSlackActivityRead: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
       markSlackActivityUnread: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ read: false }) }),
       dismissSlackActivity: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/dismiss?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),

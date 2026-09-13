@@ -504,6 +504,50 @@ test('reuses the active conversation context for continuation requests', async (
   assert.equal(events.find((streamEvent) => streamEvent.type === 'sources')?.sources?.some((source) => source.resourceId === priorNote.resourceId), true);
 });
 
+test('keeps casual reactions attached to the prior answer without refreshing missing derived sources', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  let retrievalCalls = 0;
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => {
+      retrievalCalls += 1;
+      return { items: [], debug: [] };
+    },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }) => {
+      generationPrompt = request.context;
+      callbacks.onEvent({ type: 'done', requestId: 'request-reaction', metrics: { totalMs: 1 } });
+      return 'request-reaction';
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a',
+    question: 'bettt not that bad of a schedule',
+    documents: [],
+    lexicalResults: [],
+    conversation: {
+      previousQuestion: 'hows my week look like',
+      previousAnswer: 'Thursday is your heaviest day with three class blocks.',
+      previousSources: [{ resourceType: 'event', resourceId: 'calendar-schedule-overview', title: 'Imported calendar schedule overview' }],
+      previousExecutionMode: 'workspace_synthesis',
+      recentExchanges: [],
+    },
+  }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(retrievalCalls, 0);
+  assert.match(generationPrompt, /Thursday is your heaviest day/);
+  assert.equal(events.find((event) => event.type === 'sources')?.sources?.[0]?.resourceId, 'calendar-schedule-overview');
+  assert.equal(events.find((event) => event.type === 'error'), undefined);
+});
+
 test('falls back to a grounded weekly plan when the local model abstains', async () => {
   const events: LocalAIStreamEvent[] = [];
   const task: AskLedgerContextItem = { ...resource, resourceType: 'task', resourceId: 'task-plan', title: 'Upload weekly logs', status: 'Not started', dueAt: '2026-08-19' };

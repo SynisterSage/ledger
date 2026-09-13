@@ -302,6 +302,17 @@ test('overdue retrieval excludes completed tasks and uses due dates', async () =
   assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['overdue-open']);
 });
 
+test('overdue retrieval keeps overdue notifications without task due dates', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'notification', resourceId: 'overdue-notification', title: 'Overdue item', content: 'An overdue item needs attention.', metadata: { notificationType: 'overdue_item' }, read: false }),
+    resource({ resourceType: 'notification', resourceId: 'ordinary-notification', title: 'Reminder', content: 'A normal notification.', metadata: { notificationType: 'task_due' }, read: false }),
+  ]);
+  const result = await retrieval.retrieve('workspace-a', 'What is overdue?', [], 8, { plan: buildRetrievalPlan('What is overdue?') });
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['overdue-notification']);
+});
+
 test('meeting retrieval combines entity and last-week date constraints without project fallback', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);

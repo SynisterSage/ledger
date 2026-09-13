@@ -108,6 +108,14 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  const asksForWeekOverview = /\bmy week\b/.test(normalized)
+    && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
+  if (asksForWeekOverview) return ['event', 'reminder', 'task', 'milestone', 'project'];
+  const asksAboutFiles = /\b(?:files?|pdfs?|documents?|attachments?|folders?|links?)\b/.test(normalized)
+    && !/\bnotes?\b/.test(normalized);
+  // File names, folder paths, and connected links are inventory questions.
+  // Their contents are only represented by attachment text when available.
+  if (asksAboutFiles) return ['attachment', 'linked_resource', 'external'];
   const asksForNamedMonthSchedule = /\b(?:this|next|last)?\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(normalized)
     && /\b(?:schedule|calendar|month|events?|meetings?|reminders?|tasks?)\b/.test(normalized);
   if (asksForNamedMonthSchedule) return ['event', 'reminder', 'task', 'milestone', 'project'];
@@ -125,6 +133,10 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   if (/\b(?:slack|github|figma|google drive|drive docs?|google calendar|apple calendar|apple reminders?|mcp)\b/.test(normalized)) return ['external'];
   if (/\bunread\s+(?:notifications?|alerts?)\b/.test(normalized)) return ['notification'];
   if (/\bnotifications?\b/.test(normalized)) return ['notification'];
+  // Overdue can be represented by a task-style due date or by an overdue
+  // notification when the originating row is sparse. Keep both authoritative
+  // sources in the plan instead of falling back to lexical retrieval.
+  if (/\boverdue\b|\bover due\b/.test(normalized)) return ['notification', 'task', 'milestone', 'project', 'reminder'];
   if (/\b(?:activity|what changed|changes|happening|circle alerts?|teamspace alerts?)\b/.test(normalized)) return ['activity'];
   if (/\bwhat needs my attention\b/.test(normalized)) return ['notification', 'activity', 'task', 'milestone', 'reminder'];
   if (lastWorkdaySignals.test(normalized)) return ['event'];
@@ -145,7 +157,10 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
 };
 
 const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
-  if (!primaryResourceTypes.includes('note') || !/\bnotes?\b|\bfolder\b|\bcollection\b/i.test(question)) return undefined;
+  const supportsContainers = primaryResourceTypes.some((type) =>
+    ['note', 'attachment', 'linked_resource', 'external'].includes(type)
+  );
+  if (!supportsContainers || !/\bnotes?\b|\bfiles?\b|\bfolder\b|\bcollection\b/i.test(question)) return undefined;
   // "look through the last three notes" is a recency/count request, not a
   // folder or collection query.
   if (/\b(?:through|in|from|within|inside)\s+(?:my\s+)?(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/i.test(question)) return undefined;
@@ -205,6 +220,8 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
 
 export const buildRetrievalPlan = (question: string, now = new Date()): RetrievalPlan => {
   const primaryResourceTypes = resourceTypesFor(question);
+  const personalWeekOverview = /\bmy week\b/.test(normalize(question))
+    && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalize(question));
   const isLastWorkday = lastWorkdaySignals.test(question);
   const entityQuery = entityQueryFor(question, primaryResourceTypes);
   const normalizedQuestion = normalize(question);
@@ -240,7 +257,7 @@ export const buildRetrievalPlan = (question: string, now = new Date()): Retrieva
     const thisWeek = addDays(start, -day);
     structuredConstraints.dueAfter = isoDate(addDays(thisWeek, -7));
     structuredConstraints.dueBefore = isoDate(addDays(thisWeek, -1));
-  } else if (/\bthis week\b/.test(normalizedQuestion)) {
+  } else if (!personalWeekOverview && /\b(?:this|my) week\b/.test(normalizedQuestion)) {
     const start = startOfDay(now);
     const thisWeek = addDays(start, -start.getDay());
     structuredConstraints.dueAfter = isoDate(thisWeek);

@@ -116,6 +116,11 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
     // the window open so Ledger can derive a pattern from calendar records.
     return { kind: 'weekly_overview' };
   }
+  const asksForCurrentWeekOverview = /\bmy week\b/.test(normalized)
+    && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
+  if (asksForCurrentWeekOverview) {
+    return { kind: 'weekly_overview' };
+  }
   const monthWindow = namedMonthWindow(normalized, now);
   if (monthWindow && /\b(?:schedule|calendar|month|events?|meetings?|reminders?|tasks?)\b/.test(normalized)) {
     return { kind: 'time_window', window: monthWindow };

@@ -3269,7 +3269,7 @@ const requireWorkspaceAccess = async (userId, workspaceId, minimumRole = 'member
 };
 
 const MCP_CLIENT_ID = 'ledger-mcp';
-const MCP_READ_SCOPES = ['workspace:read', 'projects:read', 'tasks:read', 'notes:read', 'calendar:read', 'daily:read'];
+const MCP_READ_SCOPES = ['workspace:read', 'projects:read', 'tasks:read', 'notes:read', 'calendar:read', 'daily:read', 'links:read'];
 const MCP_WRITE_SCOPES = ['intake:write', 'tasks:write', 'notes:write', 'daily:write', 'projects:write'];
 const MCP_SCOPES = [...MCP_READ_SCOPES, ...MCP_WRITE_SCOPES];
 const mcpEphemeralCredentials = new Map();
@@ -5296,7 +5296,7 @@ const runSlackEventDeliveryWorker = async () => {
 
 const slackActivitySelect = 'id, workspace_id, integration_account_id, slack_team_id, slack_event_id, slack_conversation_id, slack_message_ts, slack_root_thread_ts, activity_type, conversation_type, author_slack_user_id, target_slack_user_id, message_text, permalink, source_created_at, processed_at, is_edited, is_deleted, created_at, updated_at';
 
-const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 'all', search = '', watchId = '', unreadOnly = false, limit = 50 }) => {
+const loadVisibleSlackActivities = async ({ workspaceId, userId, date, timezoneOffsetMinutes = 0, activityId = '', filter = 'all', search = '', watchId = '', unreadOnly = false, limit = 50 }) => {
   const matchResult = await supabase.from('slack_activity_matches').select('activity_id, slack_watch_id, slack_context_id, ledger_user_id, match_type').eq('workspace_id', workspaceId);
   if (matchResult.error) throw matchResult.error;
   const sharedWatchResult = await supabase.from('slack_watches').select('id').eq('workspace_id', workspaceId).eq('watch_type', 'shared');
@@ -5314,7 +5314,9 @@ const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 
   const activityIds = [...matchesByActivity.keys()];
   let query = supabase.from('slack_activities').select(slackActivitySelect).eq('workspace_id', workspaceId).in('id', activityIds).order('source_created_at', { ascending: false, nullsFirst: false }).limit(Math.min(Math.max(Number(limit) || 50, 1), 100));
   if (date) {
-    const start = new Date(`${date}T00:00:00.000Z`);
+    const offset = Number(timezoneOffsetMinutes);
+    const safeOffset = Number.isFinite(offset) && Math.abs(offset) <= 840 ? offset : 0;
+    const start = new Date(new Date(`${date}T00:00:00.000Z`).getTime() + safeOffset * 60_000);
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
     if (!Number.isNaN(start.getTime())) query = query.gte('source_created_at', start.toISOString()).lt('source_created_at', end.toISOString());
   }
@@ -5323,6 +5325,7 @@ const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 
     const safeSearch = trimmedSearch.replace(/[%,]/g, '');
     query = query.or(`message_text.ilike.%${safeSearch}%,author_slack_user_id.ilike.%${safeSearch}%`);
   }
+  if (activityId) query = query.eq('id', String(activityId));
   const activityResult = await query;
   if (activityResult.error) throw activityResult.error;
   let rows = activityResult.data ?? [];
@@ -7195,7 +7198,7 @@ app.get('/api/integrations/slack/activity', authMiddleware, rateLimit('read'), a
   try {
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date: String(req.query?.date ?? '').trim(), filter: String(req.query?.filter ?? 'all'), search: String(req.query?.search ?? ''), watchId: String(req.query?.watch_id ?? ''), unreadOnly: String(req.query?.unread ?? '') === 'true', limit: req.query?.limit });
+    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date: String(req.query?.date ?? '').trim(), timezoneOffsetMinutes: req.query?.timezone_offset_minutes, filter: String(req.query?.filter ?? 'all'), search: String(req.query?.search ?? ''), watchId: String(req.query?.watch_id ?? ''), unreadOnly: String(req.query?.unread ?? '') === 'true', limit: req.query?.limit });
     res.json(result);
   } catch (error) { return respondWithError(res, error); }
 });
@@ -7205,7 +7208,7 @@ app.get('/api/integrations/slack/activity/recap', authMiddleware, rateLimit('rea
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
     const date = String(req.query?.date ?? new Date().toISOString().slice(0, 10)).trim();
-    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date, limit: 100 });
+    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date, timezoneOffsetMinutes: req.query?.timezone_offset_minutes, limit: 100 });
     const rows = result.rows;
     const mentionCount = rows.filter((row) => row.activity_type === 'mention' || row.matches.some((match) => match.match_type === 'mention')).length;
     const replyCount = rows.filter((row) => ['reply', 'thread_reply'].includes(row.activity_type) || row.matches.some((match) => match.match_type === 'reply')).length;
@@ -7220,7 +7223,7 @@ app.post('/api/integrations/slack/activity/:id/read', authMiddleware, rateLimit(
   try {
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, activityId: req.params.id, limit: 1 })).rows[0];
     if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
     const now = new Date().toISOString();
     const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, read_at: req.body?.read === false ? null : now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
@@ -7233,7 +7236,7 @@ app.post('/api/integrations/slack/activity/:id/dismiss', authMiddleware, rateLim
   try {
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, activityId: req.params.id, limit: 1 })).rows[0];
     if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
     const now = new Date().toISOString();
     const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, dismissed_at: now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
@@ -7246,7 +7249,7 @@ app.post('/api/integrations/slack/activity/:id/intake', authMiddleware, rateLimi
   try {
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, activityId: req.params.id, limit: 1 })).rows[0];
     if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
     const result = await promoteSlackActivityToIntake({ workspaceId, userId: req.authUser.id, activity });
     res.status(result.duplicate ? 200 : 201).json(result);
@@ -7281,7 +7284,7 @@ app.post('/api/integrations/slack/activity/:id/context-link', authMiddleware, ra
   try {
     const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, activityId: req.params.id, limit: 1 })).rows[0];
     if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
     const contextId = await resolveSlackContextFromActivity(workspaceId, activity);
     const link = await linkSlackContextToTarget({ workspaceId, slackContextId: contextId, targetType: req.body?.target_type, targetId: req.body?.target_id, userId: req.authUser.id, relationshipType: 'activity' });
@@ -21969,7 +21972,7 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       reminderQuery = applyDateRange(reminderQuery, 'remind_at');
     }
 
-    const [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments, externalReferences, slackContexts, circleActivity, githubAttention, notificationEvents, slackActivities] = await Promise.all([
+    const [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments, externalReferences, connectedSources, slackContexts, circleActivity, githubAttention, notificationEvents, slackActivities] = await Promise.all([
       include('notes') ? supabase.from('notes').select('id, section_id, title, content, content_html, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000) : emptyResult(),
       include('projects') ? (() => { let query = supabase.from('projects').select('id, name, description, status, completeness, start_date, end_date, lead_id, owner_team_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500); if (projectReference) query = query.in('id', scopedProjectIds.length ? scopedProjectIds : ['00000000-0000-0000-0000-000000000000']); if (rangeStart) query = query.gte('end_date', rangeStart); if (rangeEnd) query = query.lte('end_date', rangeEnd); return query; })() : emptyResult(),
       include('tasks') ? taskQuery : emptyResult(),
@@ -21981,13 +21984,14 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       include('teamMembers') ? supabase.from('workspace_team_members').select('team_id, user_id, role, created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: true }).limit(5000) : emptyResult(),
       include('transcriptSegments') ? supabase.from('meeting_note_transcript_segments').select('id, note_id, transcript_text, speaker_label, start_ms, updated_at').eq('workspace_id', workspaceId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(2000) : emptyResult(),
       include('external') ? (() => { let query = supabase.from('external_references').select('id, provider, external_type, external_id, external_url, normalized_url, metadata, access_status, updated_at, created_at').eq('workspace_id', workspaceId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(500); if (requestedIntegrationProviders.length) query = query.in('provider', requestedIntegrationProviders); return query; })() : emptyResult(),
+      include('external') ? (() => { let query = supabase.from('connected_external_sources').select('id, provider, source_type, provider_source_id, name, canonical_url, status, updated_at, created_at').eq('workspace_id', workspaceId).eq('source_type', 'folder').eq('status', 'active').order('updated_at', { ascending: false }).limit(250); if (requestedIntegrationProviders.length) query = query.in('provider', requestedIntegrationProviders); return query; })() : emptyResult(),
       includeIntegrationProvider('slack') ? supabase.from('slack_contexts').select('id, slack_channel_name, root_message_ts, message_text, message_author_name, permalink, message_created_at, updated_at, captured_at, sync_status').eq('workspace_id', workspaceId).order('captured_at', { ascending: false }).limit(500) : emptyResult(),
       include('external') || include('activity') ? supabase.from('workspace_audit_logs').select('id, actor_user_id, action, target_type, target_id, metadata, created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: false }).limit(500) : emptyResult(),
       includeIntegrationProvider('github') ? supabase.from('github_attention_signals').select('id, title, reason, attention_type, status, metadata, external_reference_id, last_seen_at, updated_at').eq('workspace_id', workspaceId).eq('status', 'active').order('last_seen_at', { ascending: false }).limit(200) : emptyResult(),
       include('notifications') ? supabase.from('notification_events').select('id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata, created_at, updated_at').eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).not('delivered_in_app_at', 'is', null).order('scheduled_for', { ascending: false }).limit(500) : emptyResult(),
       includeIntegrationProvider('slack') ? loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, search: integrationQueryText, limit: 300 }) : Promise.resolve({ rows: [], total: 0 }),
     ]);
-    for (const result of [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments, externalReferences, slackContexts, circleActivity, githubAttention, notificationEvents, slackActivities]) {
+    for (const result of [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments, externalReferences, connectedSources, slackContexts, circleActivity, githubAttention, notificationEvents, slackActivities]) {
       if (result.error) throw result.error;
     }
     const noteSectionIds = [...new Set((notes.data ?? []).map((row) => row.section_id).filter(Boolean).map(String))];
@@ -22092,6 +22096,11 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       return value ? value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Integration';
     };
     const integrationDocuments = [
+      ...(connectedSources.data ?? []).map((row) => {
+        const provider = integrationProviderLabel(row.provider);
+        const title = String(row.name ?? `${provider} folder`).trim();
+        return { resourceType: 'external', resourceId: `connected-folder:${String(row.id)}`, title, content: aiDocumentText([`${provider} connected folder`, `Folder: ${title}`, row.status ? `Status: ${row.status}` : null, row.canonical_url].filter(Boolean).join(' ')), containerName: title, provenance: `${provider} integration`, integrationProvider: String(row.provider ?? '').toLowerCase(), integrationResourceType: 'folder', externalId: row.provider_source_id ?? String(row.id), createdAt: row.created_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, metadata: { provider: row.provider ?? undefined, externalType: 'folder', connectedSourceId: row.id, externalUrl: row.canonical_url ?? undefined, accessStatus: row.status ?? undefined }, sourceLabel: provider, route: row.canonical_url || undefined };
+      }),
       ...(externalReferences.data ?? []).map((row) => {
         const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
         const provider = integrationProviderLabel(row.provider);
@@ -22104,7 +22113,8 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
           const supported = ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake'];
           return supported.includes(targetType) && link.target_id ? [{ relationshipType: 'linked_resource', resourceType: targetType, resourceId: String(link.target_id), direction: 'outbound', metadata: link.link_metadata ?? undefined }] : [];
         });
-        return { resourceType: 'external', resourceId: String(row.id), title, content: aiDocumentText([`${provider} ${type}`, metadata.repository ?? metadata.repositoryName ?? metadata.fullName ? `Repository: ${metadata.repository ?? metadata.repositoryName ?? metadata.fullName}` : null, metadata.state ? `State: ${metadata.state}` : null, metadata.author ? `Author: ${metadata.author}` : null, metadata.body ?? metadata.description ?? metadata.summary, labels ? `Labels: ${labels}` : null, row.access_status ? `Access: ${row.access_status}` : null, row.external_url].filter(Boolean).join(' ')), provenance: `${provider} integration`, integrationProvider: String(row.provider ?? '').toLowerCase(), integrationResourceType: String(row.external_type ?? type), externalId: row.external_id ?? undefined, explicitIntegrationLink: relationships.length > 0, createdAt: row.created_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, relationships, metadata: { provider: row.provider ?? undefined, externalType: row.external_type ?? undefined, externalId: row.external_id ?? undefined, externalUrl: row.external_url ?? undefined, accessStatus: row.access_status ?? undefined }, sourceLabel: provider, route: row.external_url || undefined };
+        const folder = [metadata.folderPath, metadata.parentPath, metadata.folderName, metadata.parentName, metadata.parent?.name].find((value) => typeof value === 'string' && value.trim());
+        return { resourceType: 'external', resourceId: String(row.id), title, content: aiDocumentText([`${provider} ${type}`, folder ? `Folder: ${folder}` : null, metadata.repository ?? metadata.repositoryName ?? metadata.fullName ? `Repository: ${metadata.repository ?? metadata.repositoryName ?? metadata.fullName}` : null, metadata.state ? `State: ${metadata.state}` : null, metadata.author ? `Author: ${metadata.author}` : null, metadata.body ?? metadata.description ?? metadata.summary, labels ? `Labels: ${labels}` : null, row.access_status ? `Access: ${row.access_status}` : null, row.external_url].filter(Boolean).join(' ')), containerName: folder || undefined, provenance: `${provider} integration`, integrationProvider: String(row.provider ?? '').toLowerCase(), integrationResourceType: String(row.external_type ?? type), externalId: row.external_id ?? undefined, explicitIntegrationLink: relationships.length > 0, createdAt: row.created_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, relationships, metadata: { provider: row.provider ?? undefined, externalType: row.external_type ?? undefined, externalId: row.external_id ?? undefined, externalUrl: row.external_url ?? undefined, accessStatus: row.access_status ?? undefined, folderPath: folder ?? undefined }, sourceLabel: provider, route: row.external_url || undefined };
       }),
       ...(githubAttention.data ?? []).map((row) => ({ resourceType: 'external', resourceId: `github-attention:${row.id}`, title: String(row.title ?? 'GitHub attention'), content: aiDocumentText([`GitHub ${row.attention_type ?? 'attention signal'}`, row.reason, row.status ? `Status: ${row.status}` : null, row.metadata && typeof row.metadata === 'object' ? JSON.stringify(row.metadata) : null].filter(Boolean).join(' ')), integrationProvider: 'github', integrationResourceType: 'attention_signal', externalId: String(row.external_reference_id ?? row.id), explicitIntegrationLink: Boolean(row.target_id), provenance: 'GitHub integration', updatedAt: row.last_seen_at ?? row.updated_at ?? undefined, relationships: row.target_id && ['project', 'task', 'milestone', 'note'].includes(String(row.target_type)) ? [{ relationshipType: 'linked_resource', resourceType: String(row.target_type), resourceId: String(row.target_id), direction: 'outbound' }] : [], metadata: { provider: 'github', externalType: 'attention_signal', attentionType: row.attention_type ?? undefined, status: row.status ?? undefined }, sourceLabel: 'GitHub', route: undefined })),
       ...(slackContexts.data ?? []).map((row) => ({ resourceType: 'external', resourceId: `slack:${row.id}`, title: String(row.slack_channel_name ? `Slack · #${row.slack_channel_name}` : 'Slack message'), content: aiDocumentText([row.message_text, row.message_author_name ? `From: ${row.message_author_name}` : null, row.slack_channel_name ? `Channel: ${row.slack_channel_name}` : null, row.sync_status ? `Sync: ${row.sync_status}` : null, row.permalink].filter(Boolean).join(' ')), integrationProvider: 'slack', integrationResourceType: 'thread', externalId: row.root_message_ts ?? String(row.id), explicitIntegrationLink: (slackLinksByContextId.get(String(row.id)) ?? []).length > 0, timestamp: row.message_created_at ?? undefined, provenance: 'Slack integration', updatedAt: row.updated_at ?? row.captured_at ?? undefined, relationships: slackLinksByContextId.get(String(row.id)) ?? [], metadata: { provider: 'slack', externalType: 'thread', channel: row.slack_channel_name ?? undefined, author: row.message_author_name ?? undefined, slackContextId: row.id }, sourceLabel: 'Slack', route: row.permalink || undefined })),
