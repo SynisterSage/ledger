@@ -380,6 +380,7 @@ interface Window {
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   askLedger?: {
+    copyText: (text: string) => Promise<{ ok: boolean }>;
     generateOverviewFocus: (
       snapshot: unknown,
       options?: { previousResult?: unknown }

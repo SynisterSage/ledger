@@ -40,6 +40,21 @@ test('routes compound meeting-to-project questions through dependent objectives'
   await index.shutdown();
 });
 
+test('keeps attachment evidence in compound project questions', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-photo', title: 'History of Photo', content: 'Photography class project.' });
+  const task = item({ resourceType: 'task', resourceId: 'task-photo', title: 'Syllabus Quiz', content: 'Complete the syllabus quiz.', projectId: 'project-photo', projectName: 'History of Photo', status: 'Open' });
+  const attachment = item({ resourceType: 'attachment', resourceId: 'attachment-syllabus', title: 'History of Photography syllabus.pdf', content: 'Read chapters 1 and 2 before the next class.' });
+  const documents = [project, task, attachment];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'I have a project History of Photo what are the next actions, and what does the syllabus PDF say?', [], 20, { documents });
+
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'attachments' && objective.status === 'found'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'project-photo'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-photo'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'attachment-syllabus'), true);
+  await index.shutdown();
+});
+
 test('keeps narrow questions on the quick retrieval path', async () => {
   assert.equal(classifyAskLedgerRetrievalMode('When is Alfa due?'), 'quick');
   assert.equal(classifyAskLedgerRetrievalMode('Show my today tasks.'), 'quick');

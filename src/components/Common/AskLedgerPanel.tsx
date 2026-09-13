@@ -443,7 +443,7 @@ const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
     /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/.test(
       value
     ) &&
-    /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/.test(
+    /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next actions?|next steps?|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|what do i need to do|needs? to happen|needs? attention|what should i do)\b/.test(
       value
     )
   );
@@ -472,7 +472,11 @@ const askLedgerDateWindow = (question: string) => {
 
 const askLedgerProjectReference = (question: string) => {
   if (!/\bprojects?\b/i.test(question)) return undefined;
-  const match = question.match(/\bproject\s+([^?.,]+?)(?:\?|$|\s+(?:and|where|that|with)\b)/i);
+  // Compound questions commonly continue immediately with an intent clause:
+  // "project History of Photo what are the next actions ...". Stop at that
+  // boundary so the backend can resolve the actual project name instead of
+  // searching for the whole remainder of the sentence.
+  const match = question.match(/\bproject\s+([^?.,]+?)(?=\s+(?:what|where|and|that|with|for my)\b|\?|$)/i);
   const candidate = match?.[1]?.trim();
   if (
     !candidate ||
@@ -2476,7 +2480,11 @@ export const AskLedgerPanel = ({
           // project row. Do not apply the question's meeting date window to
           // tasks/milestones that may be undated or due outside that meeting.
           scope: 'all',
-          project: submittedContext?.title,
+          // Preserve a named project even for compound questions. Without
+          // this, "my History of Photo project ... and its events" falls
+          // back to broad retrieval and can lose the authoritative project
+          // row before the orchestrator sees it.
+          project: submittedContext?.title ?? askLedgerProjectReference(effectiveQuestion),
           integrationQuery: effectiveQuestion,
         }
       : {
@@ -2686,14 +2694,34 @@ export const AskLedgerPanel = ({
 
   const copyAnswer = async (message: AskLedgerMessage) => {
     try {
-      await navigator.clipboard?.writeText(copyableAnswer(message));
+      const text = copyableAnswer(message);
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (error) {
+          if (window.askLedger?.copyText) await window.askLedger.copyText(text);
+          else throw error;
+        }
+      } else if (window.askLedger?.copyText) {
+        await window.askLedger.copyText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        if (!document.execCommand('copy')) throw new Error('Clipboard copy failed.');
+        textarea.remove();
+      }
       setCopiedMessageId(message.id);
       window.setTimeout(
         () => setCopiedMessageId((current) => (current === message.id ? null : current)),
         1400
       );
-    } catch {
-      // Clipboard access is optional in some desktop/web contexts.
+    } catch (error) {
+      console.error('[ask-ledger] clipboard copy failed', error);
     }
   };
 

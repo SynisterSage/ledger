@@ -5,6 +5,7 @@ import {
   protocol,
   session,
   dialog,
+  clipboard,
   Notification,
   ipcMain,
   screen,
@@ -1062,6 +1063,12 @@ ipcMain.handle(
 );
 
 ipcMain.handle('ask-ledger:list-skills', () => listAskLedgerSkills());
+
+ipcMain.handle('ask-ledger:copy-text', (_event, payload: { text?: unknown }) => {
+  if (typeof payload?.text !== 'string') throw new Error('Clipboard text is required.');
+  clipboard.writeText(payload.text);
+  return { ok: true };
+});
 
 ipcMain.handle(
   'ask-ledger:select-attachments',

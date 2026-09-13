@@ -1089,6 +1089,9 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
 });
 
 contextBridge.exposeInMainWorld('askLedger', {
+  copyText(text: string) {
+    return ipcRenderer.invoke('ask-ledger:copy-text', { text }) as Promise<{ ok: boolean }>;
+  },
   generateOverviewFocus(snapshot: unknown, options?: { previousResult?: unknown }) {
     return ipcRenderer.invoke('overview-focus:generate', {
       snapshot,

@@ -96,6 +96,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const hasMilestones = /\bmilestones?\b/.test(normalized);
   const hasTasks = /\b(?:tasks?|next actions?)\b/.test(normalized);
   const hasNotes = /\bnotes?|transcripts?\b/.test(normalized);
+  const hasFileContext = /\b(?:pdfs?|files?|documents?|attachments?)\b/.test(normalized);
   const boundedRecentNotes = /\b(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/.test(normalized);
   const meetingEvidenceRequest = hasMeetings && !boundedRecentNotes;
   const hasReminders = /\breminders?\b/.test(normalized);
@@ -112,6 +113,18 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const includesProjectContext = hasProjects || hasInternalLedger;
   const projectWorkIntent = includesProjectContext && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|stuck|needs? to happen|needs? attention)\b/.test(normalized);
   const objectives: RetrievalObjective[] = [];
+
+  if (hasFileContext) {
+    addObjective(objectives, {
+      id: 'attachments',
+      purpose: 'Find the requested local files and their extracted text',
+      resourceTypes: ['attachment'],
+      entityQuery: base.entityQuery,
+      constraints: {},
+      expandRelationships: false,
+      dependsOn: [],
+    });
+  }
 
   integrationProviders.forEach((provider) => addObjective(objectives, {
     id: `integration-${provider}`,
