@@ -1180,9 +1180,10 @@ export class AskLedgerService {
       performanceTrace.mark('evidenceBuildStarted');
       const customSkill = Boolean(skill && !skill.outputSections);
       const evidenceBudget = {
-        maxResources: scheduleOverviewItem ? 1 : intent.kind === 'time_window' ? 32 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: scheduleOverviewItem ? 2600 : intent.kind === 'time_window' ? 4200 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: scheduleOverviewItem ? 2400 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
+        maxResources: scheduleOverviewItem ? 1 : attachmentAnchoredRequest ? 12 : intent.kind === 'time_window' ? 32 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: scheduleOverviewItem ? 2600 : attachmentAnchoredRequest ? 4800 : intent.kind === 'time_window' ? 4200 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxItemTokens: scheduleOverviewItem ? 2400 : attachmentAnchoredRequest ? 420 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
+        maxAttachmentChunksPerFile: attachmentAnchoredRequest ? 12 : undefined,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
       performanceTrace.mark('evidenceBuildCompleted');

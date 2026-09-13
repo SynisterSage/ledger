@@ -374,6 +374,16 @@ export class AskLedgerRetrievalOrchestrator {
     const searchQuestion = skillSeedQuestion || options?.retrievalQuestion?.trim() || orchestrationQuestion;
     if (mode === 'quick') {
       const plan = buildRetrievalPlan(question);
+      if (options?.attachmentFocus) {
+        // A Files & links conversation is locked to the selected attachment.
+        // Follow-up wording can contain domain words such as "notes" or
+        // "annotations" that would otherwise turn the plan into a note/entity
+        // lookup and exclude every PDF chunk from the authoritative scope.
+        plan.primaryResourceTypes = ['attachment'];
+        plan.entityQuery = undefined;
+        plan.containerQuery = undefined;
+        plan.expandRelatedContext = false;
+      }
       const resolvedProjectIds = (options?.resolvedResourceKeys ?? []).filter((key) => key.startsWith('project:')).map((key) => key.slice('project:'.length));
       if (!plan.primaryResourceTypes.length && resolvedProjectIds.length) plan.primaryResourceTypes = ['project'];
       if (resolvedProjectIds.length) plan.structuredConstraints = { ...plan.structuredConstraints, projectIds: resolvedProjectIds };

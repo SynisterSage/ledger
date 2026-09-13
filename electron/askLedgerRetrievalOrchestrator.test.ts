@@ -101,6 +101,40 @@ test('uses the named project to select the matching syllabus filename', async ()
   await index.shutdown();
 });
 
+test('keeps attachment follow-up questions on the selected PDF when answer choices mention notes', async () => {
+  const pageWithAnswer = item({
+    resourceType: 'attachment',
+    resourceId: 'local:attachment-syllabus:17',
+    title: 'History of Photography syllabus.pdf',
+    content: 'Part of the reading assignments includes taking an online reading quiz for each reading.',
+    metadata: { localFileId: 'attachment-syllabus' },
+  });
+  const distractingNote = item({
+    resourceType: 'note',
+    resourceId: 'note-annotations',
+    title: 'Annotations',
+    content: 'Bring paper notes to class.',
+  });
+  const documents = [pageWithAnswer, distractingNote];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve(
+    'workspace-a',
+    'Part of our reading assignments includes annotations/notes on them. Which option is correct?',
+    [],
+    20,
+    {
+      documents,
+      attachmentFocus: true,
+      boostResourceKeys: ['attachment:attachment-syllabus'],
+    },
+  );
+
+  assert.equal(result.items.some((entry) => entry.resourceType === 'attachment'), true);
+  assert.equal(result.items.some((entry) => entry.resourceType === 'note'), false);
+  assert.equal(result.hybridRetrieval?.authoritativeZeroMatches, false);
+  await index.shutdown();
+});
+
 test('keeps narrow questions on the quick retrieval path', async () => {
   assert.equal(classifyAskLedgerRetrievalMode('When is Alfa due?'), 'quick');
   assert.equal(classifyAskLedgerRetrievalMode('Show my today tasks.'), 'quick');
