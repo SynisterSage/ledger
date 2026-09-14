@@ -6626,7 +6626,7 @@ app.post('/api/agent/actions', authMiddleware, rateLimit('write'), async (req, r
         result = { resourceType: 'task', resource: inserted.data };
       } else if (actionType === 'create_note') {
         const content = String(payload.content ?? '');
-        const inserted = await supabase.from('notes').insert({ workspace_id: workspaceId, created_by: req.authUser.id, title, content_html: normalizeNoteHtml(plainTextToParagraphHtml(content)), content_plain: content, date: new Date().toISOString().slice(0, 10), source: 'ask_ledger' }).select('id,title').single();
+        const inserted = await supabase.from('notes').insert({ workspace_id: workspaceId, user_id: req.authUser.id, updated_by: req.authUser.id, title, content: content || '', content_html: normalizeNoteHtml(plainTextToParagraphHtml(content)), date: new Date().toISOString().slice(0, 10), source: 'ask_ledger', mode: 'text' }).select('id,title').single();
         if (inserted.error) throw inserted.error;
         result = { resourceType: 'note', resource: inserted.data };
       } else {

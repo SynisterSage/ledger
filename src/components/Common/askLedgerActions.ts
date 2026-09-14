@@ -52,13 +52,18 @@ export const proposeAskLedgerActions = ({
   }
 
   if (/\b(create|make|add|turn|convert)\b/.test(normalized) && /\b(note|notes)\b/.test(normalized)) {
-    const title = cleanTitle(
+    const requestedTitle = cleanTitle(
       question
         .replace(/.*?\b(?:create|make|add|turn|convert)\b.*?\bnotes?\b/i, '')
         .replace(/^\s*(?:about|for|from)\s+(?:me\s+)?/i, '')
         .replace(/\s+for me\s*[.!?]*$/i, '')
-    ) || 'Ask Ledger notes';
-    return [make('create_note', { title, content: answer })];
+        .replace(/^\s*(?:of|about)\s+(?:this|that)\s+(?:content|answer)\s*[.!?]*$/i, '')
+    );
+    const title = requestedTitle || 'Ask Ledger notes';
+    const content = /\b(?:this|that)\s+(?:content|answer)|\b(?:these|those)\b/.test(normalized)
+      ? previousAnswer || answer
+      : answer;
+    return [make('create_note', { title, content })];
   }
 
   if (/\b(create|set|add|remind)\b/.test(normalized) && /\b(reminder|remind)\b/.test(normalized)) {

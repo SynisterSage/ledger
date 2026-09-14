@@ -22,6 +22,17 @@ test('extracts a clean title from a note request phrased for the user', () => {
   assert.equal(actions[0].payload.title, 'brainstorming UI/UX ideas');
 });
 
+test('uses the previous answer when a follow-up asks to note this content', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Can you make a note of this content?',
+    answer: 'The note is prepared and ready for your review.',
+    previousAnswer: 'Phase 1: audit the tools. Phase 2: fix deterministic failures.',
+    sourceMessageId: 'assistant-note-follow-up-1',
+  });
+  assert.equal(actions[0].payload.title, 'Ask Ledger notes');
+  assert.equal(actions[0].payload.content, 'Phase 1: audit the tools. Phase 2: fix deterministic failures.');
+});
+
 test('proposes a dated reminder with a confirmation payload', () => {
   const actions = proposeAskLedgerActions({
     question: 'Remind me to send the draft on Friday.',
