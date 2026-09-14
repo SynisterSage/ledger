@@ -25,5 +25,15 @@ services:
         value: https://api.ledgerworkspace.com/api/integrations/figma/oauth/callback
       - key: FIGMA_STATE_SECRET
         sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        value: organizations
+      - key: OUTLOOK_REDIRECT_URI
+        value: https://api.ledgerworkspace.com/api/integrations/outlook/oauth/callback
+      - key: OUTLOOK_STATE_SECRET
+        sync: false
       - key: INTEGRATION_TOKEN_ENCRYPTION_KEY
         sync: false

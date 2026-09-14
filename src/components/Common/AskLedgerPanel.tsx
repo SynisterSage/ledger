@@ -3440,7 +3440,7 @@ export const AskLedgerPanel = ({
       created?.id ??
         (nestedId('task') || nestedId('note') || nestedId('reminder') || nestedId('resource') || payload.task_id || '')
     );
-    if (workspaceId) {
+    if (workspaceId && action.type !== 'update_task_status') {
       emitAskLedgerActionCompleted({ workspaceId, actionType: action.type, resourceId: id || null });
     }
     return {

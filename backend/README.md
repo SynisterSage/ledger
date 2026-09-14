@@ -60,6 +60,11 @@ Invite links should be generated from `INVITE_BASE_URL` or `FRONTEND_URL`, not t
    - `FIGMA_CLIENT_SECRET`
    - `FIGMA_REDIRECT_URI=https://api.ledgerworkspace.com/api/integrations/figma/oauth/callback`
    - `FIGMA_STATE_SECRET`
+   - `MICROSOFT_CLIENT_ID`
+   - `MICROSOFT_CLIENT_SECRET`
+   - `MICROSOFT_TENANT_ID=organizations` (or the school tenant ID)
+   - `OUTLOOK_REDIRECT_URI=https://api.ledgerworkspace.com/api/integrations/outlook/oauth/callback`
+   - `OUTLOOK_STATE_SECRET`
    - `OPENAI_APPS_CHALLENGE_TOKEN` (copy the token from the OpenAI submission form)
    - `INTEGRATION_TOKEN_ENCRYPTION_KEY`
    - Slack variables above if Slack integration is enabled
