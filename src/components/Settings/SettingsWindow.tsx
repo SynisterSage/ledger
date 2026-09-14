@@ -1634,6 +1634,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
   const [outlookStatus, setOutlookStatus] = useState<OutlookIntegrationStatus | null>(null);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
+  const [isLoadingOutlookStatus, setIsLoadingOutlookStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
@@ -2393,6 +2394,40 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       cancelled = true;
     };
   }, [activeSection, activeWorkspaceId, api, slackRefreshToken]);
+
+  useEffect(() => {
+    if (activeSection !== 'integrations' || !activeWorkspaceId) return;
+
+    let cancelled = false;
+    const refreshOutlookStatus = async () => {
+      if (document.hidden) return;
+      setIsLoadingOutlookStatus(true);
+      try {
+        const statusPayload = (await api.getOutlookIntegrationStatus(
+          activeWorkspaceId
+        )) as OutlookIntegrationStatus;
+        if (!cancelled) setOutlookStatus(statusPayload);
+      } catch {
+        if (!cancelled) setOutlookStatus({ connected: false });
+      } finally {
+        if (!cancelled) setIsLoadingOutlookStatus(false);
+      }
+    };
+
+    void refreshOutlookStatus();
+    const handleWindowFocus = () => void refreshOutlookStatus();
+    const handleVisibilityChange = () => {
+      if (!document.hidden) void refreshOutlookStatus();
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeSection, activeWorkspaceId, api]);
 
   useEffect(() => {
     if (activeSection !== 'integrations' || !activeWorkspaceId) return;
@@ -5965,7 +6000,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]"><IntegrationProviderMark provider="outlook" size={20} /></span>
-                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Outlook <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{outlookStatus?.connected ? `Connected as ${outlookStatus.account_email || 'your Microsoft account'}` : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Bring new Outlook messages into Intake.</p></div>
+                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Outlook <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{isLoadingOutlookStatus ? 'Checking status' : outlookStatus?.connected ? `Connected as ${outlookStatus.account_email || 'your Microsoft account'}` : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Bring new Outlook messages into Intake.</p></div>
                           <button type="button" onClick={() => openOutlookManagement()} disabled={!activeWorkspaceId} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{outlookStatus?.connected ? 'Manage' : 'Connect'}</button>
                         </div>
                         <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} onManage={() => setGithubDetailOpen(true)} />
