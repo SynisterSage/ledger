@@ -103,6 +103,7 @@ import {
 } from './CalendarSubscriptionModal';
 import { useAppleCalendar } from './appleCalendar';
 import { useAppleReminders } from './appleReminders';
+import { buildReviewedMatchingEventUpdates } from './calendarEventBulkEdit';
 import {
   CenterCurrentTimeIndicator,
   CenterDateHeader,
@@ -4643,7 +4644,9 @@ export const CalendarWindow = ({
     }
   };
 
-  const saveEventEdits = async (selectedMatchingIds?: string[]) => {
+  const saveEventEdits = async (
+    selectedMatchingEvents?: EventMatchPreview['matches']
+  ) => {
     if (!eventEditorEvent || !editTitle.trim()) return;
 
     const start = new Date(`${editDate}T${editTime}:00`);
@@ -4651,9 +4654,6 @@ export const CalendarWindow = ({
     const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
     if (eventEditorEvent.provider === 'apple' && editAllDay)
       end.setTime(start.getTime() + 24 * 60 * 60 * 1000);
-
-    setIsSavingEdit(true);
-    setError(null);
 
     const resolvedEventCalendarId = editCalendarId || eventEditorEvent.calendar_id;
     const resolvedEventColor = calendarById.get(resolvedEventCalendarId)?.color ?? editColor;
@@ -4667,13 +4667,17 @@ export const CalendarWindow = ({
         Boolean(eventEditorEvent.series_id) ||
         Boolean(eventEditorEvent.import_series_key) ||
         Boolean(eventEditorEvent.import_batch_id));
-    if (selectedMatchingIds === undefined && moved && canReviewRelatedEvents) {
+    if (selectedMatchingEvents === undefined && moved && canReviewRelatedEvents) {
       setEventMatchAction('update');
       await loadEventMatchPreview(eventMatchScope, 'update');
       return;
     }
 
+    setIsSavingEdit(true);
+    setError(null);
+
     let updated: EventRow;
+    let updatedMatchingEvents: EventRow[] = [];
     try {
       if (eventEditorEvent.provider === 'apple') {
         let appleTitle = editTitle.trim();
@@ -4800,8 +4804,25 @@ export const CalendarWindow = ({
         setEventEditorEvent(null);
         notifyCalendarItemsUpdated();
         setIsSavingEdit(false);
-        return;
+        return true;
       }
+      if (selectedMatchingEvents?.length) {
+        const matchingUpdates = buildReviewedMatchingEventUpdates({
+          matches: selectedMatchingEvents,
+          originalAnchorStartAt: eventEditorEvent.start_at,
+          editedAnchorStartAt: start,
+          durationMinutes,
+        });
+        for (const matchingUpdate of matchingUpdates) {
+          updatedMatchingEvents.push(
+            (await api.updateEvent(matchingUpdate.id, {
+              start_at: matchingUpdate.start_at,
+              end_at: matchingUpdate.end_at,
+            })) as EventRow
+          );
+        }
+      }
+
       updated = (await api.updateEvent(eventEditorEvent.id, {
         title: editTitle.trim(),
         start_at: start.toISOString(),
@@ -4843,55 +4864,13 @@ export const CalendarWindow = ({
     );
     setSelectedEvent((current) => (current?.id === updated.id ? updated : current));
     setSelectedReminder(null);
-
-    if (selectedMatchingIds?.length) {
-      try {
-        const shiftMs = start.getTime() - originalStart.getTime();
-        let shiftedIds: Set<string>;
-        try {
-          const result = (await api.bulkShiftEvents(selectedMatchingIds, shiftMs)) as {
-            success?: boolean;
-            shifted_ids?: string[];
-          };
-          if (!result.success || !Array.isArray(result.shifted_ids) || result.shifted_ids.length !== selectedMatchingIds.length) {
-            throw new Error('The calendar changed before updating. Review the matches again.');
-          }
-          shiftedIds = new Set(result.shifted_ids);
-        } catch (bulkError) {
-          // Keep this compatible with an older backend while the desktop app
-          // rolls out: the reviewed IDs are still authoritative, and each
-          // existing event PATCH applies the same shift.
-          const status = (bulkError as { status?: number })?.status;
-          if (status !== 404 && status !== 500) throw bulkError;
-          const fallbackRows = await Promise.all(
-            selectedMatchingIds.map(async (id) => {
-              const event = events.find((item) => baseEventId(item.id) === id);
-              if (!event) throw new Error('The calendar changed before updating. Review the matches again.');
-              return (await api.updateEvent(id, {
-                start_at: new Date(new Date(event.start_at).getTime() + shiftMs).toISOString(),
-                end_at: new Date(new Date(event.end_at).getTime() + shiftMs).toISOString(),
-              })) as EventRow;
-            })
-          );
-          shiftedIds = new Set(fallbackRows.map((event) => baseEventId(event.id)));
-        }
-        setEvents((prev) =>
-          prev.map((event) => {
-            if (!shiftedIds.has(baseEventId(event.id))) return event;
-            const eventStart = new Date(event.start_at);
-            const eventEnd = new Date(event.end_at);
-            return {
-              ...event,
-              start_at: new Date(eventStart.getTime() + shiftMs).toISOString(),
-              end_at: new Date(eventEnd.getTime() + shiftMs).toISOString(),
-            };
-          })
-        );
-      } catch (error) {
-        setError(error instanceof Error ? error.message : 'Could not update matching events.');
-        setIsSavingEdit(false);
-        return;
-      }
+    if (updatedMatchingEvents.length) {
+      const updatedMatchesById = new Map(
+        updatedMatchingEvents.map((event) => [baseEventId(event.id), event])
+      );
+      setEvents((prev) =>
+        prev.map((event) => updatedMatchesById.get(baseEventId(event.id)) ?? event)
+      );
     }
     const updatedDate = new Date(updated.start_at);
     updatedDate.setHours(0, 0, 0, 0);
@@ -4903,6 +4882,7 @@ export const CalendarWindow = ({
     }
     setEventEditorEvent(null);
     notifyCalendarItemsUpdated();
+    return true;
   };
 
   const deleteEvent = async () => {
@@ -4998,10 +4978,14 @@ export const CalendarWindow = ({
   };
 
   const saveEventWithSelectedMatches = async (onlyThisEvent = false) => {
-    const selected = onlyThisEvent ? [] : [...selectedEventMatchIds];
-    setEventMatchPreview(null);
-    setSelectedEventMatchIds(new Set());
-    await saveEventEdits(selected);
+    const selected = onlyThisEvent
+      ? []
+      : eventMatchPreview?.matches.filter((match) => selectedEventMatchIds.has(match.id)) ?? [];
+    const saved = await saveEventEdits(selected);
+    if (saved) {
+      setEventMatchPreview(null);
+      setSelectedEventMatchIds(new Set());
+    }
   };
 
   const quickDeleteEvent = async (eventId: string) => {
@@ -8519,7 +8503,7 @@ export const CalendarWindow = ({
               setSelectedEventMatchIds(new Set());
             }
           }}
-          closeOnBackdropClick={!isBulkDeletingEvents}
+          closeOnBackdropClick={!isBulkDeletingEvents && !isSavingEdit}
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
@@ -8533,7 +8517,7 @@ export const CalendarWindow = ({
                 </h3>
                 <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                   {eventMatchAction === 'update'
-                    ? 'Move the selected events by the same amount as this event.'
+                    ? 'Apply this event’s new time and duration to every selected date.'
                     : 'Review the events before removing them from Ledger.'}
                 </p>
               </div>
@@ -8543,7 +8527,7 @@ export const CalendarWindow = ({
                   setSelectedEventMatchIds(new Set());
                 }}
                 ariaLabel="Close matching events"
-                disabled={isBulkDeletingEvents}
+                disabled={isBulkDeletingEvents || isSavingEdit}
               />
             </div>
 
@@ -8553,7 +8537,7 @@ export const CalendarWindow = ({
                   key={scope}
                   type="button"
                   onClick={() => void loadEventMatchPreview(scope, eventMatchAction)}
-                  disabled={isLoadingEventMatches || isBulkDeletingEvents}
+                  disabled={isLoadingEventMatches || isBulkDeletingEvents || isSavingEdit}
                   className={`flex-1 rounded px-2 py-1.5 ${eventMatchScope === scope ? 'bg-[#FFF1E3] font-medium text-gray-900' : 'text-[var(--ledger-text-muted)]'}`}
                 >
                   {scope === 'future' ? 'Future events' : 'All events'}
@@ -8583,7 +8567,7 @@ export const CalendarWindow = ({
                           else next.add(match.id);
                           return next;
                         })}
-                        disabled={isBulkDeletingEvents}
+                        disabled={isBulkDeletingEvents || isSavingEdit}
                         className="accent-[#FF5F40]"
                       />
                       <span className="min-w-0 flex-1">
@@ -8609,7 +8593,7 @@ export const CalendarWindow = ({
                     setEventMatchPreview(null);
                     setSelectedEventMatchIds(new Set());
                   }}
-                  disabled={isBulkDeletingEvents}
+                  disabled={isBulkDeletingEvents || isSavingEdit}
                   className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8] disabled:opacity-50"
                 >
                   Cancel
@@ -8631,19 +8615,21 @@ export const CalendarWindow = ({
                       ? void saveEventWithSelectedMatches()
                       : void bulkDeleteSelectedEvents()
                   }
-                  disabled={!selectedEventMatchIds.size || isBulkDeletingEvents}
+                  disabled={!selectedEventMatchIds.size || isBulkDeletingEvents || isSavingEdit}
                   className={`rounded-md px-3 py-2 text-xs font-medium text-white disabled:opacity-50 ${
                     eventMatchAction === 'update'
                       ? 'bg-gray-900 hover:bg-gray-800'
                       : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {isBulkDeletingEvents
-                    ? eventMatchAction === 'update'
-                      ? 'Updating…'
-                      : 'Deleting…'
+                  {eventMatchAction === 'update' && isSavingEdit
+                    ? `Updating ${selectedEventMatchIds.size + 1} events…`
+                    : isBulkDeletingEvents
+                      ? 'Deleting…'
                     : eventMatchAction === 'update'
-                      ? 'Update selected'
+                      ? selectedEventMatchIds.size === eventMatchPreview.matches.length
+                        ? 'Update all'
+                        : `Update ${selectedEventMatchIds.size} selected`
                       : 'Delete selected'}
                 </button>
               </div>

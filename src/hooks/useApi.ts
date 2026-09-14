@@ -1320,11 +1320,6 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify({ event_ids: eventIds }),
         }),
-      bulkShiftEvents: (eventIds: string[], shiftMs: number) =>
-        request('/api/events/bulk-shift', {
-          method: 'POST',
-          body: JSON.stringify({ event_ids: eventIds, shift_ms: shiftMs }),
-        }),
       updateEvent: (id: string, update: Record<string, unknown>) =>
         request(`/api/events/${id}`, {
           method: 'PATCH',

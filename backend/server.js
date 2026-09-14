@@ -21788,64 +21788,6 @@ app.post('/api/events/bulk-delete', authMiddleware, rateLimit('write'), async (r
   }
 });
 
-app.post('/api/events/bulk-shift', authMiddleware, rateLimit('write'), async (req, res) => {
-  try {
-    const eventIds = normalizeBulkEventIds(req.body?.event_ids);
-    const shiftMs = Number(req.body?.shift_ms);
-    if (!eventIds || !Number.isSafeInteger(shiftMs) || shiftMs === 0 || Math.abs(shiftMs) > 366 * 24 * 60 * 60 * 1000) {
-      return res.status(400).json({ error: 'Provide valid event IDs and a shift within one year.' });
-    }
-
-    const { data: rows, error: rowsError } = await supabase
-      .from('events')
-      .select('id, workspace_id, source_platform, start_at, end_at')
-      .in('id', eventIds);
-    if (rowsError) throw rowsError;
-    if (!Array.isArray(rows) || rows.length !== eventIds.length) {
-      return res.status(404).json({ error: 'One or more events were not found.' });
-    }
-
-    const workspaceIds = new Set(rows.map((row) => String(row.workspace_id)));
-    if (workspaceIds.size !== 1) return res.status(400).json({ error: 'Events must belong to one workspace.' });
-    const workspaceId = rows[0].workspace_id;
-    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    if (rows.some((row) => !isBulkDeleteEligibleCalendarEvent(row))) {
-      return res.status(409).json({ error: 'Connected calendar events must be changed from their source calendar.' });
-    }
-
-    const shiftedRows = await Promise.all(
-      rows.map(async (row) => {
-        const startAt = new Date(row.start_at);
-        const endAt = new Date(row.end_at);
-        if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-          throw new Error('One or more matching events has an invalid time.');
-        }
-        const { data, error } = await supabase
-          .from('events')
-          .update({
-            start_at: new Date(startAt.getTime() + shiftMs).toISOString(),
-            end_at: new Date(endAt.getTime() + shiftMs).toISOString(),
-            updated_by: req.authUser.id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', row.id)
-          .eq('workspace_id', workspaceId)
-          .select('id')
-          .single();
-        if (error) throw error;
-        return data;
-      })
-    );
-    const shiftedIds = shiftedRows.map((row) => String(row.id));
-    if (shiftedIds.length !== eventIds.length) {
-      return res.status(409).json({ error: 'The calendar changed before updating. Review the matches again.' });
-    }
-    res.json({ success: true, shifted_ids: shiftedIds });
-  } catch (error) {
-    return respondWithError(res, error);
-  }
-});
-
 app.post('/api/events/import', authMiddleware, async (req, res) => {
     try {
     const items = Array.isArray(req.body?.events) ? req.body.events : [];
