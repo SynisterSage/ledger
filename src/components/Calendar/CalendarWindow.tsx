@@ -53,6 +53,7 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import {
   decodeSmartDateComposerContext,
   type SmartDateComposerContext,
@@ -1373,6 +1374,14 @@ export const CalendarWindow = ({
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleCalendarWorkspaceRefresh,
   });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAskLedgerActionCompleted((detail) => {
+      if (detail.workspaceId !== activeWorkspaceId) return;
+      if (detail.actionType === 'create_reminder') handleCalendarWorkspaceRefresh();
+    });
+    return unsubscribe;
+  }, [activeWorkspaceId, handleCalendarWorkspaceRefresh]);
 
   useEffect(() => {
     const onHideSidePanelsShortcut = (event: KeyboardEvent) => {

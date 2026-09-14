@@ -57,6 +57,22 @@ test('streams DeepSeek through its OpenAI-compatible endpoint', async () => {
   assert.equal(events.at(-1)?.type, 'done');
 });
 
+test('returns Perplexity citations only for explicit research requests', async () => {
+  const events: any[] = [];
+  const body = 'data: {"citations":["https://example.com/a","https://example.com/a",{"url":"https://example.com/b","title":"Source B"}],"choices":[{"delta":{"content":"Current answer"}}]}\n\ndata: [DONE]\n\n';
+  const fakeFetch = async (_url: string, init?: RequestInit) => {
+    const requestBody = JSON.parse(String(init?.body)) as { return_citations?: boolean };
+    assert.equal(requestBody.return_citations, true);
+    return new Response(body, { status: 200 });
+  };
+  const keys = { get: () => 'test-secret', selectedModel: () => 'sonar', cloudDataConsent: () => true } as never;
+  await new CloudAIProvider(keys, fakeFetch as never).stream('perplexity', { question: 'research this online', context: 'c', researchMode: true }, { onEvent: (event) => events.push(event) }, new AbortController().signal, 'research');
+  assert.deepEqual(events.at(-1)?.citations, [
+    { url: 'https://example.com/a' },
+    { url: 'https://example.com/b', title: 'Source B' },
+  ]);
+});
+
 test('uses a bounded no-thinking request for Gemini 2.5 Flash and emits its answer', async () => {
   let requestBody: unknown;
   const fakeFetch = async (_url: string, init?: RequestInit) => {

@@ -2,13 +2,48 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
-import type { AskLedgerAnswerValidationDiagnostics, AskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourceContract.ts';
-import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion, type GenerationTier } from './localAIAssets.ts';
-import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningMode, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
-import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
+import type {
+  AskLedgerAnswerValidationDiagnostics,
+  AskLedgerDocumentDiagnostics,
+} from '../src/types/askLedgerResourceContract.ts';
+import {
+  LEGACY_MINISTRAL_MODEL_ID,
+  LEGACY_POWERFUL_MODEL_ID,
+  LocalAIAssetManager,
+  resolveLocalAIRuntime,
+  resolveLocalAIRuntimeVersion,
+  type GenerationTier,
+} from './localAIAssets.ts';
+import {
+  applyQwenReasoningControl,
+  resolveGenerationBudgets,
+  resolveReasoningDecision,
+  type ReasoningMode,
+  type ReasoningRequestSignals,
+} from './localAIReasoningPolicy.ts';
+import {
+  resolveAskLedgerModelRoute,
+  type AskLedgerModelRoutingSignals,
+  type AskLedgerModelRoute,
+} from './askLedgerModelRouting.ts';
 import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
 import { CloudAIError, type CloudAIProvider } from './cloudAIProvider.ts';
 import type { AIProviderKeyStore } from './aiProviderKeyStore';
+import {
+  executeReadAskLedgerTool,
+  type AskLedgerReadToolContext,
+} from './askLedgerReadToolExecutor.ts';
+import {
+  appendAskLedgerReadToolResult,
+  buildAskLedgerReadToolInstruction,
+  parseAskLedgerReadToolCall,
+} from './askLedgerToolLoop.ts';
+import type { AskLedgerToolSurface } from '../src/shared/askLedger/tools.ts';
+import {
+  buildExternalResearchInstruction,
+  buildResearchUnavailableInstruction,
+  isExternalResearchQuestion,
+} from '../src/shared/askLedger/research.ts';
 
 export type LocalAIErrorCode =
   | 'model_missing'
@@ -40,6 +75,14 @@ export interface LocalAIRequest {
   timeoutMs?: number;
   reasoningSignals?: Omit<ReasoningRequestSignals, 'question'>;
   performance?: AskLedgerPerformanceTrace;
+  /** Used by the bounded read-tool preflight; tool protocol must never reach the UI. */
+  suppressVisibleDeltas?: boolean;
+  readToolLoop?: {
+    surface: AskLedgerToolSurface;
+    context: AskLedgerReadToolContext;
+    maxToolCalls?: number;
+  };
+  researchMode?: boolean;
 }
 
 export interface LocalAIMetrics {
@@ -52,7 +95,10 @@ export interface LocalAIMetrics {
   reasoningContentObserved?: boolean;
   visibleContentChars?: number;
   finishReason?: string | null;
-  failureReason?: 'reasoning_budget_exhausted' | 'model_returned_empty_content' | 'stream_parser_failure';
+  failureReason?:
+    | 'reasoning_budget_exhausted'
+    | 'model_returned_empty_content'
+    | 'stream_parser_failure';
   reasoningChunks?: number;
   contentChunks?: number;
   reasoningTokens?: number;
@@ -66,9 +112,10 @@ export interface LocalAIMetrics {
 
 export type AskLedgerActivity =
   | { type: 'starting_runtime' }
-  | { type: 'searching' }
+  | { type: 'searching'; toolName?: string }
   | { type: 'sources_found'; count: number; sources: AskLedgerSource[] }
   | { type: 'reading_context'; count: number; sources: AskLedgerSource[] }
+  | { type: 'computing'; toolName: string; count: number; sources: AskLedgerSource[] }
   | { type: 'preparing_answer' }
   | { type: 'reasoning' }
   | { type: 'generating' };
@@ -76,7 +123,12 @@ export type AskLedgerActivity =
 export type AskLedgerSkillResult = {
   skillId: string;
   sections: Array<{ title: string; content: string }>;
-  actionProposals: Array<{ id: string; type: string; payload: Record<string, unknown>; sourceMessageId: string }>;
+  actionProposals: Array<{
+    id: string;
+    type: string;
+    payload: Record<string, unknown>;
+    sourceMessageId: string;
+  }>;
 };
 
 export interface LocalAIStreamEvent {
@@ -84,6 +136,7 @@ export interface LocalAIStreamEvent {
   requestId: string;
   activity?: AskLedgerActivity;
   text?: string;
+  citations?: Array<{ url: string; title?: string }>;
   sources?: AskLedgerSource[];
   diagnostics?: AskLedgerDocumentDiagnostics;
   validation?: AskLedgerAnswerValidationDiagnostics;
@@ -135,20 +188,41 @@ const DEFAULT_PORT = 39281;
 const REQUEST_TIMEOUT_MS = 90_000;
 export const DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
-const readErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+const readErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 
 export const parseRuntimeDiagnostics = (diagnostics: string) => {
-  const lines = diagnostics.split('\n').map((line) => line.trim()).filter((line) => /metal|offload|backend|gpu|layer/i.test(line)).slice(-20);
-  const metalConfirmed = /ggml[_ -]?metal|metal backend|using metal|ggml_metal_init|\[metal\]/i.test(diagnostics) ? true : undefined;
-  const offloadMatch = diagnostics.match(/(?:offload(?:ed|ing)?|gpu\s+layers?)[^\d]{0,100}(\d+)(?:\s*\/\s*(\d+))?\s*layers?/i);
-  const metalMemoryMiB = diagnostics.match(/MTL\d+[^|]*\|\s*\d+\s*=\s*\d+\s*\+\s*\(\s*([\d.]+)\s*=\s*([\d.]+)\s*\+\s*([\d.]+)\s*\+\s*([\d.]+)/i);
+  const lines = diagnostics
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /metal|offload|backend|gpu|layer/i.test(line))
+    .slice(-20);
+  const metalConfirmed =
+    /ggml[_ -]?metal|metal backend|using metal|ggml_metal_init|\[metal\]/i.test(diagnostics)
+      ? true
+      : undefined;
+  const offloadMatch = diagnostics.match(
+    /(?:offload(?:ed|ing)?|gpu\s+layers?)[^\d]{0,100}(\d+)(?:\s*\/\s*(\d+))?\s*layers?/i
+  );
+  const metalMemoryMiB = diagnostics.match(
+    /MTL\d+[^|]*\|\s*\d+\s*=\s*\d+\s*\+\s*\(\s*([\d.]+)\s*=\s*([\d.]+)\s*\+\s*([\d.]+)\s*\+\s*([\d.]+)/i
+  );
   const kvBufferMiB = diagnostics.match(/MTL\d+ KV buffer size\s*=\s*([\d.]+)\s*MiB/i);
-  const cpuFallbackDetected = /cpu fallback|falling back to cpu|no gpu|offloaded\s+0\s*\/|offloaded\s+0\s+layers/i.test(diagnostics)
-    ? true
-    : offloadMatch && Number(offloadMatch[1]) > 0 ? false : undefined;
+  const cpuFallbackDetected =
+    /cpu fallback|falling back to cpu|no gpu|offloaded\s+0\s*\/|offloaded\s+0\s+layers/i.test(
+      diagnostics
+    )
+      ? true
+      : offloadMatch && Number(offloadMatch[1]) > 0
+      ? false
+      : undefined;
   return {
     metalConfirmed,
-    gpuLayersOffloaded: offloadMatch ? offloadMatch[2] ? `${offloadMatch[1]}/${offloadMatch[2]}` : offloadMatch[1] : undefined,
+    gpuLayersOffloaded: offloadMatch
+      ? offloadMatch[2]
+        ? `${offloadMatch[1]}/${offloadMatch[2]}`
+        : offloadMatch[1]
+      : undefined,
     cpuFallbackDetected,
     metalMemoryMiB: metalMemoryMiB ? Number(metalMemoryMiB[1]) : undefined,
     modelBufferMiB: metalMemoryMiB ? Number(metalMemoryMiB[2]) : undefined,
@@ -168,7 +242,10 @@ const partialTagAtEnd = (value: string, tag: string) => {
   return -1;
 };
 
-export const parseThinkingChunk = (chunk: ChatCompletionChunk, state: ParsedThinkingStream): string => {
+export const parseThinkingChunk = (
+  chunk: ChatCompletionChunk,
+  state: ParsedThinkingStream
+): string => {
   const choice = chunk.choices?.[0];
   const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : null;
   if (finishReason) state.finishReason = finishReason;
@@ -180,7 +257,8 @@ export const parseThinkingChunk = (chunk: ChatCompletionChunk, state: ParsedThin
   }
   const content = choice?.delta?.content;
   if (typeof content === 'string' && content.length) state.contentChunks += 1;
-  if (typeof chunk.usage?.completion_tokens === 'number') state.predictedTokens = chunk.usage.completion_tokens;
+  if (typeof chunk.usage?.completion_tokens === 'number')
+    state.predictedTokens = chunk.usage.completion_tokens;
   if (chunk.timings) state.serverTimings = chunk.timings;
   if (typeof content !== 'string' || !content) return '';
   return content;
@@ -204,7 +282,9 @@ export class LocalModelRuntime {
 
   async isHealthy() {
     try {
-      const response = await fetch(`${this.baseUrl()}/health`, { signal: AbortSignal.timeout(750) });
+      const response = await fetch(`${this.baseUrl()}/health`, {
+        signal: AbortSignal.timeout(750),
+      });
       return response.ok;
     } catch {
       return false;
@@ -228,17 +308,32 @@ export class LocalModelRuntime {
 
     const startedAt = Date.now();
     this.startupPromise = new Promise<{ startupMs: number; owned: boolean }>((resolve, reject) => {
-      const modelPath = typeof this.config.modelPath === 'function' ? this.config.modelPath() : this.config.modelPath;
-      const modelId = typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId;
-      const contextSize = typeof this.config.contextSize === 'function' ? this.config.contextSize() : this.config.contextSize;
-      const runtimeArgs = typeof this.config.runtimeArgs === 'function' ? this.config.runtimeArgs() : this.config.runtimeArgs;
-      const serverPath = typeof this.config.serverPath === 'function' ? this.config.serverPath() : this.config.serverPath;
+      const modelPath =
+        typeof this.config.modelPath === 'function'
+          ? this.config.modelPath()
+          : this.config.modelPath;
+      const modelId =
+        typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId;
+      const contextSize =
+        typeof this.config.contextSize === 'function'
+          ? this.config.contextSize()
+          : this.config.contextSize;
+      const runtimeArgs =
+        typeof this.config.runtimeArgs === 'function'
+          ? this.config.runtimeArgs()
+          : this.config.runtimeArgs;
+      const serverPath =
+        typeof this.config.serverPath === 'function'
+          ? this.config.serverPath()
+          : this.config.serverPath;
       if (!modelPath || !fs.existsSync(modelPath)) {
         reject(new LocalAIError('model_missing', 'The configured local AI model was not found.'));
         return;
       }
-      if (!serverPath || !fs.existsSync(serverPath) && !process.env.LEDGER_LLAMA_SERVER_PATH) {
-        reject(new LocalAIError('llama_unavailable', 'The Ledger local AI runtime is not installed.'));
+      if (!serverPath || (!fs.existsSync(serverPath) && !process.env.LEDGER_LLAMA_SERVER_PATH)) {
+        reject(
+          new LocalAIError('llama_unavailable', 'The Ledger local AI runtime is not installed.')
+        );
         return;
       }
 
@@ -246,20 +341,35 @@ export class LocalModelRuntime {
       console.info('[local-ai] starting generation runtime', {
         runtimeVersion,
         selectedModelId: modelId,
-        modelFamily: typeof modelId === 'string' ? modelId.startsWith('qwen3-') ? 'Qwen3' : modelId.startsWith('ministral-') ? 'Ministral 3' : 'unknown' : 'unknown',
+        modelFamily:
+          typeof modelId === 'string'
+            ? modelId.startsWith('qwen3-')
+              ? 'Qwen3'
+              : modelId.startsWith('ministral-')
+              ? 'Ministral 3'
+              : 'unknown'
+            : 'unknown',
         modelPath,
         installationState: 'installed',
       });
 
-      const child = spawn(serverPath, [
-        '--model', modelPath,
-        '--host', '127.0.0.1',
-        '--port', String(this.config.port),
-        '--ctx-size', String(contextSize),
-        '--jinja',
-        ...(process.env.LEDGER_LLAMA_VERBOSE === '1' ? ['--verbosity', '4'] : []),
-        ...(runtimeArgs ?? []),
-      ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      const child = spawn(
+        serverPath,
+        [
+          '--model',
+          modelPath,
+          '--host',
+          '127.0.0.1',
+          '--port',
+          String(this.config.port),
+          '--ctx-size',
+          String(contextSize),
+          '--jinja',
+          ...(process.env.LEDGER_LLAMA_VERBOSE === '1' ? ['--verbosity', '4'] : []),
+          ...(runtimeArgs ?? []),
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
+      );
       this.child = child;
       this.ownedRuntime = true;
       trace?.mark('generationRuntimeSpawned');
@@ -278,7 +388,11 @@ export class LocalModelRuntime {
       child.stderr?.on('data', collectDiagnostics);
       child.once('error', (error) => {
         this.child = null;
-        reject(new LocalAIError('llama_unavailable', 'llama-server could not be started.', { cause: error }));
+        reject(
+          new LocalAIError('llama_unavailable', 'llama-server could not be started.', {
+            cause: error,
+          })
+        );
       });
       child.once('exit', (code, signal) => {
         if (this.child !== child) return;
@@ -293,11 +407,21 @@ export class LocalModelRuntime {
       const waitForReady = async () => {
         const startupFailureMessage = () => {
           const detail = diagnostics.toLowerCase();
-          if (/unsupported|unknown architecture|no model loader|invalid gguf|unknown model/.test(detail)) return 'The bundled Local AI runtime does not support this model architecture.';
-          if (/out of memory|failed to allocate|cannot allocate|memory map|mmap/.test(detail)) return 'The model could not be loaded with the available memory.';
+          if (
+            /unsupported|unknown architecture|no model loader|invalid gguf|unknown model/.test(
+              detail
+            )
+          )
+            return 'The bundled Local AI runtime does not support this model architecture.';
+          if (/out of memory|failed to allocate|cannot allocate|memory map|mmap/.test(detail))
+            return 'The model could not be loaded with the available memory.';
           const compactDiagnostics = diagnostics.replace(/\s+/g, ' ').trim();
-          if (compactDiagnostics) return `Local AI runtime could not load the model: ${compactDiagnostics.slice(-420)}`;
-          if (exitCode !== null || exitSignal) return `Local AI runtime exited before it became ready${exitCode !== null ? ` (code ${exitCode})` : ` (${exitSignal})`}.`;
+          if (compactDiagnostics)
+            return `Local AI runtime could not load the model: ${compactDiagnostics.slice(-420)}`;
+          if (exitCode !== null || exitSignal)
+            return `Local AI runtime exited before it became ready${
+              exitCode !== null ? ` (code ${exitCode})` : ` (${exitSignal})`
+            }.`;
           return 'Local AI runtime exited before it became ready.';
         };
         const deadline = Date.now() + 60_000;
@@ -305,9 +429,18 @@ export class LocalModelRuntime {
           if (await this.isHealthy()) {
             const runtimeDiagnostics = parseRuntimeDiagnostics(diagnostics);
             trace?.set('metalConfirmed', runtimeDiagnostics.metalConfirmed);
-            trace?.set('gpuLayersOffloaded', runtimeDiagnostics.gpuLayersOffloaded ?? 'unknown_until_runtime_report');
+            trace?.set(
+              'gpuLayersOffloaded',
+              runtimeDiagnostics.gpuLayersOffloaded ?? 'unknown_until_runtime_report'
+            );
             trace?.set('cpuFallbackDetected', runtimeDiagnostics.cpuFallbackDetected);
-            for (const key of ['metalMemoryMiB', 'modelBufferMiB', 'contextBufferMiB', 'computeBufferMiB', 'kvBufferMiB'] as const) {
+            for (const key of [
+              'metalMemoryMiB',
+              'modelBufferMiB',
+              'contextBufferMiB',
+              'computeBufferMiB',
+              'kvBufferMiB',
+            ] as const) {
               trace?.set(key, runtimeDiagnostics[key]);
             }
             console.info('[local-ai] generation runtime diagnostics', runtimeDiagnostics);
@@ -316,12 +449,18 @@ export class LocalModelRuntime {
             return;
           }
           if (!this.child) {
-            reject(new LocalAIError('runtime_start_failed', startupFailureMessage(), { cause: diagnostics || undefined }));
+            reject(
+              new LocalAIError('runtime_start_failed', startupFailureMessage(), {
+                cause: diagnostics || undefined,
+              })
+            );
             return;
           }
           await new Promise((waitResolve) => setTimeout(waitResolve, 250));
         }
-        reject(new LocalAIError('runtime_start_failed', 'Local AI runtime did not become ready in time.'));
+        reject(
+          new LocalAIError('runtime_start_failed', 'Local AI runtime did not become ready in time.')
+        );
       };
       void waitForReady();
     }).finally(() => {
@@ -331,13 +470,19 @@ export class LocalModelRuntime {
     return this.startupPromise;
   }
 
-  async stream(request: LocalAIRequest, callbacks: StreamCallbacks, signal: AbortSignal, requestId: string) {
-    if (!(await this.isHealthy())) callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'starting_runtime' } });
+  async stream(
+    request: LocalAIRequest,
+    callbacks: StreamCallbacks,
+    signal: AbortSignal,
+    requestId: string
+  ) {
+    if (!(await this.isHealthy()))
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'starting_runtime' } });
     const runtime = await this.ensureReady(request.performance);
     const reasoningDecision = resolveReasoningDecision(
       this.config.modelTier ?? 'fast',
       this.config.reasoningMode ?? 'off',
-      { question: request.question, ...request.reasoningSignals },
+      { question: request.question, ...request.reasoningSignals }
     );
     console.info('[local-ai] reasoning policy', {
       modelTier: this.config.modelTier,
@@ -346,17 +491,42 @@ export class LocalModelRuntime {
       reasoningEnabled: reasoningDecision.enabled,
       reason: reasoningDecision.reason,
     });
-    callbacks.onEvent({ type: 'activity', requestId, activity: { type: reasoningDecision.enabled ? 'reasoning' : 'generating' } });
+    callbacks.onEvent({
+      type: 'activity',
+      requestId,
+      activity: { type: reasoningDecision.enabled ? 'reasoning' : 'generating' },
+    });
     const startedAt = Date.now();
-    const configuredMaxTokens = request.generationBudget ?? (typeof this.config.maxTokens === 'function' ? this.config.maxTokens() : this.config.maxTokens);
-    const contextSize = typeof this.config.contextSize === 'function' ? this.config.contextSize() : this.config.contextSize;
-    const budgets = resolveGenerationBudgets(this.config.modelTier ?? 'fast', configuredMaxTokens, contextSize, { question: request.question, ...request.reasoningSignals }, reasoningDecision.enabled);
+    const configuredMaxTokens =
+      request.generationBudget ??
+      (typeof this.config.maxTokens === 'function'
+        ? this.config.maxTokens()
+        : this.config.maxTokens);
+    const contextSize =
+      typeof this.config.contextSize === 'function'
+        ? this.config.contextSize()
+        : this.config.contextSize;
+    const budgets = resolveGenerationBudgets(
+      this.config.modelTier ?? 'fast',
+      configuredMaxTokens,
+      contextSize,
+      { question: request.question, ...request.reasoningSignals },
+      reasoningDecision.enabled
+    );
     const initialBudget = budgets.initial;
     const maxRetryBudget = budgets.retry;
     const reasoningPathActive = reasoningDecision.enabled;
-    const prompt = applyQwenReasoningControl(this.config.modelFamily, reasoningDecision.enabled, request.context);
-    const modelId = typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId;
-    const runtimeArgs = typeof this.config.runtimeArgs === 'function' ? this.config.runtimeArgs() : this.config.runtimeArgs;
+    const prompt = applyQwenReasoningControl(
+      this.config.modelFamily,
+      reasoningDecision.enabled,
+      request.context
+    );
+    const modelId =
+      typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId;
+    const runtimeArgs =
+      typeof this.config.runtimeArgs === 'function'
+        ? this.config.runtimeArgs()
+        : this.config.runtimeArgs;
     const modelQuant = modelId?.match(/(q[468]_[a-z0-9]+|q8_0|q6_k)/i)?.[1]?.toUpperCase();
     request.performance?.set('modelId', modelId);
     request.performance?.set('loadedTier', this.config.modelTier);
@@ -368,8 +538,14 @@ export class LocalModelRuntime {
     request.performance?.set('reasoningReason', reasoningDecision.reason);
     request.performance?.set('reasoningBudget', budgets.reasoning);
     request.performance?.set('visibleAnswerBudget', budgets.visible);
-    const metalRequested = process.platform === 'darwin' && Boolean(runtimeArgs?.includes('--n-gpu-layers'));
-    request.performance?.set('gpuLayersRequested', runtimeArgs?.includes('--n-gpu-layers') ? runtimeArgs[runtimeArgs.indexOf('--n-gpu-layers') + 1] : undefined);
+    const metalRequested =
+      process.platform === 'darwin' && Boolean(runtimeArgs?.includes('--n-gpu-layers'));
+    request.performance?.set(
+      'gpuLayersRequested',
+      runtimeArgs?.includes('--n-gpu-layers')
+        ? runtimeArgs[runtimeArgs.indexOf('--n-gpu-layers') + 1]
+        : undefined
+    );
     request.performance?.set('metalRequested', metalRequested);
     request.performance?.set('backend', metalRequested ? 'metal_requested' : 'unknown');
     request.performance?.set('metalAvailable', process.platform === 'darwin');
@@ -386,7 +562,8 @@ export class LocalModelRuntime {
       try {
         request.performance?.mark('promptRequestSent');
         response = await fetch(`${this.baseUrl()}/v1/chat/completions`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
           signal: requestSignal,
           body: JSON.stringify({
             stream: true,
@@ -401,7 +578,9 @@ export class LocalModelRuntime {
             top_k: 40,
             min_p: 0.05,
             ...(reasoningPathActive ? { reasoning_budget: budgets.reasoning } : {}),
-            ...(this.config.modelFamily === 'Qwen3' && reasoningPathActive ? { reasoning_format: 'deepseek' } : {}),
+            ...(this.config.modelFamily === 'Qwen3' && reasoningPathActive
+              ? { reasoning_format: 'deepseek' }
+              : {}),
             messages: [{ role: 'user', content: prompt }],
           }),
         });
@@ -410,20 +589,38 @@ export class LocalModelRuntime {
           request.performance?.mark('fetchAborted');
           throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
         }
-        if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
-        throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
+        if (timeoutSignal.aborted)
+          throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', {
+            cause: error,
+          });
+        throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', {
+          cause: error,
+        });
       }
       if (!response.ok || !response.body) {
         const body = await response.text().catch(() => '');
-        const code: LocalAIErrorCode = response.status >= 500 ? 'model_load_failed' : 'malformed_response';
-        throw new LocalAIError(code, body.slice(0, 300) || 'Local AI returned an invalid response.');
+        const code: LocalAIErrorCode =
+          response.status >= 500 ? 'model_load_failed' : 'malformed_response';
+        throw new LocalAIError(
+          code,
+          body.slice(0, 300) || 'Local AI returned an invalid response.'
+        );
       }
       const decoder = new TextDecoder();
       const reader = response.body.getReader();
-      const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+      const cancelReader = () => {
+        void reader.cancel().catch(() => undefined);
+      };
       if (requestSignal.aborted) cancelReader();
       else requestSignal.addEventListener('abort', cancelReader, { once: true });
-      const state: ParsedThinkingStream = { visibleText: '', reasoningContentObserved: false, finishReason: null, reasoningChunks: 0, contentChunks: 0, reasoningTokens: 0 };
+      const state: ParsedThinkingStream = {
+        visibleText: '',
+        reasoningContentObserved: false,
+        finishReason: null,
+        reasoningChunks: 0,
+        contentChunks: 0,
+        reasoningTokens: 0,
+      };
       let buffer = '';
       let hidingReasoning = false;
       let reasoningTagBuffer = '';
@@ -436,8 +633,10 @@ export class LocalModelRuntime {
           const index = pending.toLowerCase().indexOf(tag);
           if (index < 0) {
             const partialIndex = partialTagAtEnd(pending, tag);
-            if (partialIndex >= 0) { if (!hidingReasoning) visible += pending.slice(0, partialIndex); reasoningTagBuffer = pending.slice(partialIndex); }
-            else if (!hidingReasoning) visible += pending;
+            if (partialIndex >= 0) {
+              if (!hidingReasoning) visible += pending.slice(0, partialIndex);
+              reasoningTagBuffer = pending.slice(partialIndex);
+            } else if (!hidingReasoning) visible += pending;
             break;
           }
           if (!hidingReasoning) visible += pending.slice(0, index);
@@ -453,16 +652,19 @@ export class LocalModelRuntime {
         while (true) {
           const { done, value } = await reader.read();
           if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
-          if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.');
+          if (timeoutSignal.aborted)
+            throw new LocalAIError('request_timeout', 'Local AI did not respond in time.');
           if (done) break;
           if (!responseByteMarked) {
             responseByteMarked = true;
             request.performance?.mark('firstResponseByte');
           }
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
           for (const line of lines) {
-            const trimmed = line.trim(); if (!trimmed.startsWith('data:')) continue;
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
             const data = trimmed.slice(5).trim();
             if (data === '[DONE]') {
               state.doneMarkerReceived = true;
@@ -470,8 +672,15 @@ export class LocalModelRuntime {
               continue;
             }
             let parsed: ChatCompletionChunk;
-            try { parsed = JSON.parse(data) as ChatCompletionChunk; }
-            catch (error) { throw new LocalAIError('malformed_response', 'Local AI returned malformed streaming data.', { cause: error }); }
+            try {
+              parsed = JSON.parse(data) as ChatCompletionChunk;
+            } catch (error) {
+              throw new LocalAIError(
+                'malformed_response',
+                'Local AI returned malformed streaming data.',
+                { cause: error }
+              );
+            }
             const rawText = parseThinkingChunk(parsed, state);
             const text = emitContent(rawText);
             if (!text) continue;
@@ -487,8 +696,12 @@ export class LocalModelRuntime {
           }
         }
       } catch (error) {
-        if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
-        if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
+        if (signal.aborted)
+          throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
+        if (timeoutSignal.aborted)
+          throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', {
+            cause: error,
+          });
         throw error;
       } finally {
         requestSignal.removeEventListener('abort', cancelReader);
@@ -498,20 +711,32 @@ export class LocalModelRuntime {
       return { state, firstTokenMs, generatedTokens, totalMs: Date.now() - startedAt };
     };
 
-    let attempt = await streamAttempt(initialBudget, true);
-    const shouldRetry = reasoningPathActive && this.config.modelTier !== 'fast' && attempt.state.visibleText.trim().length === 0
-      && attempt.state.reasoningContentObserved && attempt.state.finishReason === 'length' && maxRetryBudget > initialBudget;
+    let attempt = await streamAttempt(initialBudget, !request.suppressVisibleDeltas);
+    const shouldRetry =
+      reasoningPathActive &&
+      this.config.modelTier !== 'fast' &&
+      attempt.state.visibleText.trim().length === 0 &&
+      attempt.state.reasoningContentObserved &&
+      attempt.state.finishReason === 'length' &&
+      maxRetryBudget > initialBudget;
     if (shouldRetry) {
-      console.warn('[local-ai] reasoning budget exhausted; retrying once', { modelTier: this.config.modelTier, generationBudget: initialBudget, retryBudget: maxRetryBudget });
-      attempt = await streamAttempt(maxRetryBudget, true);
+      console.warn('[local-ai] reasoning budget exhausted; retrying once', {
+        modelTier: this.config.modelTier,
+        generationBudget: initialBudget,
+        retryBudget: maxRetryBudget,
+      });
+      attempt = await streamAttempt(maxRetryBudget, !request.suppressVisibleDeltas);
     }
-    const failureReason = attempt.state.visibleText.trim().length === 0
-      ? reasoningPathActive && attempt.state.reasoningContentObserved && attempt.state.finishReason === 'length'
-        ? 'reasoning_budget_exhausted' as const
-        : attempt.state.contentChunks > 0
-          ? 'stream_parser_failure' as const
-          : 'model_returned_empty_content' as const
-      : undefined;
+    const failureReason =
+      attempt.state.visibleText.trim().length === 0
+        ? reasoningPathActive &&
+          attempt.state.reasoningContentObserved &&
+          attempt.state.finishReason === 'length'
+          ? ('reasoning_budget_exhausted' as const)
+          : attempt.state.contentChunks > 0
+          ? ('stream_parser_failure' as const)
+          : ('model_returned_empty_content' as const)
+        : undefined;
     console.info('[local-ai] generation diagnostics', {
       modelTier: this.config.modelTier,
       modelId,
@@ -544,26 +769,48 @@ export class LocalModelRuntime {
       request.performance?.set('promptTokens', serverTimings.prompt_n + cacheTokens);
       request.performance?.set('promptCacheTokens', cacheTokens);
     }
-    if (typeof serverTimings?.prompt_per_second === 'number') request.performance?.set('promptTokensPerSecond', serverTimings.prompt_per_second);
-    if (typeof serverTimings?.predicted_per_second === 'number') request.performance?.set('serverReportedTokensPerSecond', serverTimings.predicted_per_second);
-    if (typeof serverTimings?.predicted_ms === 'number') request.performance?.set('serverGenerationMs', serverTimings.predicted_ms);
+    if (typeof serverTimings?.prompt_per_second === 'number')
+      request.performance?.set('promptTokensPerSecond', serverTimings.prompt_per_second);
+    if (typeof serverTimings?.predicted_per_second === 'number')
+      request.performance?.set('serverReportedTokensPerSecond', serverTimings.predicted_per_second);
+    if (typeof serverTimings?.predicted_ms === 'number')
+      request.performance?.set('serverGenerationMs', serverTimings.predicted_ms);
     request.performance?.mark('generationCompleted');
-    callbacks.onEvent({ type: 'done', requestId, metrics: {
-      startupMs: runtime.startupMs || undefined, firstTokenMs: attempt.firstTokenMs, totalMs: attempt.totalMs,
-      tokensPerSecond: attempt.generatedTokens > 0 ? attempt.generatedTokens / (attempt.totalMs / 1000) : undefined,
-      generationBudget: shouldRetry ? maxRetryBudget : initialBudget, reasoningEnabled: reasoningDecision.enabled,
-      reasoningContentObserved: attempt.state.reasoningContentObserved, visibleContentChars: attempt.state.visibleText.length,
-      finishReason: attempt.state.finishReason, failureReason, reasoningChunks: attempt.state.reasoningChunks,
-      contentChunks: attempt.state.contentChunks, reasoningTokens: attempt.state.reasoningTokens,
-      predictedTokens: attempt.state.predictedTokens, serverTimings: attempt.state.serverTimings,
-      performance: request.performance?.snapshot({
-        generatedTokens: attempt.state.predictedTokens ?? attempt.generatedTokens,
+    callbacks.onEvent({
+      type: 'done',
+      requestId,
+      text: attempt.state.visibleText,
+      metrics: {
+        startupMs: runtime.startupMs || undefined,
+        firstTokenMs: attempt.firstTokenMs,
+        totalMs: attempt.totalMs,
+        tokensPerSecond:
+          attempt.generatedTokens > 0
+            ? attempt.generatedTokens / (attempt.totalMs / 1000)
+            : undefined,
         generationBudget: shouldRetry ? maxRetryBudget : initialBudget,
-        tokensPerSecond: attempt.generatedTokens > 0 ? attempt.generatedTokens / (attempt.totalMs / 1000) : undefined,
+        reasoningEnabled: reasoningDecision.enabled,
+        reasoningContentObserved: attempt.state.reasoningContentObserved,
+        visibleContentChars: attempt.state.visibleText.length,
         finishReason: attempt.state.finishReason,
-        doneMarkerReceived: attempt.state.doneMarkerReceived === true,
-      }),
-    } });
+        failureReason,
+        reasoningChunks: attempt.state.reasoningChunks,
+        contentChunks: attempt.state.contentChunks,
+        reasoningTokens: attempt.state.reasoningTokens,
+        predictedTokens: attempt.state.predictedTokens,
+        serverTimings: attempt.state.serverTimings,
+        performance: request.performance?.snapshot({
+          generatedTokens: attempt.state.predictedTokens ?? attempt.generatedTokens,
+          generationBudget: shouldRetry ? maxRetryBudget : initialBudget,
+          tokensPerSecond:
+            attempt.generatedTokens > 0
+              ? attempt.generatedTokens / (attempt.totalMs / 1000)
+              : undefined,
+          finishReason: attempt.state.finishReason,
+          doneMarkerReceived: attempt.state.doneMarkerReceived === true,
+        }),
+      },
+    });
     this.armIdleTimer();
   }
 
@@ -585,11 +832,17 @@ export class LocalModelRuntime {
     });
   }
 
-  private clearIdleTimer() { if (this.idleTimer) clearTimeout(this.idleTimer); this.idleTimer = null; }
+  private clearIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
   private armIdleTimer() {
     this.clearIdleTimer();
     const timeout = this.config.idleTimeoutMs ?? DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS;
-    if (timeout > 0) this.idleTimer = setTimeout(() => { void this.shutdown(); }, timeout);
+    if (timeout > 0)
+      this.idleTimer = setTimeout(() => {
+        void this.shutdown();
+      }, timeout);
   }
 }
 
@@ -597,26 +850,59 @@ export class LocalAIService {
   private runtime: LocalModelRuntime;
   private readonly runtimeFactory: (modelId: string) => LocalModelRuntime;
   private readonly assets: LocalAIAssetManager;
+  private readonly cloud?: CloudAIProvider;
+  private readonly providerKeys?: AIProviderKeyStore;
   private runtimeModelId: string;
   private loadedModelId: string | null = null;
   private switchPromise: Promise<GenerationModelSwitchResult> | null = null;
-  private switchState: GenerationRuntimeState = { switching: false, targetTier: null, ready: false, failure: null };
+  private switchState: GenerationRuntimeState = {
+    switching: false,
+    targetTier: null,
+    ready: false,
+    failure: null,
+  };
   private readonly runtimeStateListeners = new Set<(state: GenerationRuntimeState) => void>();
-  private readonly requests = new Map<string, { controller: AbortController; completion: Promise<void>; performance?: AskLedgerPerformanceTrace; started: boolean }>();
+  private readonly requests = new Map<
+    string,
+    {
+      controller: AbortController;
+      completion: Promise<void>;
+      performance?: AskLedgerPerformanceTrace;
+      started: boolean;
+    }
+  >();
 
-  constructor(assets: LocalAIAssetManager, runtimeFactory: (modelId: string) => LocalModelRuntime, private readonly cloud?: CloudAIProvider, private readonly providerKeys?: AIProviderKeyStore) {
+  constructor(
+    assets: LocalAIAssetManager,
+    runtimeFactory: (modelId: string) => LocalModelRuntime,
+    cloud?: CloudAIProvider,
+    providerKeys?: AIProviderKeyStore
+  ) {
     this.assets = assets;
     this.runtimeFactory = runtimeFactory;
+    this.cloud = cloud;
+    this.providerKeys = providerKeys;
     this.runtimeModelId = assets.getSelectedGenerationModel().id;
     this.runtime = runtimeFactory(this.runtimeModelId);
   }
 
-  start(request: LocalAIRequest, callbacks: StreamCallbacks, requestedRequestId: string = randomUUID()) {
+  start(
+    request: LocalAIRequest,
+    callbacks: StreamCallbacks,
+    requestedRequestId: string = randomUUID()
+  ) {
     const requestId = requestedRequestId;
     const controller = new AbortController();
     let resolveCompletion!: () => void;
-    const completion = new Promise<void>((resolve) => { resolveCompletion = resolve; });
-    const requestState = { controller, completion, performance: request.performance, started: false };
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    const requestState = {
+      controller,
+      completion,
+      performance: request.performance,
+      started: false,
+    };
     this.requests.set(requestId, requestState);
     queueMicrotask(() => {
       void (async () => {
@@ -624,22 +910,112 @@ export class LocalAIService {
         if (controller.signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
         requestState.started = true;
         const selectedProvider = this.providerKeys?.selectedProvider() ?? 'local';
-        if (selectedProvider === 'local') await this.runtime.stream(request, callbacks, controller.signal, requestId);
-        else if (this.cloud) await this.cloud.stream(selectedProvider, request, callbacks, controller.signal, requestId);
-        else throw new LocalAIError('runtime_exited', 'The selected cloud provider is not available.');
+        const streamProvider = async (
+          streamRequest: LocalAIRequest,
+          streamCallbacks: StreamCallbacks
+        ) => {
+          if (selectedProvider === 'local')
+            await this.runtime.stream(streamRequest, streamCallbacks, controller.signal, requestId);
+          else if (this.cloud)
+            await this.cloud.stream(
+              selectedProvider,
+              streamRequest,
+              streamCallbacks,
+              controller.signal,
+              requestId
+            );
+          else
+            throw new LocalAIError(
+              'runtime_exited',
+              'The selected cloud provider is not available.'
+            );
+        };
+        const providerRequest = {
+          ...request,
+          context:
+            isExternalResearchQuestion(request.question)
+              ? `${request.context}\n\n${selectedProvider === 'perplexity' ? buildExternalResearchInstruction() : buildResearchUnavailableInstruction()}`
+              : request.context,
+          researchMode:
+            request.researchMode ??
+            (selectedProvider === 'perplexity' && isExternalResearchQuestion(request.question)),
+        };
+        if (!request.readToolLoop) {
+          await streamProvider(providerRequest, callbacks);
+        } else {
+          const surface = request.readToolLoop.surface;
+          const toolContext = request.readToolLoop.context;
+          let privateDone: LocalAIStreamEvent | undefined;
+          await streamProvider(
+            {
+              ...providerRequest,
+              suppressVisibleDeltas: true,
+              readToolLoop: undefined,
+              context: `${request.context}${buildAskLedgerReadToolInstruction(surface)}`,
+            },
+            {
+              onEvent: (event) => {
+                if (event.type === 'done') privateDone = event;
+              },
+            }
+          );
+          const privateAnswer = privateDone?.text ?? '';
+          const call = parseAskLedgerReadToolCall(privateAnswer, surface);
+          if (!call) {
+            if (privateAnswer) callbacks.onEvent({ type: 'delta', requestId, text: privateAnswer });
+            callbacks.onEvent({
+              ...(privateDone ?? { type: 'done', requestId }),
+              requestId,
+              text: privateAnswer,
+            });
+          } else {
+            if ((request.readToolLoop.maxToolCalls ?? 1) < 1)
+              throw new LocalAIError('malformed_response', 'Ledger read-tool limit reached.');
+            const result = executeReadAskLedgerTool(call, toolContext);
+            callbacks.onEvent({
+              type: 'activity',
+              requestId,
+              activity: {
+                type: 'computing',
+                toolName: result.toolName,
+                count: result.sourceRefs.length,
+                sources: result.sourceRefs,
+              },
+            });
+            await streamProvider(
+              {
+                ...providerRequest,
+                readToolLoop: undefined,
+                context: appendAskLedgerReadToolResult(
+                  `${request.context}${buildAskLedgerReadToolInstruction(surface)}`,
+                  result
+                ),
+              },
+              callbacks
+            );
+          }
+        }
         this.loadedModelId = this.runtimeModelId;
         this.switchState = { ...this.switchState, ready: true, failure: null };
       })()
-      .catch((error) => {
+        .catch((error) => {
           const localError = controller.signal.aborted
             ? new LocalAIError('cancelled', 'Generation cancelled.', { cause: error })
             : error instanceof LocalAIError || error instanceof CloudAIError
             ? error
             : new LocalAIError('runtime_exited', readErrorMessage(error), { cause: error });
           if (localError.code === 'cancelled') request.performance?.mark('fetchAborted');
-          callbacks.onEvent({ type: 'error', requestId, error: { code: localError.code, message: localError.message } });
+          callbacks.onEvent({
+            type: 'error',
+            requestId,
+            error: { code: localError.code, message: localError.message },
+          });
         })
-        .finally(() => { if (controller.signal.aborted) request.performance?.mark('generationStopped'); this.requests.delete(requestId); resolveCompletion(); });
+        .finally(() => {
+          if (controller.signal.aborted) request.performance?.mark('generationStopped');
+          this.requests.delete(requestId);
+          resolveCompletion();
+        });
     });
     return requestId;
   }
@@ -659,10 +1035,15 @@ export class LocalAIService {
   }
 
   getGenerationRuntimeState(): GenerationRuntimeState {
-    const runtimeReady = typeof this.runtime.isRunning === 'function' ? this.runtime.isRunning() : this.switchState.ready;
+    const runtimeReady =
+      typeof this.runtime.isRunning === 'function'
+        ? this.runtime.isRunning()
+        : this.switchState.ready;
     return {
       ...this.switchState,
-      loadedTier: this.loadedModelId ? this.assets.generationModel(this.loadedModelId)?.tier ?? null : null,
+      loadedTier: this.loadedModelId
+        ? this.assets.generationModel(this.loadedModelId)?.tier ?? null
+        : null,
       selectedTier: this.assets.getSelectedGenerationTier(),
       ready: this.switchState.ready && runtimeReady,
     };
@@ -676,18 +1057,32 @@ export class LocalAIService {
     return this.assets.getRequestedGenerationTier();
   }
 
-  getSelectedAIProvider(): 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek' {
+  getSelectedAIProvider():
+    | 'local'
+    | 'openai'
+    | 'anthropic'
+    | 'google'
+    | 'perplexity'
+    | 'kimi'
+    | 'deepseek' {
     return this.providerKeys?.selectedProvider() ?? 'local';
   }
 
   getMeetingRecapGenerationTier(): 'balanced' | 'fast' {
-    const balanced = this.assets.getAvailableGenerationModels().find((model) => model.tier === 'balanced');
-    return balanced && this.assets.getGenerationModelStatus(balanced.id).installed ? 'balanced' : 'fast';
+    const balanced = this.assets
+      .getAvailableGenerationModels()
+      .find((model) => model.tier === 'balanced');
+    return balanced && this.assets.getGenerationModelStatus(balanced.id).installed
+      ? 'balanced'
+      : 'fast';
   }
 
   getModelRouting(signals: AskLedgerModelRoutingSignals): AskLedgerModelRoute {
-    const requestedTier = this.assets.getGenerationTierResolution?.().requestedTier ?? this.assets.getSelectedGenerationTier();
-    const installedTiers = this.assets.getAvailableGenerationModels()
+    const requestedTier =
+      this.assets.getGenerationTierResolution?.().requestedTier ??
+      this.assets.getSelectedGenerationTier();
+    const installedTiers = this.assets
+      .getAvailableGenerationModels()
       .filter((model) => this.assets.getGenerationModelStatus(model.id).installed)
       .map((model) => model.tier);
     return resolveAskLedgerModelRoute({ requestedTier, installedTiers, signals });
@@ -703,35 +1098,64 @@ export class LocalAIService {
     this.runtimeStateListeners.forEach((listener) => listener(state));
   }
 
-  switchGenerationTier(targetTier: unknown, options: { persistSelection?: boolean } = {}): Promise<GenerationModelSwitchResult> {
+  switchGenerationTier(
+    targetTier: unknown,
+    options: { persistSelection?: boolean } = {}
+  ): Promise<GenerationModelSwitchResult> {
     if (targetTier !== 'fast' && targetTier !== 'balanced' && targetTier !== 'powerful') {
       return Promise.reject(new Error('Invalid generation tier.'));
     }
-    const normalizedTargetTier: GenerationTier = targetTier === 'powerful' ? 'balanced' : targetTier;
-    if (this.providerKeys?.selectedProvider() !== 'local') {
-      return Promise.resolve({ ok: true, state: 'noop', tier: normalizedTargetTier, modelId: this.providerKeys?.selectedModel(this.providerKeys.selectedProvider() as 'openai' | 'anthropic' | 'google') ?? 'cloud' });
+    const normalizedTargetTier: GenerationTier =
+      targetTier === 'powerful' ? 'balanced' : targetTier;
+    const selectedProvider = this.providerKeys?.selectedProvider();
+    if (selectedProvider && selectedProvider !== 'local') {
+      return Promise.resolve({
+        ok: true,
+        state: 'noop',
+        tier: normalizedTargetTier,
+        modelId:
+          this.providerKeys?.selectedModel(
+            selectedProvider as 'openai' | 'anthropic' | 'google'
+          ) ?? 'cloud',
+      });
     }
     // Queue a later request behind the active switch instead of returning the
     // earlier request's result. This keeps rapid Balanced -> Fast interactions
     // deterministic: every requested target is handled, and the last request
     // becomes the final loaded/persisted tier.
     if (this.switchPromise) {
-      console.info('[local-ai] generation model switch queued', { requestedTier: normalizedTargetTier });
+      console.info('[local-ai] generation model switch queued', {
+        requestedTier: normalizedTargetTier,
+      });
       const activeSwitch = this.switchPromise;
-      const queuedSwitch = activeSwitch.then(() => this.performGenerationSwitch(normalizedTargetTier, options.persistSelection !== false));
+      const queuedSwitch = activeSwitch.then(() =>
+        this.performGenerationSwitch(normalizedTargetTier, options.persistSelection !== false)
+      );
       let trackedSwitch!: Promise<GenerationModelSwitchResult>;
-      trackedSwitch = queuedSwitch.finally(() => { if (this.switchPromise === trackedSwitch) this.switchPromise = null; });
+      trackedSwitch = queuedSwitch.finally(() => {
+        if (this.switchPromise === trackedSwitch) this.switchPromise = null;
+      });
       this.switchPromise = trackedSwitch;
       return trackedSwitch;
     }
-    this.switchPromise = this.performGenerationSwitch(normalizedTargetTier, options.persistSelection !== false).finally(() => { if (this.switchPromise) this.switchPromise = null; });
+    this.switchPromise = this.performGenerationSwitch(
+      normalizedTargetTier,
+      options.persistSelection !== false
+    ).finally(() => {
+      if (this.switchPromise) this.switchPromise = null;
+    });
     return this.switchPromise;
   }
 
   async removeGenerationModel(modelId: string) {
     const model = this.assets.generationModel(modelId);
     if (!model) {
-      if (modelId === LEGACY_POWERFUL_MODEL_ID || modelId === LEGACY_MINISTRAL_MODEL_ID) return { ok: true as const, state: 'legacy_removed' as const, status: this.assets.removeLegacyGenerationModel(modelId) };
+      if (modelId === LEGACY_POWERFUL_MODEL_ID || modelId === LEGACY_MINISTRAL_MODEL_ID)
+        return {
+          ok: true as const,
+          state: 'legacy_removed' as const,
+          status: this.assets.removeLegacyGenerationModel(modelId),
+        };
       throw new Error('Invalid generation model.');
     }
     if (model.tier === 'fast') throw new Error('The Fast generation model is protected.');
@@ -742,20 +1166,45 @@ export class LocalAIService {
     return { ok: true as const, status: await this.assets.removeGeneration(modelId) };
   }
 
-  private async performGenerationSwitch(targetTier: GenerationTier, persistSelection = true): Promise<GenerationModelSwitchResult> {
-    const target = this.assets.getAvailableGenerationModels().find((model) => model.tier === targetTier)!;
+  private async performGenerationSwitch(
+    targetTier: GenerationTier,
+    persistSelection = true
+  ): Promise<GenerationModelSwitchResult> {
+    const target = this.assets
+      .getAvailableGenerationModels()
+      .find((model) => model.tier === targetTier)!;
     const targetStatus = this.assets.getGenerationModelStatus(target.id);
     if (!targetStatus.installed) {
-      const result: GenerationModelSwitchResult = { ok: false, state: 'requires_download', tier: targetTier, modelId: target.id, expectedSize: target.expectedSize };
-      const currentReady = this.loadedModelId !== null && await this.runtime.isHealthy();
-      this.switchState = { switching: false, targetTier: null, ready: currentReady, failure: result };
+      const result: GenerationModelSwitchResult = {
+        ok: false,
+        state: 'requires_download',
+        tier: targetTier,
+        modelId: target.id,
+        expectedSize: target.expectedSize,
+      };
+      const currentReady = this.loadedModelId !== null && (await this.runtime.isHealthy());
+      this.switchState = {
+        switching: false,
+        targetTier: null,
+        ready: currentReady,
+        failure: result,
+      };
       this.emitGenerationRuntimeState();
       return result;
     }
 
     const currentTier = this.assets.getSelectedGenerationTier();
-    if (currentTier === targetTier && this.loadedModelId === target.id && await this.runtime.isHealthy()) {
-      const result: GenerationModelSwitchResult = { ok: true, state: 'noop', tier: targetTier, modelId: target.id };
+    if (
+      currentTier === targetTier &&
+      this.loadedModelId === target.id &&
+      (await this.runtime.isHealthy())
+    ) {
+      const result: GenerationModelSwitchResult = {
+        ok: true,
+        state: 'noop',
+        tier: targetTier,
+        modelId: target.id,
+      };
       this.switchState = { switching: false, targetTier: null, ready: true, failure: null };
       this.emitGenerationRuntimeState();
       return result;
@@ -765,32 +1214,62 @@ export class LocalAIService {
     const startedAt = Date.now();
     this.switchState = { switching: true, targetTier, ready: false, failure: null };
     this.emitGenerationRuntimeState();
-    console.info('[local-ai] generation model switch started', { requestedTier: targetTier, previousLoadedTier: previousModelId ? this.assets.generationModel(previousModelId)?.tier : null });
+    console.info('[local-ai] generation model switch started', {
+      requestedTier: targetTier,
+      previousLoadedTier: previousModelId
+        ? this.assets.generationModel(previousModelId)?.tier
+        : null,
+    });
     let nextRuntime: LocalModelRuntime | null = null;
     try {
       const activeRequests = [...this.requests.values()].filter((request) => request.started);
       const pendingRequests = [...this.requests.values()].filter((request) => !request.started);
       pendingRequests.forEach(({ controller }) => controller.abort());
       if (activeRequests.length) {
-        console.info('[local-ai] cancelling active generation for model switch', { count: activeRequests.length });
+        console.info('[local-ai] cancelling active generation for model switch', {
+          count: activeRequests.length,
+        });
         activeRequests.forEach(({ controller }) => controller.abort());
         await Promise.all(activeRequests.map((request) => request.completion));
       }
       const shutdownStartedAt = Date.now();
       await this.runtime.shutdown();
-      console.info('[local-ai] generation runtime stopped for switch', { durationMs: Date.now() - shutdownStartedAt });
+      console.info('[local-ai] generation runtime stopped for switch', {
+        durationMs: Date.now() - shutdownStartedAt,
+      });
       nextRuntime = this.runtimeFactory(target.id);
       const startup = await nextRuntime.ensureReady();
       this.runtime = nextRuntime;
       this.runtimeModelId = target.id;
       this.loadedModelId = target.id;
       if (persistSelection) this.assets.setSelectedGenerationTier(targetTier);
-      this.switchState = { switching: false, targetTier: null, ready: true, failure: null, selectedTier: targetTier, loadedTier: targetTier };
+      this.switchState = {
+        switching: false,
+        targetTier: null,
+        ready: true,
+        failure: null,
+        selectedTier: targetTier,
+        loadedTier: targetTier,
+      };
       this.emitGenerationRuntimeState();
-      console.info('[local-ai] generation model switch ready', { requestedTier: targetTier, modelId: target.id, startupMs: startup.startupMs, totalMs: Date.now() - startedAt });
-      return { ok: true, state: 'ready', tier: targetTier, modelId: target.id, startupMs: startup.startupMs };
+      console.info('[local-ai] generation model switch ready', {
+        requestedTier: targetTier,
+        modelId: target.id,
+        startupMs: startup.startupMs,
+        totalMs: Date.now() - startedAt,
+      });
+      return {
+        ok: true,
+        state: 'ready',
+        tier: targetTier,
+        modelId: target.id,
+        startupMs: startup.startupMs,
+      };
     } catch (error) {
-      const failure = { code: error instanceof LocalAIError ? error.code : 'runtime_start_failed', message: error instanceof Error ? error.message : String(error) };
+      const failure = {
+        code: error instanceof LocalAIError ? error.code : 'runtime_start_failed',
+        message: error instanceof Error ? error.message : String(error),
+      };
       if (nextRuntime) await nextRuntime.shutdown().catch(() => undefined);
       this.loadedModelId = null;
       this.switchState = { switching: false, targetTier: null, ready: false, failure };
@@ -804,12 +1283,20 @@ export class LocalAIService {
           this.loadedModelId = previousModelId;
           this.switchState = { switching: false, targetTier: null, ready: true, failure };
           this.emitGenerationRuntimeState();
-          console.info('[local-ai] recovered previous generation runtime after failed switch', { modelId: previousModelId });
+          console.info('[local-ai] recovered previous generation runtime after failed switch', {
+            modelId: previousModelId,
+          });
         } catch (recoveryError) {
-          console.warn('[local-ai] previous generation runtime recovery failed', { reason: recoveryError instanceof Error ? recoveryError.message : String(recoveryError) });
+          console.warn('[local-ai] previous generation runtime recovery failed', {
+            reason: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+          });
         }
       }
-      console.warn('[local-ai] generation model switch failed', { requestedTier: targetTier, reason: failure.message, totalMs: Date.now() - startedAt });
+      console.warn('[local-ai] generation model switch failed', {
+        requestedTier: targetTier,
+        reason: failure.message,
+        totalMs: Date.now() - startedAt,
+      });
       return { ok: false, state: 'failed', tier: targetTier, modelId: target.id, error: failure };
     }
   }
@@ -826,15 +1313,37 @@ export type GenerationRuntimeState = {
 
 export type GenerationModelSwitchResult =
   | { ok: true; state: 'ready' | 'noop'; tier: GenerationTier; modelId: string; startupMs?: number }
-  | { ok: false; state: 'requires_download'; tier: GenerationTier; modelId: string; expectedSize?: number }
-  | { ok: false; state: 'failed'; tier: GenerationTier; modelId: string; error: { code: string; message: string } };
+  | {
+      ok: false;
+      state: 'requires_download';
+      tier: GenerationTier;
+      modelId: string;
+      expectedSize?: number;
+    }
+  | {
+      ok: false;
+      state: 'failed';
+      tier: GenerationTier;
+      modelId: string;
+      error: { code: string; message: string };
+    };
 
-export const createLocalAIService = (assets = new LocalAIAssetManager(), overrides: { contextSize?: number; runtimeArgs?: string[]; cloud?: CloudAIProvider; providerKeys?: AIProviderKeyStore } = {}) => {
+export const createLocalAIService = (
+  assets = new LocalAIAssetManager(),
+  overrides: {
+    contextSize?: number;
+    runtimeArgs?: string[];
+    cloud?: CloudAIProvider;
+    providerKeys?: AIProviderKeyStore;
+  } = {}
+) => {
   // Dev Electron restarts can leave an older llama-server alive on the
   // default port. Reusing it silently preserves its old --ctx-size and makes
   // the new runtime configuration ineffective. Use a process-scoped port by
   // default; explicit ports remain available for packaged/integration setups.
-  const configuredPort = process.env.LEDGER_LOCAL_AI_PORT ? Number(process.env.LEDGER_LOCAL_AI_PORT) : undefined;
+  const configuredPort = process.env.LEDGER_LOCAL_AI_PORT
+    ? Number(process.env.LEDGER_LOCAL_AI_PORT)
+    : undefined;
   const port = configuredPort ?? DEFAULT_PORT + (process.pid % 1000);
   const runtimeFactory = (modelId: string) => {
     const model = assets.generationModel(modelId);
@@ -845,12 +1354,15 @@ export const createLocalAIService = (assets = new LocalAIAssetManager(), overrid
       modelFamily: model.modelFamily,
       modelTier: model.tier,
       reasoningMode: model.tier === 'balanced' ? 'auto' : model.reasoningMode,
-      serverPath: () => resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '',
+      serverPath: () =>
+        resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '',
       port: Number.isFinite(port) ? port : DEFAULT_PORT,
       contextSize: overrides.contextSize ?? model.contextSize ?? 4096,
       runtimeArgs: overrides.runtimeArgs ?? model.runtimeArgs ?? [],
       maxTokens: model.maxTokens ?? 256,
-      idleTimeoutMs: Number(process.env.LEDGER_LOCAL_AI_IDLE_MS || DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS),
+      idleTimeoutMs: Number(
+        process.env.LEDGER_LOCAL_AI_IDLE_MS || DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS
+      ),
     });
   };
   return new LocalAIService(assets, runtimeFactory, overrides.cloud, overrides.providerKeys);

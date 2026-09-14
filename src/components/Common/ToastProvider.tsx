@@ -97,7 +97,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           {toasts.map((t) => (
             <div
               key={t.id}
-              className={`pointer-events-auto flex w-[320px] max-w-[calc(100vw-2rem)] transform flex-col gap-2 rounded-[var(--ledger-surface-radius)] border px-4 py-3 shadow-[0_12px_32px_rgba(17,24,39,0.12)] transition-all duration-200 ease-out ${
+              className={`pointer-events-auto flex w-fit min-w-[280px] max-w-[min(440px,calc(100vw-2rem))] transform items-center gap-3 rounded-[var(--ledger-surface-radius)] border px-4 py-3 shadow-[0_12px_32px_rgba(17,24,39,0.12)] transition-all duration-200 ease-out ${
                 t.variant === 'success'
                   ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)]'
                   : t.variant === 'error'
@@ -105,7 +105,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)]'
               }`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
                 {t.icon === 'alert' && (
                   <span
                     aria-hidden="true"
@@ -141,7 +141,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 </div>
               </div>
               {t.actions?.length ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="ml-auto flex shrink-0 gap-2">
                   {t.actions.map((action) => (
                     <button
                       key={action.label}
@@ -150,7 +150,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         void action.onClick();
                         dismiss(t.id);
                       }}
-                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${
                         action.variant === 'destructive'
                           ? 'border-[#FECACA] bg-white text-[#B42318] hover:bg-[#FEF3F2]'
                           : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)]'

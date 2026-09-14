@@ -55,6 +55,18 @@ test('keeps attachment evidence in compound project questions', async () => {
   await index.shutdown();
 });
 
+test('resolves a project named in a natural "in the project" phrase', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-independent', title: 'Ind Study', content: 'Independent study UI/UX project.' });
+  const task = item({ resourceType: 'task', resourceId: 'task-independent', title: 'Come up with two ideas for UI/UX', content: 'Brainstorm two directions.', projectId: 'project-independent', projectName: 'Ind Study', status: 'Open' });
+  const documents = [project, task];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'I need to brainstorm UI/UX ideas for my first to do in the Ind Study project', [], 20, { documents });
+
+  assert.equal(result.items.some((entry) => entry.resourceId === 'project-independent'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-independent'), true);
+  await index.shutdown();
+});
+
 test('scopes named syllabus questions away from unrelated PDFs', async () => {
   const syllabus = item({ resourceType: 'attachment', resourceId: 'attachment-syllabus', title: 'Dzenko HistoryOfPhotography syllabus.pdf', content: 'Week 2 syllabus quiz and discussion introductions are due.' });
   const unrelated = item({ resourceType: 'attachment', resourceId: 'attachment-motion', title: 'AR390 Motion-26-FALL.pdf', content: 'Library orientation and evaluating sources.' });
@@ -214,7 +226,9 @@ test('informal weekly overview includes work context alongside the calendar', as
   const task = item({ resourceType: 'task', resourceId: 'task-week', title: 'Draft project presentation', content: '', dueAt: date(2), status: 'todo', projectId: 'project-week', projectName: 'Finish portfolio site' });
   const event = item({ resourceType: 'event', resourceId: 'event-week', title: 'Studio critique', content: '', timestamp: `${date(2)}T14:00:00.000Z` });
   const reminder = item({ resourceType: 'reminder', resourceId: 'reminder-week', title: 'Submit critique notes', content: '', dueAt: date(3), status: 'todo' });
-  const documents = [project, task, event, reminder];
+  const localFile = item({ resourceType: 'linked_resource', resourceId: 'local-file:syllabus', title: 'Class syllabus.pdf', content: 'Local file: Class syllabus.pdf.', containerName: 'School / Finish portfolio site', metadata: { localFileId: 'syllabus', localFolderPath: 'School / Finish portfolio site', localContextKind: 'file' } });
+  const localChunk = item({ resourceType: 'attachment', resourceId: 'local:syllabus:0', title: 'Class syllabus.pdf', content: 'Read the project brief before the next critique.', containerName: 'School / Finish portfolio site', metadata: { localFileId: 'syllabus', localFolderPath: 'School / Finish portfolio site' } });
+  const documents = [project, task, event, reminder, localFile, localChunk];
   const { orchestrator, index } = await buildOrchestrator(documents);
   const result = await orchestrator.retrieve('workspace-a', 'what is my week looking like', [], 32, { documents });
   assert.equal(result.mode, 'research');
@@ -222,6 +236,7 @@ test('informal weekly overview includes work context alongside the calendar', as
   assert.ok(result.items.some((entry) => entry.resourceId === 'task-week'));
   assert.ok(result.items.some((entry) => entry.resourceId === 'event-week'));
   assert.ok(result.items.some((entry) => entry.resourceId === 'reminder-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'local:syllabus:0'));
   assert.equal(result.items.some((entry) => entry.resourceId === 'calendar-schedule-overview'), false);
   await index.shutdown();
 });

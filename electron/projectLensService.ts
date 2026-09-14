@@ -90,6 +90,8 @@ export class ProjectLensService {
       return { status: 'unavailable', reason: 'invalid_context' };
     }
     const requestEpoch = this.beginRequest();
+    const activityStartedAt = Date.now();
+    const activity = (fallback = false) => ({ surface: 'project_lens' as const, durationMs: Date.now() - activityStartedAt, steps: [{ type: 'retrieving' as const, sourceCount: semanticDocuments.length }, { type: 'generating' as const }, ...(fallback ? [{ type: 'fallback' as const }] : [])] });
 
     let context = input.context;
     const retrievalStartedAt = Date.now();
@@ -138,7 +140,7 @@ export class ProjectLensService {
           continue;
         }
         console.info('[project-lens] served', { workspaceId: input.workspaceId, projectId: context.projectId, contextFingerprint: buildAIContextFingerprint({ workspaceId: input.workspaceId, surface: 'project_lens', selectedResource: { resourceType: 'project', resourceId: context.projectId, revision: `${context.project.updated_at ?? ''}:${context.project.completeness ?? ''}` }, resources: [{ resourceType: 'project', resourceId: context.projectId, revision: context.project.updated_at }, ...context.tasks.map((item) => ({ resourceType: 'task' as const, resourceId: item.id, revision: item.updated_at })), ...context.milestones.map((item) => ({ resourceType: 'milestone' as const, resourceId: item.id, revision: item.updated_at })), ...context.events.map((item) => ({ resourceType: 'event' as const, resourceId: item.id, revision: item.updated_at })), ...context.reminders.map((item) => ({ resourceType: 'reminder' as const, resourceId: item.id, revision: item.updated_at })), ...context.linkedNotes.map((item) => ({ resourceType: 'note' as const, resourceId: item.resourceId, revision: item.updatedAt }))] }), modelTier: tier, semanticEvidenceCount: request.semanticEvidence.length, promptChars: prompt.length, retrievalMs, ...generated.timing, rejectionReasons: validation.rejectionReasons });
-        return { status: 'ready', tier, result: validation.result, rejectionReasons: validation.rejectionReasons };
+        return { status: 'ready', tier, result: { ...validation.result, activity: activity() }, rejectionReasons: validation.rejectionReasons };
       } catch (error) {
         if (!this.isCurrent(requestEpoch)) return { status: 'unavailable', reason: 'superseded' };
         console.warn('[project-lens] generation failed', { tier, message: error instanceof Error ? error.message : String(error) });
@@ -150,7 +152,7 @@ export class ProjectLensService {
         workspaceId: input.workspaceId,
         projectId: context.projectId,
       });
-      return { status: 'ready', tier: 'fallback', result: fallback, rejectionReasons: ['invalid_result'] };
+      return { status: 'ready', tier: 'fallback', result: { ...fallback, activity: activity(true) }, rejectionReasons: ['invalid_result'] };
     }
     const reason = modelWasAvailable ? 'generation_failed' : 'model_unavailable';
     console.info('[project-lens] unavailable', { workspaceId: input.workspaceId, projectId: context.projectId, reason });

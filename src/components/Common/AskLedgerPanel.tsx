@@ -40,6 +40,7 @@ import {
 import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
 import { openLocalAISettings } from './LocalAIUnavailableState';
+import { LedgerAgentStatus, type LedgerAgentPhase } from './LedgerAgentStatus';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import { buildAIContextFingerprint } from '../../types/aiContextEnvelope';
 import {
@@ -63,9 +64,12 @@ import type { AskLedgerAnswerDepth } from '../../types/askLedgerAnswerDepth';
 import { sanitizeAskLedgerOutput } from '../../types/askLedgerOutputGuard';
 import {
   proposeAskLedgerActions,
+  normalizeAskLedgerActionProposal,
   type AskLedgerActionProposal,
   type AskLedgerActionType,
 } from './askLedgerActions';
+import { validateAskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
+import { emitAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 
 export type AskLedgerSourceType =
   | 'project'
@@ -134,7 +138,20 @@ export interface AskLedgerResponse {
 
 type AskLedgerMessageAttachment =
   | { kind: 'file'; attachment: AskLedgerAttachment }
-  | { kind: 'resource'; resource: AskLedgerSource };
+  | { kind: 'resource'; resource: AskLedgerSource }
+  | { kind: 'pasted-text'; id: string; title: string; text: string };
+
+// Keep normal questions comfortable to edit. Larger pastes become a real,
+// removable composer attachment so the textarea does not turn into a giant
+// block while the full text still travels with the Ask Ledger request.
+const ASK_LEDGER_LONG_PASTE_THRESHOLD = 4_000;
+
+const createPastedTextAttachment = (text: string): Extract<AskLedgerMessageAttachment, { kind: 'pasted-text' }> => ({
+  kind: 'pasted-text',
+  id: `pasted-text-${crypto.randomUUID()}`,
+  title: `Pasted text · ${text.length.toLocaleString()} characters`,
+  text,
+});
 export interface AskLedgerMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -157,10 +174,12 @@ export interface AskLedgerMessage {
         | 'searching'
         | 'sources_found'
         | 'reading_context'
+        | 'computing'
         | 'preparing_answer'
         | 'reasoning'
         | 'generating';
       count?: number;
+      toolName?: string;
       sources?: Array<Record<string, unknown>>;
     }>;
   };
@@ -362,10 +381,12 @@ type AskLedgerStreamEvent = {
       | 'searching'
       | 'sources_found'
       | 'reading_context'
+      | 'computing'
       | 'preparing_answer'
       | 'reasoning'
       | 'generating';
     count?: number;
+    toolName?: string;
     sources?: Array<Record<string, unknown>>;
   };
   text?: string;
@@ -387,6 +408,16 @@ type AskLedgerStreamEvent = {
 
 const askLedgerDocumentScope = (question: string) => {
   const value = question.toLowerCase().replace(/[’']/g, '').trim();
+  // Weekly planning needs the workspace records around the calendar, not
+  // only the resource type mentioned in the sentence (for example, projects).
+  // Keep this as a bounded backend scope so the renderer does not assemble a
+  // broad, unstructured corpus itself.
+  if (
+    /\bmy week\b/.test(value) ||
+    /\b(?:this|next) week\b/.test(value) && /\b(?:overview|plan|going on|happening|what do i have|what do i got|schedule|look|like)\b/.test(value) ||
+    /\b(?:weekly|workweek) schedule\b/.test(value)
+  )
+    return 'weekly_plan';
   // State questions need related records even when the selected resource
   // attachment was not preserved across a tab/session transition.
   if (askLedgerNeedsRelatedWorkspaceContext(question)) return undefined;
@@ -471,7 +502,7 @@ const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
     ) &&
     /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next actions?|next steps?|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|what do i need to do|needs? to happen|needs? attention|what should i do)\b/.test(
       value
-    )
+    ) || /\b(?:in|for|about)\s+(?:the\s+)?[^?.,]{2,80}\s+projects?\b/.test(value)
   );
 };
 
@@ -496,14 +527,20 @@ const askLedgerDateWindow = (question: string) => {
   return {};
 };
 
-const askLedgerProjectReference = (question: string) => {
+export const askLedgerProjectReference = (question: string) => {
   if (!/\bprojects?\b/i.test(question)) return undefined;
   // Compound questions commonly continue immediately with an intent clause:
   // "project History of Photo what are the next actions ...". Stop at that
   // boundary so the backend can resolve the actual project name instead of
   // searching for the whole remainder of the sentence.
-  const match = question.match(/\bproject\s+([^?.,]+?)(?=\s+(?:what|where|and|that|with|for my)\b|\?|$)/i);
-  const candidate = match?.[1]?.trim();
+  const inProjectMatch = question.match(/\bin\s+(?:the\s+)?([^?.,]+?)\s+projects?\b/i);
+  const trailingMatches = [...question.matchAll(/\b(?:for|about)\s+(?:the\s+)?([^?.,]+?)\s+projects?\b/gi)];
+  const trailingMatch = trailingMatches.at(-1);
+  const leadingMatch = question.match(/\bproject\s+([^?.,]+?)(?=\s+(?:what|where|and|that|with|for my)\b|\?|$)/i);
+  const candidate = (inProjectMatch?.[1] ?? trailingMatch?.[1] ?? leadingMatch?.[1])
+    ?.trim()
+    .replace(/^(?:my|the)\s+/i, '')
+    .trim();
   if (
     !candidate ||
     /^(this|next|last|the)?\s*(week|month|year|calendar|team|workspace)$/i.test(candidate) ||
@@ -912,9 +949,12 @@ const renderAnswerContent = (
 const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
   if (!value) return '';
   if (value.type === 'starting_runtime') return 'Starting Local AI…';
+  if (value.type === 'searching' && value.toolName === 'web_research') return 'Researching the web…';
+  if (value.type === 'searching' && value.toolName === 'web_research_unavailable') return 'Web research unavailable…';
   if (value.type === 'searching') return 'Searching your workspace…';
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources`;
   if (value.type === 'reading_context') return `Reading ${value.count ?? 0} relevant sources…`;
+  if (value.type === 'computing') return `Computing ${value.toolName ?? 'Ledger result'}…`;
   if (value.type === 'preparing_answer') return 'Preparing answer…';
   if (value.type === 'reasoning') return 'Analyzing the evidence…';
   if (value.type === 'generating') return 'Writing response…';
@@ -959,14 +999,41 @@ const ATTACHMENT_INDEXING_PHRASES = [
 const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) => {
   if (!value) return '';
   if (value.type === 'starting_runtime') return 'Getting Ledger ready on this device.';
+  if (value.type === 'searching' && value.toolName === 'web_research') return 'Using connected Perplexity research with citations.';
+  if (value.type === 'searching' && value.toolName === 'web_research_unavailable') return 'Connect Perplexity in Settings to verify current web facts.';
   if (value.type === 'searching') return 'Searching your workspace for relevant context.';
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources.`;
   if (value.type === 'reading_context')
     return `Reviewed ${value.count ?? 0} sources relevant to this question.`;
+  if (value.type === 'computing')
+    return `Computed ${value.toolName ?? 'a bounded Ledger result'} from ${value.count ?? 0} sources.`;
   if (value.type === 'preparing_answer') return 'Organizing the selected context into an answer.';
   if (value.type === 'reasoning') return 'Working through the evidence before writing the answer.';
   if (value.type === 'generating') return 'Generating the response on this device.';
   return 'Answering from the selected Ledger context.';
+};
+
+const askLedgerActivityPhase = (
+  value?: AskLedgerStreamEvent['activity']
+): LedgerAgentPhase => {
+  switch (value?.type) {
+    case 'searching':
+      return 'searching';
+    case 'sources_found':
+    case 'reading_context':
+      return 'reading';
+    case 'computing':
+      return 'thinking';
+    case 'reasoning':
+      return 'thinking';
+    case 'preparing_answer':
+    case 'starting_runtime':
+      return 'preparing';
+    case 'generating':
+      return 'thinking';
+    default:
+      return 'preparing';
+  }
 };
 
 const formatAskLedgerDuration = (durationMs: number) => Math.max(0, Math.round(durationMs / 1000));
@@ -978,6 +1045,7 @@ const AskLedgerActivityTrace = ({
   expanded,
   onToggle,
   generationPhrase,
+  compact = false,
 }: {
   steps: NonNullable<AskLedgerStreamEvent['activity']>[];
   durationMs?: number | null;
@@ -985,6 +1053,7 @@ const AskLedgerActivityTrace = ({
   expanded: boolean;
   onToggle: () => void;
   generationPhrase?: string;
+  compact?: boolean;
 }) => {
   const current = steps[steps.length - 1];
   const label = active
@@ -993,20 +1062,26 @@ const AskLedgerActivityTrace = ({
   if (active && !steps.length)
     return (
       <div className="ask-ledger-activity" aria-live="polite">
-        <p className="px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating">
-          {label}
-        </p>
+        <LedgerAgentStatus
+          phase="preparing"
+          label={label}
+          detail="Getting the right Ledger context ready."
+          active
+          compact={compact}
+        />
       </div>
     );
   return (
     <div className="ask-ledger-activity" aria-live={active ? 'polite' : undefined}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)]"
-      >
-        <span className={active ? 'ledger-ask-generating' : undefined}>{label}</span>
-        <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      <button type="button" onClick={onToggle} className="block w-full text-left">
+        <LedgerAgentStatus
+          phase={askLedgerActivityPhase(current)}
+          label={label}
+          detail={current ? askLedgerActivityDescription(current) : undefined}
+          active={active}
+          compact={compact}
+        />
+        <span className="sr-only">{expanded ? 'Hide run details' : 'Show run details'}</span>
       </button>
       {active && current && !expanded ? (
         <p className="mt-2 pl-1 text-xs text-[var(--ledger-text-secondary)]">
@@ -1393,6 +1468,26 @@ export const AskLedgerPanel = ({
     setContextPickerOptions([]);
     setSkillPickerOpen(false);
     inputRef.current?.focus();
+  };
+
+  const persistAgentRun = (
+    status: 'failed' | 'cancelled',
+    durationMs: number,
+    sourceCount: number,
+  ) => {
+    if (!workspaceId) return;
+    void api
+      .recordAgentRun(workspaceId, {
+        surface: initialContext?.aiSurface ?? 'ask_ledger',
+        status,
+        tool_names: activityStepsRef.current
+          .map((step) => step.toolName)
+          .filter((name): name is string => Boolean(name))
+          .slice(0, 8),
+        source_count: sourceCount,
+        duration_ms: durationMs,
+      })
+      .catch((error) => console.warn('[ask-ledger] could not persist agent run history', error));
   };
 
   useEffect(() => {
@@ -1989,6 +2084,18 @@ export const AskLedgerPanel = ({
           // is updated synchronously in the stream handler, so it remains the
           // authoritative live response for same-tick completion.
           const completedResponse = liveResponseRef.current;
+          if (workspaceId) {
+            void api.recordAgentRun(workspaceId, {
+              surface: initialContext?.aiSurface ?? 'ask_ledger',
+              status: 'completed',
+              tool_names: completedActivity
+                .map((step) => step.toolName)
+                .filter((name): name is string => Boolean(name))
+                .slice(0, 8),
+              source_count: completedResponse.sources.length,
+              duration_ms: durationMs,
+            }).catch((error) => console.warn('[ask-ledger] could not persist agent run history', error));
+          }
           setActivityDurationMs(durationMs);
           const isAbstention =
             Boolean(completedState.request.retrievalRequired) &&
@@ -2032,13 +2139,14 @@ export const AskLedgerPanel = ({
           const proposedActions =
             value.skillResult?.actionProposals
               ?.filter((action) => skillDefinition?.allowedActions.includes(action.type))
-              .map((action, index) => ({
-                id: `${assistantMessage.id}-skill-action-${index}`,
-                type: action.type,
-                payload: action.payload,
-                sourceMessageId: assistantMessage.id,
-                status: 'pending' as const,
-              })) ??
+              .flatMap((action, index) => {
+                const normalized = normalizeAskLedgerActionProposal(action, {
+                  sourceMessageId: assistantMessage.id,
+                  index,
+                  initialContext: initialContextRef.current,
+                });
+                return normalized ? [normalized] : [];
+              }) ??
             (completedState.request.responseMode === 'conversational'
               ? []
               : proposeAskLedgerActions({
@@ -2111,6 +2219,7 @@ export const AskLedgerPanel = ({
             const current = stateRef.current;
             if (current.status === 'streaming' || current.status === 'submitting') {
               const currentResponse = liveResponseRef.current;
+              persistAgentRun('cancelled', liveActivityDurationMs, currentResponse.sources.length);
               const interruptedMessage: AskLedgerMessage = {
                 id: newAskLedgerMessageId(),
                 role: 'assistant',
@@ -2135,6 +2244,7 @@ export const AskLedgerPanel = ({
             (currentState.status === 'streaming' || currentState.status === 'submitting') &&
             partialResponse.answer.trim()
           ) {
+            persistAgentRun('failed', liveActivityDurationMs, partialResponse.sources.length);
             const partialMessage: AskLedgerMessage = {
               id: newAskLedgerMessageId(),
               role: 'assistant',
@@ -2153,6 +2263,7 @@ export const AskLedgerPanel = ({
             activeRequestIdRef.current = null;
             return;
           }
+          persistAgentRun('failed', liveActivityDurationMs, partialResponse.sources.length);
           setState((current) => {
             const request =
               current.status === 'streaming' || current.status === 'submitting'
@@ -2345,7 +2456,7 @@ export const AskLedgerPanel = ({
     const trimmedQuestion = (questionOverride ?? question).trim();
     const selectedSkillForRequest = pendingSkillIdRef.current;
     if (
-      (!trimmedQuestion && !selectedSkillForRequest) ||
+      (!trimmedQuestion && !selectedSkillForRequest && !composerAttachments.length) ||
       !localAIReady ||
       requestInitializingRef.current ||
       activeRequestIdRef.current
@@ -2378,6 +2489,7 @@ export const AskLedgerPanel = ({
     const attachmentIds = submittedAttachments.flatMap((item) =>
       item.kind === 'file' ? [item.attachment.id] : []
     );
+    const pastedTextCount = submittedAttachments.filter((item) => item.kind === 'pasted-text').length;
 
     const customSkill = availableCustomSkills.find((skill) => skill.id === selectedSkillForRequest);
     const submittedContext =
@@ -2404,7 +2516,7 @@ export const AskLedgerPanel = ({
       recentExchanges: conversationRef.current?.recentExchanges,
       explicitContext: submittedContext,
       hasSelectedSkill: Boolean(selectedSkillForRequest),
-      attachmentCount: attachmentIds.length,
+      attachmentCount: attachmentIds.length + pastedTextCount,
       previousProductArea: conversationRef.current?.productArea,
       previousProductFeature: conversationRef.current?.productFeature,
       previousExecutionMode: conversationRef.current?.previousExecutionMode,
@@ -2575,7 +2687,21 @@ export const AskLedgerPanel = ({
             return id && name ? [[id, name] as const] : [];
           })
         );
-        const documents: Array<Record<string, unknown>> = [...(documentPayload.documents ?? [])]
+        const pastedTextDocuments: Array<Record<string, unknown>> = submittedAttachments
+          .filter((item): item is Extract<AskLedgerMessageAttachment, { kind: 'pasted-text' }> => item.kind === 'pasted-text')
+          .map((item) => ({
+            workspaceId,
+            resourceType: 'attachment',
+            resourceId: item.id,
+            title: item.title,
+            content: item.text,
+            sourceLabel: 'Pasted text',
+            metadata: {
+              pastedText: true,
+              characterCount: item.text.length,
+            },
+          }));
+        const documents: Array<Record<string, unknown>> = [...pastedTextDocuments, ...(documentPayload.documents ?? [])]
           .filter(
             (item, index, all) =>
               all.findIndex(
@@ -2701,6 +2827,7 @@ export const AskLedgerPanel = ({
     if (state.status === 'streaming' || state.status === 'submitting') {
       const currentResponse =
         state.status === 'streaming' ? state.response : { answer: '', sources: [] };
+      persistAgentRun('cancelled', liveActivityDurationMs, currentResponse.sources.length);
       const interruptedMessage: AskLedgerMessage = {
         id: newAskLedgerMessageId(),
         role: 'assistant',
@@ -3172,6 +3299,8 @@ export const AskLedgerPanel = ({
   };
 
   const executeAction = async (action: AskLedgerActionProposal) => {
+    const validationErrors = validateAskLedgerActionProposal(action, workspaceId);
+    if (validationErrors.length) throw new Error(validationErrors[0]);
     const payload = action.payload;
     const title = String(payload.title ?? '').trim();
     if (action.type === 'create_task' && !title) throw new Error('A task title is required.');
@@ -3185,30 +3314,19 @@ export const AskLedgerPanel = ({
     )
       throw new Error('This task update is no longer valid.');
     let created: Record<string, unknown> | null = null;
-    if (action.type === 'create_task') {
-      created = (await api.createTask({
-        title,
-        project_id: payload.project_id ? String(payload.project_id) : null,
-        status: String(payload.status ?? 'todo'),
-        due_date: payload.due_date ? String(payload.due_date) : null,
-        priority: payload.priority ? String(payload.priority) : undefined,
-      })) as Record<string, unknown>;
-    } else if (action.type === 'create_note') {
-      created = (await api.createNote(
-        title || 'Ask Ledger notes',
-        String(payload.content ?? '')
-      )) as Record<string, unknown>;
-    } else if (action.type === 'create_reminder') {
-      const remindAt = String(payload.remind_at ?? '').trim();
-      if (!remindAt) throw new Error('Choose a reminder date before creating it.');
-      created = (await api.createReminder({
-        title,
-        remind_at: remindAt,
-        project_id: payload.project_id ? String(payload.project_id) : null,
+    if (action.type === 'create_task' || action.type === 'create_note' || action.type === 'create_reminder') {
+      created = (await api.executeAskLedgerAction({
+        action_type: action.type,
+        idempotency_key: action.idempotencyKey,
+        confirmed: true,
+        payload,
       })) as Record<string, unknown>;
     } else if (action.type === 'update_task_status') {
-      created = (await api.updateTask(String(payload.task_id), {
-        status: String(payload.status),
+      created = (await api.executeAskLedgerAction({
+        action_type: action.type,
+        idempotency_key: action.idempotencyKey,
+        confirmed: true,
+        payload,
       })) as Record<string, unknown>;
     }
     const nestedId = (key: string) => {
@@ -3219,8 +3337,11 @@ export const AskLedgerPanel = ({
     };
     const id = String(
       created?.id ??
-        (nestedId('task') || nestedId('note') || nestedId('reminder') || payload.task_id || '')
+        (nestedId('task') || nestedId('note') || nestedId('reminder') || nestedId('resource') || payload.task_id || '')
     );
+    if (workspaceId) {
+      emitAskLedgerActionCompleted({ workspaceId, actionType: action.type, resourceId: id || null });
+    }
     return { id, title: String(payload.title ?? created?.title ?? 'Task') };
   };
 
@@ -3480,7 +3601,7 @@ export const AskLedgerPanel = ({
                               {attachmentDisplayName(attachment.attachment.name)}
                             </span>
                           </button>
-                        ) : (
+                        ) : attachment.kind === 'resource' ? (
                           <button
                             key={`${message.id}-resource-${index}`}
                             type="button"
@@ -3492,6 +3613,15 @@ export const AskLedgerPanel = ({
                               {attachment.resource.title}
                             </span>
                           </button>
+                        ) : (
+                          <span
+                            key={`${message.id}-pasted-text-${attachment.id}`}
+                            className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)]"
+                            title="Full pasted text was sent as Ask Ledger context."
+                          >
+                            <FileText size={12} className="shrink-0 text-[var(--ledger-accent)]" />
+                            <span className="min-w-0 flex-1 truncate">{attachment.title}</span>
+                          </span>
                         )
                       )}
                     </div>
@@ -3537,6 +3667,7 @@ export const AskLedgerPanel = ({
                       steps={message.activity.steps}
                       durationMs={message.activity.durationMs}
                       expanded={Boolean(expandedActivity[message.id])}
+                      compact={compact}
                       onToggle={() =>
                         setExpandedActivity((current) => ({
                           ...current,
@@ -3767,6 +3898,7 @@ export const AskLedgerPanel = ({
                 durationMs={liveActivityDurationMs}
                 active
                 expanded={activityExpanded}
+                compact={compact}
                 onToggle={() => setActivityExpanded((current) => !current)}
                 generationPhrase={
                   requestWatchdogStatus === 'slow'
@@ -3904,12 +4036,16 @@ export const AskLedgerPanel = ({
                 key={`${attachment.kind}-${
                   attachment.kind === 'file'
                     ? attachment.attachment.id
-                    : attachment.resource.resourceId
+                    : attachment.kind === 'resource'
+                    ? attachment.resource.resourceId
+                    : attachment.id
                 }`}
                 className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]"
               >
                 {attachment.kind === 'file' ? (
                   <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                ) : attachment.kind === 'pasted-text' ? (
+                  <FileText size={12} className="shrink-0 text-[var(--ledger-accent)]" />
                 ) : (
                   (() => {
                     const Icon = sourceIconMap[attachment.resource.type];
@@ -3919,7 +4055,9 @@ export const AskLedgerPanel = ({
                 <span className="min-w-0 flex-1 truncate">
                   {attachment.kind === 'file'
                     ? attachmentDisplayName(attachment.attachment.name)
-                    : attachment.resource.title}
+                    : attachment.kind === 'resource'
+                    ? attachment.resource.title
+                    : attachment.title}
                 </span>
                 <button
                   type="button"
@@ -3930,7 +4068,9 @@ export const AskLedgerPanel = ({
                   aria-label={`Remove ${
                     attachment.kind === 'file'
                       ? attachment.attachment.name
-                      : attachment.resource.title
+                      : attachment.kind === 'resource'
+                      ? attachment.resource.title
+                      : attachment.title
                   }`}
                   className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
                 >
@@ -3994,6 +4134,13 @@ export const AskLedgerPanel = ({
             if (!localAIReady) return;
             setQuestion(event.target.value);
             onQuestionChange?.(event.target.value);
+            if (state.status === 'idle') setState({ status: 'focused' });
+          }}
+          onPaste={(event) => {
+            const pastedText = event.clipboardData.getData('text/plain');
+            if (pastedText.length <= ASK_LEDGER_LONG_PASTE_THRESHOLD) return;
+            event.preventDefault();
+            setComposerAttachments((current) => [...current, createPastedTextAttachment(pastedText)]);
             if (state.status === 'idle') setState({ status: 'focused' });
           }}
           onFocus={() => {
@@ -5238,6 +5385,7 @@ export const AskLedgerPanel = ({
               durationMs={state.status === 'answer' ? activityDurationMs : liveActivityDurationMs}
               active={state.status !== 'answer'}
               expanded={activityExpanded}
+              compact={compact}
               onToggle={() => setActivityExpanded((current) => !current)}
               generationPhrase={generationPhrase}
             />

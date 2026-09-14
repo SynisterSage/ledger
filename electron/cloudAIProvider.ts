@@ -1,5 +1,6 @@
 import type { AIProvider, AIProviderKeyStore } from './aiProviderKeyStore';
 import type { LocalAIRequest, LocalAIStreamEvent } from './localAIService';
+import { normalizeResearchCitations } from '../src/shared/askLedger/research.ts';
 
 type StreamCallbacks = { onEvent: (event: LocalAIStreamEvent) => void };
 
@@ -22,10 +23,19 @@ export class CloudAIProvider {
     this.fetcher = fetcher;
   }
 
-  async stream(provider: AIProvider, request: LocalAIRequest, callbacks: StreamCallbacks, signal: AbortSignal, requestId: string) {
+  async stream(
+    provider: AIProvider,
+    request: LocalAIRequest,
+    callbacks: StreamCallbacks,
+    signal: AbortSignal,
+    requestId: string
+  ) {
     const key = this.keys.get(provider);
     if (!key) throw new Error(`No ${provider} API key is connected.`);
-    if (!this.keys.cloudDataConsent()) throw new Error('Cloud AI is not enabled. Allow relevant Ledger context to leave this device in Settings.');
+    if (!this.keys.cloudDataConsent())
+      throw new Error(
+        'Cloud AI is not enabled. Allow relevant Ledger context to leave this device in Settings.'
+      );
     const controller = new AbortController();
     const model = this.keys.selectedModel(provider).replace(/^models\//, '');
     const startedAt = Date.now();
@@ -35,17 +45,35 @@ export class CloudAIProvider {
     signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) abort();
     const timeoutMs = request.timeoutMs ?? 120_000;
-    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     try {
       const googleThinkingConfig = model.startsWith('gemini-2.5-flash')
         ? { thinkingBudget: 0 }
         : model.startsWith('gemini-3')
-          ? { thinkingLevel: 'low' }
-          : undefined;
-      const body = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek'
-        ? { model, stream: true, messages: [{ role: 'user', content: request.context }], max_completion_tokens: request.generationBudget ?? 512 }
-        : provider === 'anthropic'
-          ? { model, stream: true, max_tokens: request.generationBudget ?? 512, messages: [{ role: 'user', content: request.context }] }
+        ? { thinkingLevel: 'low' }
+        : undefined;
+      const body =
+        provider === 'openai' ||
+        provider === 'perplexity' ||
+        provider === 'kimi' ||
+        provider === 'deepseek'
+          ? {
+              model,
+              stream: true,
+              messages: [{ role: 'user', content: request.context }],
+              max_completion_tokens: request.generationBudget ?? 512,
+              ...(provider === 'perplexity' && request.researchMode ? { return_citations: true } : {}),
+            }
+          : provider === 'anthropic'
+          ? {
+              model,
+              stream: true,
+              max_tokens: request.generationBudget ?? 512,
+              messages: [{ role: 'user', content: request.context }],
+            }
           : {
               contents: [{ role: 'user', parts: [{ text: request.context }] }],
               generationConfig: {
@@ -55,51 +83,135 @@ export class CloudAIProvider {
             };
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (provider === 'google') headers.accept = 'application/json';
-      if (provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek') headers.Authorization = `Bearer ${key}`;
-      else if (provider === 'anthropic') { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; }
-      else headers['x-goog-api-key'] = key;
-      const endpoint = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : provider === 'google' ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` : provider === 'perplexity' ? 'https://api.perplexity.ai/chat/completions' : provider === 'kimi' ? 'https://api.moonshot.ai/v1/chat/completions' : 'https://api.deepseek.com/chat/completions';
-      const response = await this.fetcher(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+      if (
+        provider === 'openai' ||
+        provider === 'perplexity' ||
+        provider === 'kimi' ||
+        provider === 'deepseek'
+      )
+        headers.Authorization = `Bearer ${key}`;
+      else if (provider === 'anthropic') {
+        headers['x-api-key'] = key;
+        headers['anthropic-version'] = '2023-06-01';
+      } else headers['x-goog-api-key'] = key;
+      const endpoint =
+        provider === 'openai'
+          ? 'https://api.openai.com/v1/chat/completions'
+          : provider === 'anthropic'
+          ? 'https://api.anthropic.com/v1/messages'
+          : provider === 'google'
+          ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+              model
+            )}:generateContent`
+          : provider === 'perplexity'
+          ? 'https://api.perplexity.ai/chat/completions'
+          : provider === 'kimi'
+          ? 'https://api.moonshot.ai/v1/chat/completions'
+          : 'https://api.deepseek.com/chat/completions';
+      const response = await this.fetcher(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
       phase = 'reading response body';
       if (!response.ok || !response.body) {
         let detail = '';
         try {
-          const payload = await response.clone().json() as { error?: { message?: unknown } | string };
-          detail = typeof payload.error === 'string' ? payload.error : typeof payload.error?.message === 'string' ? payload.error.message : '';
-        } catch { /* Some providers return an empty/non-JSON error body. */ }
-        throw new Error(`The ${provider} provider returned HTTP ${response.status} for ${model}${detail ? `: ${detail}` : '.'}`);
+          const payload = (await response.clone().json()) as {
+            error?: { message?: unknown } | string;
+          };
+          detail =
+            typeof payload.error === 'string'
+              ? payload.error
+              : typeof payload.error?.message === 'string'
+              ? payload.error.message
+              : '';
+        } catch {
+          /* Some providers return an empty/non-JSON error body. */
+        }
+        throw new Error(
+          `The ${provider} provider returned HTTP ${response.status} for ${model}${
+            detail ? `: ${detail}` : '.'
+          }`
+        );
       }
       let visibleChars = 0;
       if (provider === 'google') {
-        const payload = await response.json() as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: unknown; thought?: boolean }> } }>; promptFeedback?: { blockReason?: string } };
+        const payload = (await response.json()) as {
+          candidates?: Array<{
+            finishReason?: string;
+            content?: { parts?: Array<{ text?: unknown; thought?: boolean }> };
+          }>;
+          promptFeedback?: { blockReason?: string };
+        };
         const text = (payload.candidates?.[0]?.content?.parts ?? [])
-          .map((part) => !part.thought && typeof part?.text === 'string' ? part.text : '')
+          .map((part) => (!part.thought && typeof part?.text === 'string' ? part.text : ''))
           .join('');
-        if (!text.trim()) throw new CloudAIError('malformed_response', `Google returned no answer for ${model} (${payload.promptFeedback?.blockReason ?? payload.candidates?.[0]?.finishReason ?? 'empty response'}).`);
-        if (text) { visibleChars += text.length; callbacks.onEvent({ type: 'delta', requestId, text }); }
-        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: Date.now() - startedAt, visibleContentChars: visibleChars, generationBudget: request.generationBudget, finishReason: payload.candidates?.[0]?.finishReason ?? null } });
+        if (!text.trim())
+          throw new CloudAIError(
+            'malformed_response',
+            `Google returned no answer for ${model} (${
+              payload.promptFeedback?.blockReason ??
+              payload.candidates?.[0]?.finishReason ??
+              'empty response'
+            }).`
+          );
+        if (text) {
+          visibleChars += text.length;
+          if (!request.suppressVisibleDeltas) callbacks.onEvent({ type: 'delta', requestId, text });
+        }
+        callbacks.onEvent({
+          type: 'done',
+          requestId,
+          text,
+          metrics: {
+            totalMs: Date.now() - startedAt,
+            visibleContentChars: visibleChars,
+            generationBudget: request.generationBudget,
+            finishReason: payload.candidates?.[0]?.finishReason ?? null,
+          },
+        });
         return;
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let finishReason: string | null = null;
+      let outputText = '';
+      let citations: Array<{ url: string; title?: string }> = [];
       const consume = (line: string) => {
         if (!line.startsWith('data:')) return;
         const value = line.slice(5).trim();
         if (!value || value === '[DONE]') return;
         try {
           const event = JSON.parse(value) as any;
+          if (request.researchMode && provider === 'perplexity' && event.citations) {
+            citations = normalizeResearchCitations(event.citations);
+          }
           finishReason = event.choices?.[0]?.finish_reason ?? event.stop_reason ?? finishReason;
-          const text = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek'
-            ? event.choices?.[0]?.delta?.content
-            : provider === 'anthropic'
+          const text =
+            provider === 'openai' ||
+            provider === 'perplexity' ||
+            provider === 'kimi' ||
+            provider === 'deepseek'
+              ? event.choices?.[0]?.delta?.content
+              : provider === 'anthropic'
               ? event.delta?.text
               : (event.candidates?.[0]?.content?.parts ?? [])
-                .map((part: { text?: unknown }) => typeof part?.text === 'string' ? part.text : '')
-                .join('');
-          if (typeof text === 'string' && text) { visibleChars += text.length; callbacks.onEvent({ type: 'delta', requestId, text }); }
-        } catch { /* Ignore non-JSON keepalive frames. */ }
+                  .map((part: { text?: unknown }) =>
+                    typeof part?.text === 'string' ? part.text : ''
+                  )
+                  .join('');
+          if (typeof text === 'string' && text) {
+            outputText += text;
+            visibleChars += text.length;
+            if (!request.suppressVisibleDeltas)
+              callbacks.onEvent({ type: 'delta', requestId, text });
+          }
+        } catch {
+          /* Ignore non-JSON keepalive frames. */
+        }
       };
       while (true) {
         const next = await reader.read();
@@ -110,11 +222,31 @@ export class CloudAIProvider {
         lines.forEach(consume);
       }
       if (buffer) consume(buffer);
-      if (!visibleChars) throw new CloudAIError('malformed_response', `${provider} returned no answer for ${model}${finishReason ? ` (${finishReason})` : ''}.`);
-      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: Date.now() - startedAt, visibleContentChars: visibleChars, generationBudget: request.generationBudget, finishReason } });
+      if (!visibleChars)
+        throw new CloudAIError(
+          'malformed_response',
+          `${provider} returned no answer for ${model}${finishReason ? ` (${finishReason})` : ''}.`
+        );
+      callbacks.onEvent({
+        type: 'done',
+        requestId,
+        text: outputText,
+        ...(citations.length ? { citations } : {}),
+        metrics: {
+          totalMs: Date.now() - startedAt,
+          visibleContentChars: visibleChars,
+          generationBudget: request.generationBudget,
+          finishReason,
+        },
+      });
     } catch (error) {
       if (timedOut && !signal.aborted) {
-        throw new CloudAIError('request_timeout', `${provider} (${model}) timed out after ${Math.round((Date.now() - startedAt) / 1000)} seconds while ${phase}.`);
+        throw new CloudAIError(
+          'request_timeout',
+          `${provider} (${model}) timed out after ${Math.round(
+            (Date.now() - startedAt) / 1000
+          )} seconds while ${phase}.`
+        );
       }
       throw error;
     } finally {

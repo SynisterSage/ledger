@@ -1,4 +1,5 @@
 import { buildAIContextFingerprint } from './aiContextEnvelope.ts';
+import type { AskLedgerAgentActivity } from '../shared/askLedger/activity.ts';
 
 export type OverviewFocusResourceType = 'task' | 'project' | 'event' | 'note';
 
@@ -33,7 +34,7 @@ export const buildOverviewFocusFingerprint = (snapshot: OverviewFocusSnapshot): 
     ],
   });
 };
-export type OverviewFocusResult = { insights: OverviewFocusInsight[] };
+export type OverviewFocusResult = { insights: OverviewFocusInsight[]; activity?: AskLedgerAgentActivity };
 
 export const getOverviewFocusPrimaryResource = (insight: OverviewFocusInsight, snapshot: OverviewFocusSnapshot | null) => {
   if (!snapshot) return null;

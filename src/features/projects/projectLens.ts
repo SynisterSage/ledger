@@ -1,6 +1,7 @@
 import type { AskLedgerContextItem } from '../../types/askLedgerContext.ts';
 import type { ProjectIntelligenceContext } from './projectIntelligenceContext.ts';
 import type { ProjectSignal } from './projectSignals.ts';
+import type { AskLedgerAgentActivity } from '../../shared/askLedger/activity.ts';
 
 export type ProjectLensResourceType = 'project' | 'task' | 'milestone' | 'note' | 'event' | 'reminder' | 'activity';
 export type ProjectResourceRef = { resourceType: ProjectLensResourceType; resourceId: string };
@@ -24,6 +25,7 @@ export type ProjectLensResult = {
   attention?: { text: string; sources: ProjectResourceRef[] };
   nextStep?: { text: string; sources: ProjectResourceRef[] };
   sources: ProjectResourceRef[];
+  activity?: AskLedgerAgentActivity;
 };
 export type ProjectLensTiming = {
   contextBuildMs?: number;

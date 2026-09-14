@@ -45,6 +45,7 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import { useViewportHeight } from '../../hooks/useViewportHeight';
 import {
   ModuleHeaderActionButton,
@@ -87,6 +88,7 @@ import {
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import { LedgerLensWheel } from '../Common/LedgerLensWheel';
+import { LedgerAgentStatus } from '../Common/LedgerAgentStatus';
 import { useToast } from '../Common/ToastProvider';
 import {
   deriveWorkspaceProjectSignals,
@@ -1284,6 +1286,16 @@ export const ProjectsWindow = ({
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleWorkspaceRefresh,
   });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAskLedgerActionCompleted((detail) => {
+      if (detail.workspaceId !== activeWorkspaceId) return;
+      if (detail.actionType === 'create_task' || detail.actionType === 'update_task_status') {
+        handleWorkspaceRefresh();
+      }
+    });
+    return unsubscribe;
+  }, [activeWorkspaceId, handleWorkspaceRefresh]);
 
   useEffect(() => {
     const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
@@ -7119,12 +7131,13 @@ export const ProjectsWindow = ({
           </p>
         )}
         {projectLensState === 'loading' ? (
-          <div className="mt-4 flex min-h-10 items-center gap-2" aria-label="Loading Lens">
-            <LedgerLensWheel size={22} state="loading" label="Loading Lens" />
-            <p className="text-[13px] leading-5 text-[var(--ledger-text-muted)]">
-              {lensLoadingText}
-            </p>
-          </div>
+          <LedgerAgentStatus
+            phase={projectLensLoadingStage < 2 ? 'reading' : 'thinking'}
+            label={lensLoadingText}
+            detail={`Project-scoped · ${selectedProject.name}`}
+            active
+            className="mt-4 max-w-md"
+          />
         ) : projectLensState === 'unavailable' ? (
           projectLensUnavailableReason === 'model' ? (
             <LocalAIUnavailableState detail="Download a local model to use project Lens." />
@@ -7142,6 +7155,11 @@ export const ProjectsWindow = ({
           )
         ) : projectLensResult ? (
           <div className="mt-4 max-w-[820px] space-y-2">
+            {projectLensResult.activity && (
+              <p className="text-[10px] text-[var(--ledger-text-muted)]">
+                Checked {projectLensResult.activity.steps.find((step) => step.type === 'retrieving')?.sourceCount ?? 0} project records · {Math.max(0, Math.round(projectLensResult.activity.durationMs / 1000))}s
+              </p>
+            )}
             <p className="text-[15px] leading-6 text-[var(--ledger-text-secondary)]">
               {projectLensResult.summary}
             </p>
@@ -7208,14 +7226,14 @@ export const ProjectsWindow = ({
           </button>
         </div>
         {projectLensAction && projectLensActionState === 'loading' && (
-          <div
-            className="ml-4 mt-3 flex min-h-8 items-center gap-2 border-l border-[color:var(--ledger-border-subtle)] pl-4"
-            aria-label="Loading Lens action"
-          >
-            <LedgerLensWheel size={18} state="loading" label="Loading Lens action" />
-            <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">
-              {lensLoadingText}
-            </p>
+          <div className="ml-4 mt-3 border-l border-[color:var(--ledger-border-subtle)] pl-4" aria-label="Loading Lens action">
+            <LedgerAgentStatus
+              phase={projectLensAction === 'find_context' ? 'searching' : 'preparing'}
+              label={lensLoadingText}
+              detail="Preparing a project-bounded result."
+              active
+              compact
+            />
           </div>
         )}
         {projectLensAction && projectLensActionState === 'unavailable' && (
@@ -7333,6 +7351,11 @@ export const ProjectsWindow = ({
         )}
         {projectLensReview.length > 0 && (
           <div className="ml-4 mt-3 space-y-2 border-l border-[color:var(--ledger-border-subtle)] pl-4">
+            <LedgerAgentStatus
+              phase="ready"
+              label="Action plan ready"
+              detail="Review the proposed changes before Ledger creates anything."
+            />
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">
                 Suggested actions

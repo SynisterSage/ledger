@@ -58,6 +58,7 @@ import {
   getPaneWidthForViewport,
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
+import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
 import { usePins } from '../../context/PinsContext';
@@ -6969,6 +6970,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     },
     [activeWorkspaceId, api, loadNotes, setError, setNoteTree, setNotes, syncDraftFromNote, user]
   );
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAskLedgerActionCompleted((detail) => {
+      if (detail.workspaceId !== activeWorkspaceId || detail.actionType !== 'create_note') return;
+      void loadNotes({ silent: true });
+    });
+    return unsubscribe;
+  }, [activeWorkspaceId, loadNotes]);
 
   const dismissRemoteNoteUpdateToast = useCallback(() => {
     if (!remoteNoteUpdateToastIdRef.current) return;

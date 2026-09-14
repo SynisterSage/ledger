@@ -49,7 +49,15 @@ export const entityMatch = (entityQuery: string | undefined, item: Pick<AskLedge
   if (!query) return false;
   const queryTokens = unique(meaningfulTokens(query));
   const fields = [item.title, item.projectName, item.containerName].map(normalizeHybridText).filter(Boolean);
-  const tokenMatch = fields.some((field) => field === query || (queryTokens.length > 0 && queryTokens.every((token) => field.split(' ').includes(token))));
+  const tokenMatch = fields.some((field) => {
+    const fieldTokens = field.split(' ').filter(Boolean);
+    return field === query
+      || (queryTokens.length > 0 && queryTokens.every((token) => fieldTokens.includes(token)))
+      // Entity names are often embedded in a natural-language request, such
+      // as “my first task in the Ind Study project”. Treat the named field as
+      // the entity when all of its meaningful words occur in the query.
+      || (fieldTokens.length > 1 && fieldTokens.every((token) => queryTokens.includes(token)));
+  });
   if (tokenMatch) return true;
   // Local attachment filenames often collapse words (for example
   // HistoryOfPhotography). Use compact comparison only for an explicit

@@ -132,6 +132,7 @@ import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
 import { LocalAIUnavailableState } from './components/Common/LocalAIUnavailableState';
 import { LedgerLensWheel } from './components/Common/LedgerLensWheel';
+import { LedgerAgentStatus } from './components/Common/LedgerAgentStatus';
 import { loadLensPreferences, subscribeToLensPreferences } from './config/lensPreferences';
 import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
@@ -2210,6 +2211,7 @@ export function DashboardContent({
             insights: Array.isArray(result?.insights)
               ? (result.insights as OverviewFocusResult['insights'])
               : [],
+            activity: (result as OverviewFocusResult | undefined)?.activity,
           };
         });
         void lensGeneration.then((result) => {
@@ -5264,6 +5266,27 @@ export function DashboardContent({
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
+  const formatOverviewDate = (value?: string | null) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? value
+      : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+    const target = new Date(`${dateKey}T00:00:00`);
+    const daysFromToday = Math.round((target.getTime() - new Date(`${todayKey}T00:00:00`).getTime()) / 86_400_000);
+    const isThisWeek = target >= startOfWeek && target < new Date(startOfWeek.getTime() + 7 * 86_400_000);
+    if (isThisWeek) {
+      if (daysFromToday === 0) return 'Today';
+      if (daysFromToday === 1) return 'Tomorrow';
+      return target.toLocaleDateString([], { weekday: 'short' });
+    }
+    return formatShortDate(value);
+  };
+
   const formatTime = (value?: string | null) => {
     if (!value) return null;
     const date = new Date(value);
@@ -5399,12 +5422,12 @@ export function DashboardContent({
     const workspaceTask = workspaceTaskById.get(task.id) ?? null;
     const resolvedTask = workspaceTask ? { ...task, ...workspaceTask } : task;
     const isReminder = isOverviewReminderTask(resolvedTask);
-    const reminderDateLabel = isReminder ? formatShortDate(resolvedTask.remind_at) : null;
+    const reminderDateLabel = isReminder ? formatOverviewDate(resolvedTask.remind_at) : null;
     const reminderTimeLabel = isReminder ? formatTime(resolvedTask.remind_at) : null;
     const reminderScheduleLabel = [reminderDateLabel, reminderTimeLabel]
       .filter(Boolean)
       .join(' · ');
-    const dueLabel = formatShortDate(resolvedTask.due_date);
+    const dueLabel = formatOverviewDate(resolvedTask.due_date);
     const timeLabel = resolvedTask.due_time || reminderTimeLabel;
     const teamId = resolvedTask.assigned_to_team_id ?? resolvedTask.assigned_team_id ?? null;
     const assigneeUserId = resolvedTask.assigned_to_user_id ?? resolvedTask.assigned_to ?? null;
@@ -5570,7 +5593,7 @@ export function DashboardContent({
   };
 
   const projectRows = attentionProjects.map<OverviewRow>((project) => {
-    const dueLabel = formatShortDate(project.end_date);
+    const dueLabel = formatOverviewDate(project.end_date);
     const progress = Math.max(0, Math.min(100, Number(project.completeness ?? 0)));
     const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
     const ownerTeamName = getWorkspaceTeamLabel(project.owner_team_id ?? null);
@@ -5698,7 +5721,7 @@ export function DashboardContent({
     title: note.title || 'Untitled note',
     meta: [
       activeWorkspace?.name || 'Workspace',
-      `${formatShortDate(note.updated_at) ?? 'Recently'}`,
+      `${formatOverviewDate(note.updated_at) ?? 'Recently'}`,
     ]
       .filter(Boolean)
       .join(' · '),
@@ -5707,7 +5730,7 @@ export function DashboardContent({
       ? `Linked to ${noteProjectNamesById.get(note.id)?.join(', ')}`
       : undefined,
     contextIcon: noteProjectNamesById.get(note.id)?.length ? <Link2 size={10} /> : undefined,
-    dateLabel: formatShortDate(note.updated_at) ?? undefined,
+    dateLabel: formatOverviewDate(note.updated_at) ?? undefined,
     group: 'Recent notes',
     icon: <StickyNote size={13} />,
     linkedContext: (noteProjectNamesById.get(note.id) ?? []).map(
@@ -5749,7 +5772,7 @@ export function DashboardContent({
     const isToday =
       start.toDateString() === now.toDateString() ||
       (start.getTime() <= now.getTime() && new Date(event.end_at).getTime() > now.getTime());
-    const dayLabel = isToday ? 'Today' : formatShortDate(event.start_at);
+    const dayLabel = isToday ? 'Today' : formatOverviewDate(event.start_at);
     const timeLabel = formatTime(event.start_at);
     const eventTeamId = event.assigned_to_team_id ?? event.assigned_team_id ?? null;
     const eventUserId = event.assigned_to_user_id ?? null;
@@ -5884,12 +5907,12 @@ export function DashboardContent({
       meta: [
         task.eventTitle || 'Meeting follow-up',
         'Action',
-        formatShortDate(task.updated_at) ?? 'Recent',
+        formatOverviewDate(task.updated_at) ?? 'Recent',
       ]
         .filter(Boolean)
         .join(' · '),
       chips: ['Follow-up'],
-      dateLabel: formatShortDate(task.updated_at) ?? undefined,
+      dateLabel: formatOverviewDate(task.updated_at) ?? undefined,
       group: 'Needs attention',
       icon: <CircleAlert size={13} />,
       linkedContext: task.eventTitle ? [['Event', task.eventTitle]] : undefined,
@@ -8149,12 +8172,14 @@ export function DashboardContent({
                           </p>
                         )}
                         {overviewFocusStatus === 'loading' && (
-                          <p
-                            className="mt-1 text-[11px] leading-4 text-[var(--ledger-text-muted)]"
-                            aria-live="polite"
-                          >
-                            {overviewFocusLoadingLabel}
-                          </p>
+                          <LedgerAgentStatus
+                            phase="reading"
+                            label={overviewFocusLoadingLabel}
+                            detail="Checking workspace focus signals."
+                            active
+                            compact
+                            className="mt-2"
+                          />
                         )}
                         {overviewFocusStatus === 'loading' &&
                         !overviewFocusResult?.insights.length ? (
@@ -8170,6 +8195,11 @@ export function DashboardContent({
                           </p>
                         ) : overviewFocusResult?.insights.length ? (
                           <div className="mt-2 space-y-2">
+                            {overviewFocusResult.activity && (
+                              <p className="text-[10px] text-[var(--ledger-text-muted)]">
+                                Checked {overviewFocusResult.activity.steps.find((step) => step.type === 'retrieving')?.sourceCount ?? 0} workspace records · {Math.max(0, Math.round(overviewFocusResult.activity.durationMs / 1000))}s
+                              </p>
+                            )}
                             {overviewFocusResult.insights.slice(0, 2).map((insight) => {
                               const primaryResource = getOverviewFocusPrimaryResource(
                                 insight,

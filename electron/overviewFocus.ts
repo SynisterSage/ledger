@@ -1,5 +1,6 @@
 import type { LocalAIService, LocalAIStreamEvent } from './localAIService.ts';
 import type { OverviewFocusInsight, OverviewFocusResourceType, OverviewFocusResult, OverviewFocusSnapshot } from '../src/types/overviewFocus.ts';
+import type { AskLedgerAgentActivity } from '../src/shared/askLedger/activity.ts';
 export { buildOverviewFocusSnapshot } from '../src/types/overviewFocus.ts';
 export type { OverviewFocusInsight, OverviewFocusResourceType, OverviewFocusResult, OverviewFocusSnapshot } from '../src/types/overviewFocus.ts';
 
@@ -198,6 +199,7 @@ export class OverviewFocusService {
     if (deriveOverviewFocusSignals(snapshot).length === 0) return { insights: [] };
     const previousResult = options.previousResult ? validateOverviewFocusResult(options.previousResult, snapshot) : undefined;
     const startedAt = Date.now();
+    const activity = (fallback = false): AskLedgerAgentActivity => ({ surface: 'overview_lens', durationMs: Date.now() - startedAt, steps: [{ type: 'retrieving', sourceCount: snapshot.tasks.length + snapshot.projects.length + snapshot.events.length + snapshot.recentNotes.length }, { type: 'generating' }, ...(fallback ? [{ type: 'fallback' as const }] : [])] });
     const prompt = buildOverviewFocusPrompt(snapshot, new Date(), previousResult);
     for (const tier of ['fast', 'balanced'] as const) {
       if (!this.localAI.switchGenerationTier) continue;
@@ -228,7 +230,7 @@ export class OverviewFocusService {
               const fallback = event.type === 'done' && validation.result.insights.length === 0
                 ? buildOverviewFocusFallbackResult(snapshot)
                 : { insights: [] };
-              const result = { insights: [...(validation.result.insights.length ? validation.result.insights : fallback.insights), ...retainedPrior].slice(0, 3) };
+              const result = { insights: [...(validation.result.insights.length ? validation.result.insights : fallback.insights), ...retainedPrior].slice(0, 3), activity: activity(fallback.insights.length > 0) };
               if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.info('[overview-focus] generation complete', { modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, snapshot: { tasks: snapshot.tasks.length, projects: snapshot.projects.length, events: snapshot.events.length, notes: snapshot.recentNotes.length }, promptChars: prompt.length, answerChars: answer.length, durationMs: Date.now() - startedAt, modelDurationMs: event.type === 'done' ? event.metrics?.totalMs : undefined, rawInsightCount: validation.rawInsightCount, acceptedInsightCount: result.insights.length, fallbackUsed: fallback.insights.length > 0, retainedPriorCount: retainedPrior.length, rejectionReasons: validation.rejectionReasons });
               finish(result);
             }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { AskLedgerContextItem } from '../types/askLedgerContext.ts';
-import { ASK_LEDGER_CHUNKER_VERSION, ASK_LEDGER_NORMALIZATION_VERSION, ASK_LEDGER_DESKTOP_BUDGET, budgetForAskLedgerMode, chunkAskLedgerResource, lexicalMatch, scoreHybridCandidate } from './askLedger/index.ts';
+import { ASK_LEDGER_CHUNKER_VERSION, ASK_LEDGER_NORMALIZATION_VERSION, ASK_LEDGER_DESKTOP_BUDGET, budgetForAskLedgerMode, chunkAskLedgerResource, entityMatch, lexicalMatch, scoreHybridCandidate } from './askLedger/index.ts';
 
 const resource = (overrides: Partial<AskLedgerContextItem> = {}): AskLedgerContextItem => ({ workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-a', title: 'Ask Ledger decision', content: '<p>Keep retrieval grounded in Ledger evidence.</p>', ...overrides });
 
@@ -20,6 +20,10 @@ test('shared hybrid ranking preserves lexical and structured signals', () => {
   assert.equal(match.phraseMatch, true);
   assert.ok(score.score > 1);
   assert.deepEqual(score.reasons.slice(-2), ['exact-title-match', 'structured-match']);
+});
+
+test('entity matching finds a named project inside natural-language context', () => {
+  assert.equal(entityMatch('first to do in the Ind Study', { title: 'Ind Study', projectName: 'Ind Study', containerName: undefined, metadata: {} }), true);
 });
 
 test('desktop budget is configuration rather than ranking policy', () => {

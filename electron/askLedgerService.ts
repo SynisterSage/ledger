@@ -35,6 +35,8 @@ import { fastPathSource, resolveAskLedgerFastPath } from './askLedgerFastPath.ts
 import { diagnoseAskLedgerStructuredOutput, structuredValueLinesFor } from './askLedgerStructuredValues.ts';
 import { sanitizeAskLedgerOutput, type AskLedgerOutputMapping } from '../src/types/askLedgerOutputGuard.ts';
 import { formatAskLedgerProductHelp, formatAskLedgerProductOverview, productKnowledgeNodeIds, selectAskLedgerProductKnowledge, type AskLedgerProductKnowledgeSelection } from '../src/types/askLedgerProductKnowledge.ts';
+import { executeDeterministicAskLedgerTool, resolveDeterministicAskLedgerToolCall, type AskLedgerToolExecutionResult } from './askLedgerToolExecutor.ts';
+import { isExternalResearchQuestion } from '../src/shared/askLedger/research.ts';
 
 const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
 const askLedgerDiagnostic = (...args: unknown[]) => {
@@ -757,6 +759,20 @@ export class AskLedgerService {
       const enrichedEvent = event.type === 'done'
         ? { ...event, metrics: { ...event.metrics, totalMs: Date.now() - startedAt, performance: performanceSnapshot ?? event.metrics?.performance } }
         : event;
+      if (enrichedEvent.type === 'done' && enrichedEvent.citations?.length) {
+        callbacks.onEvent({
+          type: 'sources',
+          requestId,
+          sources: enrichedEvent.citations.map((citation) => ({
+            resourceType: 'external' as const,
+            resourceId: citation.url,
+            title: citation.title ?? citation.url,
+            route: citation.url,
+            sourceLabel: 'Web research',
+            integrationProvider: 'perplexity',
+          })),
+        });
+      }
       if (enrichedEvent.type === 'done' && activeGenerationDepth) {
         askLedgerDiagnostic('[local-ai] Ask Ledger generation complete', {
           messageId: request.messageId,
@@ -1015,7 +1031,9 @@ export class AskLedgerService {
       }
       performanceTrace.mark('indexingCompleted');
       indexingMs = semanticIndexRequired ? Date.now() - indexingStartedAt : 0;
-      emit({ type: 'activity', requestId, activity: { type: 'searching' } });
+      const externalResearchRequested = isExternalResearchQuestion(request.question);
+      const webResearchAvailable = this.localAI.getSelectedAIProvider?.() === 'perplexity';
+      emit({ type: 'activity', requestId, activity: { type: 'searching', toolName: externalResearchRequested ? webResearchAvailable ? 'web_research' : 'web_research_unavailable' : undefined } });
       const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
       const projectAnchorInstruction = explicitContext?.resourceType === 'project'
         ? `Selected project anchor: "${explicitContext.title}" (${explicitContext.projectId ?? explicitContext.resourceId}). Use this project and records explicitly linked to its project ID as the authoritative scope. Do not use similarly titled or unrelated workspace records as project work.`
@@ -1061,8 +1079,14 @@ export class AskLedgerService {
       // Attachment-routed turns are already scoped to the user-selected file.
       // Keep them out of workspace research objectives even when the wording
       // is conversational, e.g. "look through this".
+      const pastedTextAttachment = request.documents.find(
+        (item) => item.resourceType === 'attachment' && item.metadata?.pastedText === true
+      );
+      const pastedTextItemTokens = pastedTextAttachment
+        ? Math.min(4_200, Math.max(1_800, Math.ceil(pastedTextAttachment.content.length / 4) + 80))
+        : undefined;
       const attachmentAnchoredRequest = Boolean(
-        request.attachmentIds?.length || explicitContext?.resourceType === 'attachment' || route.reason === 'attachment'
+        request.attachmentIds?.length || pastedTextAttachment || explicitContext?.resourceType === 'attachment' || route.reason === 'attachment'
       );
       const attachmentFocusKeys = attachmentAnchoredRequest
         ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
@@ -1189,7 +1213,7 @@ export class AskLedgerService {
       const evidenceBudget = {
         maxResources: scheduleOverviewItem ? 1 : attachmentAnchoredRequest ? 12 : intent.kind === 'time_window' ? 32 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
         maxTokens: scheduleOverviewItem ? 2600 : attachmentAnchoredRequest ? 4800 : intent.kind === 'time_window' ? 4200 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: scheduleOverviewItem ? 2400 : attachmentAnchoredRequest ? 420 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
+        maxItemTokens: scheduleOverviewItem ? 2400 : pastedTextItemTokens ?? (attachmentAnchoredRequest ? 420 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520),
         maxAttachmentChunksPerFile: attachmentAnchoredRequest ? 12 : undefined,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
@@ -1214,7 +1238,7 @@ export class AskLedgerService {
         question: request.question,
         skillReasoningPolicy: skill?.reasoningPolicy,
       });
-      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: scheduleOverviewItem ? 3200 : customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: scheduleOverviewItem ? 2400 : customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: pastedTextAttachment ? 4800 : scheduleOverviewItem ? 3200 : customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: pastedTextItemTokens ?? (scheduleOverviewItem ? 2400 : customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700), sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
@@ -1235,6 +1259,27 @@ export class AskLedgerService {
           relationships: item.relationships,
           attachmentSource: item.attachmentSource,
         }));
+      let computedResult: AskLedgerToolExecutionResult | undefined;
+      const deterministicToolCall = resolveDeterministicAskLedgerToolCall(request.question, request.explicitContext);
+      if (deterministicToolCall) {
+        try {
+          computedResult = executeDeterministicAskLedgerTool(deterministicToolCall, {
+            workspaceId: request.workspaceId,
+            items: normalized.items,
+          });
+          performanceTrace.set('computedTool', computedResult.toolName);
+          performanceTrace.set('computedSourceCount', computedResult.sourceRefs.length);
+          const computedSources = computedResult.sourceRefs
+            .map((source) => sourceByKey.get(`${source.resourceType}:${source.resourceId}`))
+            .filter((source): source is AskLedgerSource => Boolean(source));
+          emit({ type: 'activity', requestId, activity: { type: 'computing', toolName: computedResult.toolName, count: computedSources.length, sources: computedSources } });
+        } catch (error) {
+          askLedgerDiagnostic('[local-ai] deterministic computation skipped', {
+            tool: deterministicToolCall.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       const sources = [...sourceByKey.values()];
       const indexedResources = typeof (this.retrieval as LedgerRetrievalService & { indexedResources?: unknown }).indexedResources === 'function'
         ? this.retrieval.indexedResources(request.workspaceId, request.conversation?.id)
@@ -1312,17 +1357,7 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
-      const hasAttachmentContext = attachmentAnchoredRequest;
-      if (!skill && route.retrievalRequired && request.documents.length === 0 && !hasAttachmentContext) {
-        emit({
-          type: 'delta',
-          requestId,
-          text: 'I checked this workspace, but there are no notes, projects, tasks, events, reminders, or captures available to summarize yet.',
-        });
-        emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs, workspaceEvidence: 0, workspaceSources: 0 }) } });
-        return;
-      }
-      if (!skill && isTeamWorkloadQuestion(request.question)) {
+      if (!skill && !computedResult && isTeamWorkloadQuestion(request.question)) {
         emit({ type: 'delta', requestId, text: formatTeamWorkloadAnswer(normalized.items, request.timeZone) });
         emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: normalized.items.length, workspaceSources: sources.length }) } });
         return;
@@ -1330,7 +1365,7 @@ export class AskLedgerService {
       const directMilestoneLookup = !skill
         && intent.kind === 'milestones'
         && normalized.items.some((item) => item.resourceType === 'milestone');
-      if (!skill && (structuredAnswerFor.has(intent.kind) && !retrieval.primaryItems?.length || directMilestoneLookup)) {
+      if (!computedResult && !skill && (structuredAnswerFor.has(intent.kind) && !retrieval.primaryItems?.length || directMilestoneLookup)) {
         const structuredItems = directMilestoneLookup
           ? normalized.items.filter((item) => item.resourceType === 'milestone')
           : normalized.items;
@@ -1509,7 +1544,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, dateWindowInstruction, weeklyWorkInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: intent.kind === 'weekly_overview' && !scheduleOverviewItem ? 'weekly_plan' : skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, dateWindowInstruction, weeklyWorkInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: intent.kind === 'weekly_overview' && !scheduleOverviewItem ? 'weekly_plan' : skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, computedContext: computedResult ? { toolName: computedResult.toolName, data: computedResult.data } : undefined }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace, readToolLoop: !skill && (retrieval.mode === 'research' || Boolean(request.explicitContext?.aiSurface)) ? { surface: ['ask_ledger', 'footer_agent', 'projects_ask', 'project_lens', 'overview_lens', 'notes_ask', 'files_ask'].includes(request.explicitContext?.aiSurface ?? '') ? request.explicitContext?.aiSurface as import('../src/shared/askLedger/tools.ts').AskLedgerToolSurface : 'ask_ledger', context: { workspaceId: request.workspaceId, items: normalized.items }, maxToolCalls: 1 } : undefined },
         generationCallbacks,
         requestId,
       );

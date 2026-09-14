@@ -217,6 +217,21 @@ export const useApi = () => {
         request(`/api/workspaces/${workspaceId}/invitations`),
       getWorkspaceAuditLog: (workspaceId: string, options?: { limit?: number; offset?: number }) =>
         request(`/api/workspaces/${workspaceId}/audit-log?limit=${options?.limit ?? 10}&offset=${options?.offset ?? 0}`),
+      recordAgentRun: (workspaceId: string, payload: { surface: string; status?: 'completed' | 'failed' | 'cancelled'; tool_names?: string[]; source_count?: number; duration_ms?: number }) =>
+        request(`/api/workspaces/${workspaceId}/agent-runs`, { method: 'POST', body: JSON.stringify(payload) }),
+      getAgentRuns: (workspaceId: string, limit = 20) =>
+        request(`/api/workspaces/${workspaceId}/agent-runs?limit=${Math.min(Math.max(limit, 1), 50)}`),
+      executeAskLedgerAction: (payload: {
+        action_type: 'create_task' | 'create_note' | 'create_reminder' | 'update_task_status';
+        idempotency_key: string;
+        confirmed: true;
+        payload: Record<string, unknown>;
+      }) =>
+        request('/api/agent/actions', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': payload.idempotency_key },
+          body: JSON.stringify(payload),
+        }),
       createWorkspace: (payload: {
         name: string;
         description?: string | null;

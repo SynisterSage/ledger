@@ -92,6 +92,11 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   if (/\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(normalized) && /\b(meeting|meetings|call|calls)\b/.test(normalized)) {
     return { kind: 'meeting_prep' };
   }
+  const asksForCurrentWeekOverview = /\bmy week\b/.test(normalized)
+    && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
+  if (asksForCurrentWeekOverview) {
+    return { kind: 'weekly_overview' };
+  }
   if (/\b(review|assess|check|audit)\b/.test(normalized) && /\bprojects?\b/.test(normalized)
     || (/\b(projects?|portfolio)\b/.test(normalized) && /\b(moving|blocked|stuck|needs? attention|at risk|health)\b/.test(normalized))) {
     return { kind: 'project_review' };
@@ -114,11 +119,6 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   if (asksForScheduleOverview) {
     // This is a whole schedule question, not a current-week lookup. Leave
     // the window open so Ledger can derive a pattern from calendar records.
-    return { kind: 'weekly_overview' };
-  }
-  const asksForCurrentWeekOverview = /\bmy week\b/.test(normalized)
-    && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
-  if (asksForCurrentWeekOverview) {
     return { kind: 'weekly_overview' };
   }
   const monthWindow = namedMonthWindow(normalized, now);

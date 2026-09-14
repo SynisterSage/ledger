@@ -1,19 +1,11 @@
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import type { AskLedgerActionType } from '../../types/askLedgerSkills';
+import { createAskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
 
 export type { AskLedgerActionType } from '../../types/askLedgerSkills';
-export type AskLedgerActionStatus = 'pending' | 'created' | 'failed' | 'rejected';
-
-export type AskLedgerActionProposal = {
-  id: string;
-  type: AskLedgerActionType;
-  payload: Record<string, unknown>;
-  sourceMessageId: string;
-  status?: AskLedgerActionStatus;
-  resultResourceId?: string;
-  resultTitle?: string;
-  error?: string;
-};
+export type { AskLedgerActionProposal, AskLedgerActionStatus } from '../../shared/askLedger/actions.ts';
+export { normalizeAskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
+import type { AskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
 
 const cleanTitle = (value: string) => value.replace(/^[-*•\d.)\s]+/, '').replace(/[.!?]+$/, '').trim().slice(0, 240);
 
@@ -51,13 +43,8 @@ export const proposeAskLedgerActions = ({
   const normalized = question.trim().toLowerCase();
   const contextProjectId = initialContext?.resourceType === 'project' ? initialContext.resourceId : undefined;
   const contextTaskId = initialContext?.resourceType === 'task' ? initialContext.resourceId : undefined;
-  const make = (type: AskLedgerActionType, payload: Record<string, unknown>, index = 0): AskLedgerActionProposal => ({
-    id: `${sourceMessageId}-action-${index}`,
-    type,
-    payload,
-    sourceMessageId,
-    status: 'pending',
-  });
+  const make = (type: AskLedgerActionType, payload: Record<string, unknown>, index = 0): AskLedgerActionProposal =>
+    createAskLedgerActionProposal({ type, payload, sourceMessageId, index, initialContext });
 
   if (/\b(mark|set|move)\b/.test(normalized) && /\b(done|complete|completed|in progress|todo|to-do)\b/.test(normalized) && contextTaskId) {
     const status = /in progress/.test(normalized) ? 'in_progress' : /todo|to-do/.test(normalized) ? 'todo' : 'completed';

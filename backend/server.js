@@ -6539,6 +6539,113 @@ app.get('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('rea
   }
 });
 
+app.post('/api/workspaces/:workspaceId/agent-runs', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const allowedSurfaces = new Set(['ask_ledger', 'footer_agent', 'projects_ask', 'project_lens', 'overview_lens', 'notes_ask', 'files_ask']);
+    const surface = String(req.body?.surface || 'ask_ledger');
+    const status = String(req.body?.status || 'completed');
+    if (!allowedSurfaces.has(surface) || !['completed', 'failed', 'cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid agent run metadata.' });
+    const toolNames = Array.isArray(req.body?.tool_names) ? req.body.tool_names.map((name) => String(name).trim()).filter((name) => /^[a-z][a-z0-9_]{0,80}$/.test(name)).slice(0, 8) : [];
+    const sourceCount = Math.min(Math.max(Number.parseInt(String(req.body?.source_count ?? '0'), 10) || 0, 0), 500);
+    const durationMs = Math.min(Math.max(Number.parseInt(String(req.body?.duration_ms ?? '0'), 10) || 0, 0), 86_400_000);
+    const result = await supabase.from('workspace_audit_logs').insert({
+      workspace_id: workspaceId,
+      actor_user_id: req.authUser.id,
+      action: `agent_run_${status}`,
+      target_type: 'agent_run',
+      target_id: null,
+      metadata: { surface, tool_names: toolNames, source_count: sourceCount, duration_ms: durationMs },
+    }).select('id, created_at').single();
+    if (result.error) throw result.error;
+    return res.status(201).json({ id: result.data.id, created_at: result.data.created_at });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/workspaces/:workspaceId/agent-runs', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 50);
+    const result = await supabase.from('workspace_audit_logs').select('id, action, metadata, created_at').eq('workspace_id', workspaceId).eq('target_type', 'agent_run').like('action', 'agent_run_%').order('created_at', { ascending: false }).limit(limit);
+    if (result.error) throw result.error;
+    return res.json({ runs: result.data ?? [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/agent/actions', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    if (req.body?.confirmed !== true) return res.status(400).json({ error: 'Confirm this Ledger action first.' });
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const actionType = String(req.body?.action_type ?? '').trim();
+    const allowed = new Set(['create_task', 'create_note', 'create_reminder', 'update_task_status']);
+    if (!allowed.has(actionType)) return res.status(400).json({ error: 'Unsupported agent action.' });
+    const idempotencyKey = String(req.headers['idempotency-key'] ?? req.body?.idempotency_key ?? '').trim();
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 160) return res.status(400).json({ error: 'A valid idempotency key is required.' });
+    const payload = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
+    const title = String(payload.title ?? '').trim();
+    if (!title) return res.status(400).json({ error: 'A title is required.' });
+    const linkedProjectId = payload.project_id ? String(payload.project_id) : null;
+    if (linkedProjectId && !(await ensureWorkspaceResource('projects', linkedProjectId, workspaceId))) return res.status(404).json({ error: 'Project not found.' });
+    const requestedRemindAt = actionType === 'create_reminder' ? parseReminderTimestamp(payload.remind_at, 'remind_at') : null;
+    if (actionType === 'update_task_status') {
+      const taskId = String(payload.task_id ?? '').trim();
+      const status = String(payload.status ?? '').trim();
+      if (!taskId || !['todo', 'in_progress', 'completed'].includes(status)) return res.status(400).json({ error: 'This task update is no longer valid.' });
+      if (!(await ensureWorkspaceResource('tasks', taskId, workspaceId))) return res.status(404).json({ error: 'Task not found.' });
+    }
+    const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ actionType, payload })).digest('hex');
+    const reservationPayload = { workspace_id: workspaceId, actor_user_id: req.authUser.id, action_type: actionType, idempotency_key: idempotencyKey, request_fingerprint: fingerprint };
+    const reservation = await supabase.from('agent_action_idempotency').insert(reservationPayload).select('id').maybeSingle();
+    if (reservation.error?.code === '23505') {
+      const existing = await supabase.from('agent_action_idempotency').select('request_fingerprint,status,result_json').match({ workspace_id: workspaceId, actor_user_id: req.authUser.id, action_type: actionType, idempotency_key: idempotencyKey }).maybeSingle();
+      if (existing.error) throw existing.error;
+      if (!existing.data || existing.data.request_fingerprint !== fingerprint) return res.status(409).json({ error: 'This idempotency key was already used for a different action.' });
+      if (existing.data.status === 'completed' && existing.data.result_json) return res.json({ ...existing.data.result_json, replayed: true });
+      return res.status(409).json({ error: 'This action is already in progress. Refresh before retrying.' });
+    }
+    if (reservation.error) throw reservation.error;
+    const reservationId = reservation.data.id;
+    try {
+      let result;
+      if (actionType === 'update_task_status') {
+        const taskId = String(payload.task_id);
+        const status = String(payload.status);
+        const updated = await supabase.from('tasks').update({ status, completed_at: status === 'completed' ? new Date().toISOString() : null, updated_by: req.authUser.id }).eq('workspace_id', workspaceId).eq('id', taskId).select('id,title,status').single();
+        if (updated.error) throw updated.error;
+        result = { resourceType: 'task', resource: updated.data };
+      } else if (actionType === 'create_task') {
+        const projectId = linkedProjectId;
+        const inserted = await supabase.from('tasks').insert({ workspace_id: workspaceId, project_id: projectId, title, status: payload.status ? String(payload.status) : 'todo', due_date: payload.due_date ? normalizeNullableDate(payload.due_date, 'due date') : null, priority: payload.priority ? String(payload.priority) : 'medium', created_by: req.authUser.id }).select('id,title,status,project_id,due_date').single();
+        if (inserted.error) throw inserted.error;
+        result = { resourceType: 'task', resource: inserted.data };
+      } else if (actionType === 'create_note') {
+        const content = String(payload.content ?? '');
+        const inserted = await supabase.from('notes').insert({ workspace_id: workspaceId, created_by: req.authUser.id, title, content_html: normalizeNoteHtml(plainTextToParagraphHtml(content)), content_plain: content, date: new Date().toISOString().slice(0, 10), source: 'ask_ledger' }).select('id,title').single();
+        if (inserted.error) throw inserted.error;
+        result = { resourceType: 'note', resource: inserted.data };
+      } else {
+        const calendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+        const inserted = await supabase.from('reminders').insert({ workspace_id: workspaceId, user_id: req.authUser.id, created_by: req.authUser.id, title, remind_at: requestedRemindAt, calendar_id: calendar.id, project_id: linkedProjectId, status: 'active', is_done: false, source: 'ask_ledger' }).select('id,title,remind_at,project_id').single();
+        if (inserted.error) throw inserted.error;
+        result = { resourceType: 'reminder', resource: inserted.data };
+      }
+      await supabase.from('agent_action_idempotency').update({ status: 'completed', result_json: result, updated_at: new Date().toISOString() }).eq('id', reservationId).eq('workspace_id', workspaceId);
+      return res.status(201).json(result);
+    } catch (error) {
+      await supabase.from('agent_action_idempotency').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', reservationId).eq('workspace_id', workspaceId);
+      throw error;
+    }
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.delete('/api/workspaces/:workspaceId/audit-log/:auditLogId', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = String(req.params.workspaceId);
@@ -21907,6 +22014,9 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       notifications: new Set(['notifications']),
       attention: new Set(['activity', 'notifications', 'tasks', 'milestones', 'reminders']),
       teamspace_activity: new Set(['activity', 'teams', 'teamMembers']),
+      // Weekly planning needs the compact workspace graph around the
+      // calendar. Local files are added by the desktop bridge separately.
+      weekly_plan: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'transcriptSegments', 'external']),
       all: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'inbox', 'teams', 'teamMembers', 'transcriptSegments', 'external', 'activity', 'notifications']),
     };
     const selectedResources = scopeResources[scope] ?? scopeResources.all;

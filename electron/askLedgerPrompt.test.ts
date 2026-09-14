@@ -193,6 +193,20 @@ test('does not duplicate the compiled evidence packet in the model prompt', () =
   assert.match(prompt, /TASKS\n- Compare local models — Due: Wednesday, Aug 19/);
 });
 
+test('includes deterministic computation as bounded data without implying a mutation', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'What should I do today?',
+    contextItems: context,
+    computedContext: {
+      toolName: 'compute_daily_plan',
+      data: { focus: [{ resourceId: 'task-1', title: 'Ship the plan' }] },
+    },
+  });
+  assert.match(prompt, /DETERMINISTIC LEDGER COMPUTATION/);
+  assert.match(prompt, /Ship the plan/);
+  assert.match(prompt, /does not mean that any Ledger mutation occurred/);
+});
+
 test('uses the primary event time for last-workday lookups', () => {
   const prompt = buildAskLedgerPrompt({
     question: 'When was my last day working at Alfa Art Gallery?',

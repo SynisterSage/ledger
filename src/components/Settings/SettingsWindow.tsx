@@ -23,6 +23,7 @@ import {
   Settings,
   SlidersHorizontal,
   Shield,
+  Sparkles,
   Trash2,
   UserRound,
   Keyboard,
@@ -1579,6 +1580,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [isLoadingMoreWorkspaceAudit, setIsLoadingMoreWorkspaceAudit] = useState(false);
   const [hasMoreWorkspaceAudit, setHasMoreWorkspaceAudit] = useState(false);
   const [workspaceAuditError, setWorkspaceAuditError] = useState<string | null>(null);
+  const [agentRuns, setAgentRuns] = useState<Array<{ id: string; action: string; created_at: string; metadata?: { surface?: string; tool_names?: string[]; source_count?: number; duration_ms?: number } }>>([]);
+  const [isLoadingAgentRuns, setIsLoadingAgentRuns] = useState(false);
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member');
   const [isLoadingWorkspaceAdmin, setIsLoadingWorkspaceAdmin] = useState(false);
   const [workspaceAdminError, setWorkspaceAdminError] = useState<string | null>(null);
@@ -2728,6 +2731,21 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       cancelled = true;
     };
   }, [activeSection, activeWorkspaceId, api, canManageWorkspace]);
+
+  useEffect(() => {
+    if (activeSection !== 'security_audit' || !activeWorkspaceId) return;
+    let cancelled = false;
+    setIsLoadingAgentRuns(true);
+    void api.getAgentRuns(activeWorkspaceId, 20)
+      .then((payload) => {
+        if (cancelled) return;
+        const runs = (payload as { runs?: typeof agentRuns })?.runs;
+        setAgentRuns(Array.isArray(runs) ? runs : []);
+      })
+      .catch(() => { if (!cancelled) setAgentRuns([]); })
+      .finally(() => { if (!cancelled) setIsLoadingAgentRuns(false); });
+    return () => { cancelled = true; };
+  }, [activeSection, activeWorkspaceId, api]);
 
   const loadMoreWorkspaceAudit = async () => {
     if (!activeWorkspaceId || !canManageWorkspace || !hasMoreWorkspaceAudit || isLoadingMoreWorkspaceAudit) return;
@@ -4665,6 +4683,30 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </div>
                     </section>
                   )}
+                  <section className={settingsTheme.sectionShell + ' mt-8'} aria-labelledby="agent-run-history">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h3 id="agent-run-history" className={settingsTheme.sectionTitle}>Agent runs</h3>
+                        <p className={settingsTheme.sectionStatus + ' mt-1'}>Recent Ledger Agent activity. Prompts and private content are not stored here.</p>
+                      </div>
+                      <span className="text-[11px] text-[var(--ledger-text-muted)]">Last 20</span>
+                    </div>
+                    <div className={settingsTheme.sectionRows + ' mt-4 max-h-[22rem] overflow-y-auto'}>
+                      {isLoadingAgentRuns ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading agent runs…</div> : agentRuns.length === 0 ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No agent runs recorded yet.</div> : agentRuns.map((run) => {
+                        const metadata = run.metadata ?? {};
+                        const surface = String(metadata.surface ?? 'ask_ledger').replace(/[_-]/g, ' ');
+                        const status = String(run.action ?? 'agent_run_completed').replace('agent_run_', '');
+                        return <div key={run.id} className="flex items-start gap-3 px-4 py-3">
+                          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><Sparkles size={14} /></span>
+                          <div className="min-w-0 flex-1">
+                            <p className={settingsTheme.label}>{surface} · {status}</p>
+                            <p className={settingsTheme.help}>{metadata.tool_names?.length ? metadata.tool_names.join(', ') : 'No tool call'} · {metadata.source_count ?? 0} sources · {Math.round((metadata.duration_ms ?? 0) / 1000)}s</p>
+                          </div>
+                          <time className="shrink-0 text-right text-[11px] text-[var(--ledger-text-muted)]" dateTime={run.created_at}>{new Date(run.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>
+                        </div>;
+                      })}
+                    </div>
+                  </section>
                 </section>
               )}
 

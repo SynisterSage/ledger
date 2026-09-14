@@ -115,7 +115,11 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   // question also asks about events. Calendar records are often not linked
   // back to the project, so making project retrieval depend on event discovery
   // can incorrectly erase the project's tasks from a compound answer.
-  const explicitProjectQueryCandidate = normalized.match(/\bproject\s+(.+?)(?=\s+(?:what|and|for|where|when|how|is|has)\b|[,?.]|$)/)?.[1]?.trim();
+  const inProjectQueryCandidate = normalized.match(/\bin\s+(?:the|my)\s+(.+?)\s+projects?\b/)?.[1]?.trim();
+  const contextualProjectQueryCandidate = inProjectQueryCandidate
+    ?? [...normalized.matchAll(/\b(?:for|about)\s+(?:the|my)\s+(.+?)\s+projects?\b/g)].at(-1)?.[1]?.trim();
+  const explicitProjectQueryCandidate = contextualProjectQueryCandidate
+    ?? normalized.match(/\bproject\s+(.+?)(?=\s+(?:what|and|for|where|when|how|is|has)\b|[,?.]|$)/)?.[1]?.trim();
   const explicitProjectQuery = explicitProjectQueryCandidate
     && !/^(?:work|context|management|planning)$/i.test(explicitProjectQueryCandidate)
     && !/\b(?:what|are|next|actions?|does|say)\b/i.test(explicitProjectQueryCandidate)
@@ -302,8 +306,12 @@ export class AskLedgerRetrievalOrchestrator {
         if (constraints.overdue && (!date || date >= todayIso || isClosed(item))) return false;
         if (constraints.horizon && (item.horizon ?? item.taskHorizon) !== constraints.horizon) return false;
         const basePlan = buildRetrievalPlan(query.query);
-        if (basePlan.structuredConstraints.dueAfter && (!date || date < basePlan.structuredConstraints.dueAfter)) return false;
-        if (basePlan.structuredConstraints.dueBefore && (!date || date > basePlan.structuredConstraints.dueBefore)) return false;
+        // Undated open project tasks are still useful in a weekly plan: they
+        // are work the user needs to place into the week. Keep dated tasks
+        // bounded to the week and leave other objective types date-strict.
+        const allowUndatedProjectTask = query.id === 'week-open-tasks' && Boolean(item.projectId) && !date;
+        if (!allowUndatedProjectTask && basePlan.structuredConstraints.dueAfter && (!date || date < basePlan.structuredConstraints.dueAfter)) return false;
+        if (!allowUndatedProjectTask && basePlan.structuredConstraints.dueBefore && (!date || date > basePlan.structuredConstraints.dueBefore)) return false;
         return true;
       };
       for (const query of planMyWeekQueries) {
@@ -314,6 +322,48 @@ export class AskLedgerRetrievalOrchestrator {
         items.forEach((item) => debug.push({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 1, why: [`objective:${query.id}`, 'structured'] }));
         objectives.push({ id: query.id, resourceTypes: [...query.resourceTypes], dependsOn: [], strategy: 'structured', graphExpansion: false, status: items.length ? 'found' : 'not_found', resourcesCollected: items.length });
       }
+      const projectIds = new Set([...collected.values()].filter((item) => item.resourceType === 'project').map((item) => item.resourceId));
+      const relatedItems = corpus.filter((item) => {
+        if (!projectIds.has(String(item.projectId ?? ''))) return false;
+        return ['task', 'milestone', 'note', 'event', 'reminder'].includes(item.resourceType);
+      });
+      relatedItems
+        .sort((left, right) => Date.parse(left.dueAt ?? left.timestamp ?? left.updatedAt ?? '') - Date.parse(right.dueAt ?? right.timestamp ?? right.updatedAt ?? ''))
+        .forEach((item) => {
+          if (!collected.has(keyFor(item)) && collected.size < Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) collected.set(keyFor(item), item);
+          debug.push({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 0.9, why: ['project-linked-context', 'structured'] });
+        });
+      const projectNames = new Map(
+        [...collected.values()]
+          .filter((item) => item.resourceType === 'project')
+          .map((item) => [item.resourceId, normalize(item.projectName ?? item.title)])
+      );
+      const localFolderMatchesProject = (item: AskLedgerContextItem, projectName: string) => {
+        const folderPath = String(item.containerName ?? item.metadata?.localFolderPath ?? '');
+        return folderPath.split('/').some((segment) => normalize(segment) === projectName);
+      };
+      const localFilesByProject = new Map<string, AskLedgerContextItem[]>();
+      for (const [projectId, projectName] of projectNames) {
+        if (!projectName) continue;
+        const fileCandidates = corpus
+          .filter((item) => ['linked_resource', 'attachment'].includes(item.resourceType))
+          .filter((item) => localFolderMatchesProject(item, projectName))
+          .sort((left, right) => Number(left.resourceType === 'linked_resource') - Number(right.resourceType === 'linked_resource') || left.resourceId.localeCompare(right.resourceId));
+        const selectedFiles: AskLedgerContextItem[] = [];
+        const seenFiles = new Set<string>();
+        for (const candidate of fileCandidates) {
+          const fileId = String(candidate.metadata?.localFileId ?? candidate.resourceId);
+          if (seenFiles.has(fileId)) continue;
+          seenFiles.add(fileId);
+          selectedFiles.push(candidate);
+          if (selectedFiles.length >= 2) break;
+        }
+        localFilesByProject.set(projectId, selectedFiles);
+      }
+      [...localFilesByProject.values()].flat().forEach((item) => {
+        if (!collected.has(keyFor(item)) && collected.size < Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) collected.set(keyFor(item), item);
+        debug.push({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 0.86, why: ['project-folder-context', 'local-file'] });
+      });
     }
     for (const query of planMyWeekQueries) {
       if (corpus) break;
