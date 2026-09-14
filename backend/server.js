@@ -7339,7 +7339,25 @@ app.get('/api/integrations/outlook/oauth/callback', rateLimit('auth'), async (re
     if (!clientId || !clientSecret || !redirectUri) return res.status(500).type('html').send(outlookCompleteHtml(false, 'Outlook is not configured for Ledger yet.'));
     const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(getOutlookTenant())}/oauth2/v2.0/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri, grant_type: 'authorization_code', scope: outlookOAuthScopes.join(' ') }) });
     const tokenPayload = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokenPayload.access_token) return res.status(400).type('html').send(outlookCompleteHtml(false, 'Microsoft could not approve this Outlook connection.'));
+    if (!tokenResponse.ok || !tokenPayload.access_token) {
+      // Microsoft returns actionable AADSTS codes here (for example, an expired
+      // client secret). Keep authorization codes, tokens, secrets, and verbose
+      // provider descriptions out of logs while preserving enough information
+      // to diagnose the deployed Entra configuration.
+      const providerError = clampText(tokenPayload?.error, 80) || 'token_exchange_failed';
+      const providerErrorCodes = Array.isArray(tokenPayload?.error_codes)
+        ? tokenPayload.error_codes.map((value) => String(value)).slice(0, 4)
+        : [];
+      console.warn('[outlook] OAuth token exchange rejected', {
+        status: tokenResponse.status,
+        error: providerError,
+        errorCodes: providerErrorCodes,
+        suberror: clampText(tokenPayload?.suberror, 80) || null,
+        correlationId: clampText(tokenPayload?.correlation_id, 120) || null,
+        traceId: clampText(tokenPayload?.trace_id, 120) || null,
+      });
+      return res.status(400).type('html').send(outlookCompleteHtml(false, `Microsoft rejected Ledger's Outlook setup (${providerError}). Check the connection configuration and try again.`));
+    }
     const meResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName,displayName', { headers: { Authorization: `Bearer ${tokenPayload.access_token}` } });
     const mePayload = await meResponse.json();
     if (!meResponse.ok || !mePayload.id) return res.status(400).type('html').send(outlookCompleteHtml(false, 'Ledger could not verify this Microsoft account.'));

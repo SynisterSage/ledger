@@ -76,6 +76,20 @@ test('keeps meeting-planning requests grounded despite capability wording', () =
   assert.equal(route.retrievalRequired, true);
 });
 
+test('routes note-folder review requests to workspace retrieval', () => {
+  const route = routeAskLedgerMessage(
+    'Can you review the note I have in the motion graphics folder, for storyboard planning?'
+  );
+  assert.equal(route.executionMode, 'workspace_synthesis');
+  assert.equal(route.retrievalRequired, true);
+});
+
+test('keeps genuine Notes capability questions conversational', () => {
+  const route = routeAskLedgerMessage('How do notes work?');
+  assert.equal(route.executionMode, 'ledger_product_help');
+  assert.equal(route.retrievalRequired, false);
+});
+
 test('distinguishes factual and transformation follow-ups', () => {
   const factual = routeAskLedgerMessage('What about the mobile side?', groundedSession);
   assert.equal(factual.mode, 'follow_up');
