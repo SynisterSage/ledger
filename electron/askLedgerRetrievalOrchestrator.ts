@@ -61,7 +61,7 @@ export const classifyAskLedgerRetrievalMode = (question: string): AskLedgerRetri
   const requestedCategories = [
     ...queryPlan.categories,
   ].filter((category) => !['integrations', 'activity', 'notifications'].includes(category)).length;
-  const compoundSignal = /\b(connect|tie|tying|across|everything stands|what(?:'s| is) going on|what still needs|where .* stands|look through|summari[sz]e .* and|and (?:tell|what|how|where))\b/.test(normalized);
+  const compoundSignal = /\b(connect|tie|tying|across|everything stands|what(?:'s|s| is) going on|what still needs|where .* stands|look through|summari[sz]e .* and|and (?:tell|what|how|where))\b/.test(normalized);
   const teamWorkloadSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
     && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
   const teamLinkedContextSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)

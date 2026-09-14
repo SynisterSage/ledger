@@ -1786,12 +1786,12 @@ button:focus {
 }
 .agent-ask-ledger-popover .ask-ledger-activity {
   display: block;
-  margin: 6px 2px 0;
+  margin: 6px 2px 20px;
   padding: 6px 7px;
   text-align: left;
-  border: 1px solid color-mix(in srgb, var(--ledger-border-subtle) 78%, transparent);
+  border: 0;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--ledger-surface-muted) 55%, transparent);
+  background: color-mix(in srgb, var(--ledger-surface-muted) 35%, transparent);
 }
 .agent-ask-ledger-popover .ask-ledger-activity button,
 .agent-ask-ledger-popover .ask-ledger-activity > p {

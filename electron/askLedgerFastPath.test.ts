@@ -53,3 +53,16 @@ test('does not turn ambiguous or incomplete lookups into confident answers', () 
   ], now);
   assert.equal(missingDueDate?.resolution, 'insufficient_data');
 });
+
+test('answers active task lists deterministically', () => {
+  const result = resolveAskLedgerFastPath('What tasks do I have active?', [
+    item({ resourceId: 'open', title: 'Finish wireframes', status: 'todo' }),
+    item({ resourceId: 'progress', title: 'Review copy', status: 'in_progress' }),
+    item({ resourceId: 'done', title: 'Archived task', status: 'completed' }),
+  ], now);
+  assert.equal(result?.kind, 'active_tasks');
+  assert.equal(result?.resolution, 'resolved');
+  assert.match(result?.answer ?? '', /Active tasks \(2\)/);
+  assert.match(result?.answer ?? '', /Finish wireframes/);
+  assert.doesNotMatch(result?.answer ?? '', /Archived task/);
+});

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-21T13:20:13.217Z",
+  "generatedAt": "2026-09-14T00:51:34.835Z",
   "deterministic": true,
   "cases": [
     {
@@ -15,9 +15,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -77,7 +79,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 510,
+          "tokens": 513,
           "selectedKeys": [
             "milestone:milestone-final-production",
             "task:task-review-proof",
@@ -95,10 +97,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 3.881832999999986,
-        "evidence": 45.75133299999999,
-        "validation": 0.0002090000000123382,
-        "total": 51.01720799999998
+        "retrieval": 5.439791999999997,
+        "evidence": 45.655208,
+        "validation": 0.0002920000000017353,
+        "total": 52.49304199999999
       }
     },
     {
@@ -147,7 +149,7 @@
         "evidence": {
           "retrieved": 6,
           "selected": 6,
-          "tokens": 509,
+          "tokens": 517,
           "selectedKeys": [
             "task:task-overdue-copy",
             "task:task-review-proof",
@@ -165,10 +167,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 1.8896660000000054,
-        "evidence": 16.08725000000001,
+        "retrieval": 3.3691250000000252,
+        "evidence": 14.75883300000001,
         "validation": 0.0002499999999940883,
-        "total": 18.340457999999984
+        "total": 18.48245800000001
       }
     },
     {
@@ -220,10 +222,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.4986250000000041,
-        "evidence": 0.027999999999991587,
-        "validation": 0.0002090000000123382,
-        "total": 0.6907909999999902
+        "retrieval": 0.5125840000000039,
+        "evidence": 0.025457999999986214,
+        "validation": 0.00016700000000469117,
+        "total": 0.6956250000000068
       }
     },
     {
@@ -284,10 +286,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.2757080000000087,
-        "evidence": 9.536666999999994,
-        "validation": 0.0002089999999839165,
-        "total": 9.94104200000001
+        "retrieval": 0.29675000000000296,
+        "evidence": 9.519791999999995,
+        "validation": 0.00012499999999704414,
+        "total": 9.959333999999984
       }
     },
     {
@@ -302,9 +304,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -364,7 +368,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 525,
+          "tokens": 527,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -382,10 +386,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.6861670000000117,
-        "evidence": 33.860000000000014,
-        "validation": 0.0002089999999839165,
-        "total": 34.74712500000001
+        "retrieval": 1.039749999999998,
+        "evidence": 30.972792000000027,
+        "validation": 0.00016700000000469117,
+        "total": 32.22995900000001
       }
     },
     {
@@ -400,9 +404,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -462,7 +468,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 526,
+          "tokens": 528,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -480,10 +486,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.4853339999999946,
-        "evidence": 27.87979200000001,
-        "validation": 0.0003330000000119071,
-        "total": 28.554834
+        "retrieval": 0.38299999999998136,
+        "evidence": 28.73758399999997,
+        "validation": 0.0002089999999839165,
+        "total": 29.30658299999999
       }
     },
     {
@@ -491,16 +497,18 @@
       "category": "resource_understanding",
       "question": "What still needs to happen for this project?",
       "score": {
-        "retrievalCorrectness": 2,
+        "retrievalCorrectness": 0,
         "contextCoverage": 2,
         "evidenceQuality": 2,
         "answerCompleteness": 0,
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "wrong_seed"
+      ],
       "stages": {
         "route": {
           "mode": "research",
@@ -512,64 +520,19 @@
           ]
         },
         "retrieval": {
-          "candidates": 28,
-          "selectedSeeds": [
-            "project:project-alfa",
-            "project:project-watercolor",
-            "project:project-unrelated",
-            "milestone:milestone-final-production",
-            "milestone:milestone-watercolor-assets",
-            "task:task-review-proof",
-            "task:task-archive-assets",
-            "task:task-overdue-copy",
-            "task:task-watercolor-assets",
-            "task:task-watercolor-longterm",
-            "reminder:reminder-proof"
-          ],
-          "primary": [
-            "project:project-alfa",
-            "project:project-watercolor",
-            "project:project-unrelated",
-            "milestone:milestone-final-production",
-            "milestone:milestone-watercolor-assets",
-            "task:task-review-proof",
-            "task:task-archive-assets",
-            "task:task-overdue-copy",
-            "task:task-watercolor-assets",
-            "task:task-watercolor-longterm",
-            "reminder:reminder-proof"
-          ]
+          "candidates": 0,
+          "selectedSeeds": [],
+          "primary": []
         },
         "graph": {
-          "expandedResources": 17,
-          "paths": 18
+          "expandedResources": 0,
+          "paths": 0
         },
         "evidence": {
-          "retrieved": 20,
-          "selected": 20,
-          "tokens": 1963,
-          "selectedKeys": [
-            "project:project-alfa",
-            "milestone:milestone-final-production",
-            "task:task-overdue-copy",
-            "reminder:reminder-proof",
-            "task:task-review-proof",
-            "task:task-watercolor-assets",
-            "project:project-watercolor",
-            "project:project-unrelated",
-            "milestone:milestone-watercolor-assets",
-            "task:task-archive-assets",
-            "task:task-watercolor-longterm",
-            "notification:notification-proof",
-            "task:task-completed-proof",
-            "external:github-alfa",
-            "external:slack-alfa",
-            "external:figma-watercolor",
-            "event:event-workday",
-            "note:note-irrelevant",
-            "activity:activity-alfa",
-            "note:note-workday"
-          ]
+          "retrieved": 0,
+          "selected": 0,
+          "tokens": 43,
+          "selectedKeys": []
         },
         "generation": {
           "depth": "deep",
@@ -579,10 +542,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 2.0534170000000245,
-        "evidence": 45.585083,
-        "validation": 0.001167000000009466,
-        "total": 47.83625000000001
+        "retrieval": 5.653999999999996,
+        "evidence": 0.028583999999966636,
+        "validation": 0.00016699999997626946,
+        "total": 5.840124999999944
       }
     },
     {
@@ -597,9 +560,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "research",
@@ -645,8 +610,8 @@
         },
         "evidence": {
           "retrieved": 20,
-          "selected": 20,
-          "tokens": 1963,
+          "selected": 18,
+          "tokens": 1760,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -658,9 +623,7 @@
             "task:task-watercolor-assets",
             "milestone:milestone-watercolor-assets",
             "task:task-archive-assets",
-            "task:task-watercolor-longterm",
             "notification:notification-proof",
-            "task:task-completed-proof",
             "external:github-alfa",
             "external:slack-alfa",
             "external:figma-watercolor",
@@ -678,10 +641,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.8416670000000295,
-        "evidence": 43.73124999999999,
+        "retrieval": 1.9659580000000005,
+        "evidence": 40.22466600000001,
         "validation": 0.00016699999997626946,
-        "total": 44.77166600000004
+        "total": 42.34354199999996
       }
     },
     {
@@ -722,7 +685,7 @@
         "evidence": {
           "retrieved": 14,
           "selected": 6,
-          "tokens": 506,
+          "tokens": 507,
           "selectedKeys": [
             "note:note-workday",
             "event:event-workday",
@@ -740,10 +703,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.8462499999999977,
-        "evidence": 20.837041999999997,
-        "validation": 0.00020900000004075991,
-        "total": 21.939666999999986
+        "retrieval": 1.099375000000009,
+        "evidence": 25.120625000000018,
+        "validation": 0.0002089999999839165,
+        "total": 26.470332999999982
       }
     },
     {
@@ -800,10 +763,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.3861660000000029,
-        "evidence": 9.059167000000002,
-        "validation": 0.00012500000002546585,
-        "total": 9.66133400000001
+        "retrieval": 0.7089159999999879,
+        "evidence": 4.3331249999999955,
+        "validation": 0.00016700000003311288,
+        "total": 5.256583999999975
       }
     },
     {
@@ -812,31 +775,47 @@
       "question": "What follow-ups came from yesterday's meeting?",
       "score": {
         "retrievalCorrectness": 2,
-        "contextCoverage": 0,
+        "contextCoverage": 2,
         "evidenceQuality": 2,
         "answerCompleteness": 0,
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": false
+        "passed": true
       },
-      "failures": [
-        "missing_relationship_context"
-      ],
+      "failures": [],
       "stages": {
         "route": {
           "mode": "quick",
           "objectives": []
         },
         "retrieval": {
-          "candidates": 3,
+          "candidates": 12,
           "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
             "event:event-workday",
+            "milestone:milestone-watercolor-assets",
+            "reminder:reminder-proof",
             "note:note-workday",
             "note:note-irrelevant"
           ],
           "primary": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
             "event:event-workday",
+            "milestone:milestone-watercolor-assets",
+            "reminder:reminder-proof",
             "note:note-workday",
             "note:note-irrelevant"
           ]
@@ -846,13 +825,16 @@
           "paths": 0
         },
         "evidence": {
-          "retrieved": 3,
-          "selected": 3,
-          "tokens": 224,
+          "retrieved": 12,
+          "selected": 6,
+          "tokens": 529,
           "selectedKeys": [
+            "task:task-overdue-copy",
+            "milestone:milestone-final-production",
             "event:event-workday",
+            "reminder:reminder-proof",
             "note:note-workday",
-            "note:note-irrelevant"
+            "task:task-review-proof"
           ]
         },
         "generation": {
@@ -863,10 +845,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.14508299999999963,
-        "evidence": 5.452042000000006,
-        "validation": 0.00008399999995845064,
-        "total": 5.742999999999995
+        "retrieval": 0.4060410000000161,
+        "evidence": 19.75204100000002,
+        "validation": 0.00008400000001529406,
+        "total": 20.29970800000001
       }
     },
     {
@@ -928,7 +910,7 @@
         "evidence": {
           "retrieved": 14,
           "selected": 14,
-          "tokens": 1484,
+          "tokens": 1490,
           "selectedKeys": [
             "event:event-workday",
             "note:note-workday",
@@ -954,10 +936,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 1.029042000000004,
-        "evidence": 27.546958000000018,
-        "validation": 0.00012500000002546585,
-        "total": 28.752207999999996
+        "retrieval": 7.469415999999967,
+        "evidence": 29.179417,
+        "validation": 0.00016599999997879422,
+        "total": 36.80016600000005
       }
     },
     {
@@ -1019,7 +1001,7 @@
         "evidence": {
           "retrieved": 14,
           "selected": 14,
-          "tokens": 1491,
+          "tokens": 1496,
           "selectedKeys": [
             "event:event-workday",
             "note:note-workday",
@@ -1045,10 +1027,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 5.961416999999983,
-        "evidence": 27.838415999999995,
+        "retrieval": 6.2916250000000105,
+        "evidence": 27.682958999999983,
         "validation": 0.00012500000002546585,
-        "total": 33.968541000000016
+        "total": 34.13375000000002
       }
     },
     {
@@ -1063,9 +1045,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "research",
@@ -1111,8 +1095,8 @@
         },
         "evidence": {
           "retrieved": 20,
-          "selected": 20,
-          "tokens": 1969,
+          "selected": 18,
+          "tokens": 1765,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -1124,9 +1108,7 @@
             "project:project-unrelated",
             "milestone:milestone-watercolor-assets",
             "task:task-archive-assets",
-            "task:task-watercolor-longterm",
             "notification:notification-proof",
-            "task:task-completed-proof",
             "external:github-alfa",
             "external:slack-alfa",
             "external:figma-watercolor",
@@ -1144,10 +1126,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.5893749999999613,
-        "evidence": 42.564167,
-        "validation": 0.00012500000002546585,
-        "total": 43.31045799999998
+        "retrieval": 0.8938750000000368,
+        "evidence": 39.62045899999998,
+        "validation": 0.00008400000001529406,
+        "total": 40.66437500000001
       }
     },
     {
@@ -1162,9 +1144,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -1173,19 +1157,19 @@
         "retrieval": {
           "candidates": 20,
           "selectedSeeds": [
-            "task:task-review-proof",
-            "task:task-watercolor-assets",
-            "event:event-workday",
-            "reminder:reminder-proof",
-            "milestone:milestone-final-production",
-            "milestone:milestone-watercolor-assets",
-            "task:task-archive-assets",
-            "task:task-overdue-copy",
-            "task:task-completed-proof",
-            "task:task-watercolor-longterm",
             "project:project-alfa",
             "project:project-watercolor",
             "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
             "notification:notification-proof",
             "note:note-workday",
             "activity:activity-alfa",
@@ -1195,19 +1179,19 @@
             "external:github-alfa"
           ],
           "primary": [
-            "task:task-review-proof",
-            "task:task-watercolor-assets",
-            "event:event-workday",
-            "reminder:reminder-proof",
-            "milestone:milestone-final-production",
-            "milestone:milestone-watercolor-assets",
-            "task:task-archive-assets",
-            "task:task-overdue-copy",
-            "task:task-completed-proof",
-            "task:task-watercolor-longterm",
             "project:project-alfa",
             "project:project-watercolor",
             "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
             "notification:notification-proof",
             "note:note-workday",
             "activity:activity-alfa",
@@ -1224,13 +1208,13 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 521,
+          "tokens": 523,
           "selectedKeys": [
+            "project:project-alfa",
             "task:task-review-proof",
+            "milestone:milestone-final-production",
             "event:event-workday",
             "reminder:reminder-proof",
-            "milestone:milestone-final-production",
-            "project:project-alfa",
             "notification:notification-proof"
           ]
         },
@@ -1242,10 +1226,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.37762499999996635,
-        "evidence": 32.80237500000004,
-        "validation": 0.00012500000002546585,
-        "total": 33.335541999999975
+        "retrieval": 0.48974999999995816,
+        "evidence": 33.11099999999999,
+        "validation": 0.00016699999997626946,
+        "total": 33.759915999999976
       }
     },
     {
@@ -1260,9 +1244,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "research",
@@ -1311,7 +1297,7 @@
         "evidence": {
           "retrieved": 16,
           "selected": 16,
-          "tokens": 1637,
+          "tokens": 1642,
           "selectedKeys": [
             "event:event-workday",
             "note:note-workday",
@@ -1339,10 +1325,88 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.8178749999999582,
-        "evidence": 36.51287500000001,
-        "validation": 0.00016700000003311288,
-        "total": 37.50033399999995
+        "retrieval": 1.2134169999999926,
+        "evidence": 37.518542000000025,
+        "validation": 0.0001659999999219508,
+        "total": 38.87945899999994
+      }
+    },
+    {
+      "caseId": "research-history-photo-compound",
+      "category": "cross_resource_research",
+      "question": "I have a project History of Photo. What are the next actions, what is my next class, and what does the History of Photo syllabus PDF say?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "attachments",
+            "meetings",
+            "meeting-context",
+            "projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 9,
+          "selectedSeeds": [
+            "attachment:attachment-history-syllabus",
+            "event:event-history-class",
+            "project:project-history-photo",
+            "task:task-history-wallace",
+            "task:task-history-discussion",
+            "task:task-history-quiz"
+          ],
+          "primary": [
+            "attachment:attachment-history-syllabus",
+            "event:event-history-class",
+            "project:project-history-photo",
+            "task:task-history-wallace",
+            "task:task-history-discussion",
+            "task:task-history-quiz"
+          ]
+        },
+        "graph": {
+          "expandedResources": 3,
+          "paths": 3
+        },
+        "evidence": {
+          "retrieved": 6,
+          "selected": 6,
+          "tokens": 644,
+          "selectedKeys": [
+            "attachment:attachment-history-syllabus",
+            "event:event-history-class",
+            "project:project-history-photo",
+            "task:task-history-discussion",
+            "task:task-history-quiz",
+            "task:task-history-wallace"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 1.4632500000000164,
+        "evidence": 11.717665999999895,
+        "validation": 0.00012499999991177901,
+        "total": 13.2818749999999
       }
     },
     {
@@ -1357,9 +1421,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -1371,16 +1437,16 @@
             "task:task-review-proof",
             "task:task-archive-assets",
             "task:task-overdue-copy",
-            "task:task-completed-proof",
-            "task:task-watercolor-assets",
-            "task:task-watercolor-longterm",
-            "event:event-workday",
-            "reminder:reminder-proof",
             "project:project-alfa",
+            "task:task-completed-proof",
             "project:project-watercolor",
+            "task:task-watercolor-assets",
             "project:project-unrelated",
+            "task:task-watercolor-longterm",
             "milestone:milestone-final-production",
             "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
             "notification:notification-proof",
             "note:note-workday",
             "activity:activity-alfa",
@@ -1393,16 +1459,16 @@
             "task:task-review-proof",
             "task:task-archive-assets",
             "task:task-overdue-copy",
-            "task:task-completed-proof",
-            "task:task-watercolor-assets",
-            "task:task-watercolor-longterm",
-            "event:event-workday",
-            "reminder:reminder-proof",
             "project:project-alfa",
+            "task:task-completed-proof",
             "project:project-watercolor",
+            "task:task-watercolor-assets",
             "project:project-unrelated",
+            "task:task-watercolor-longterm",
             "milestone:milestone-final-production",
             "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
             "notification:notification-proof",
             "note:note-workday",
             "activity:activity-alfa",
@@ -1419,13 +1485,13 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 519,
+          "tokens": 521,
           "selectedKeys": [
             "task:task-review-proof",
-            "event:event-workday",
-            "reminder:reminder-proof",
             "project:project-alfa",
             "milestone:milestone-final-production",
+            "event:event-workday",
+            "reminder:reminder-proof",
             "notification:notification-proof"
           ]
         },
@@ -1437,10 +1503,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.25499999999999545,
-        "evidence": 28.249209000000064,
+        "retrieval": 0.2949579999999514,
+        "evidence": 32.593208000000004,
         "validation": 0.00012500000002546585,
-        "total": 28.660916999999927
+        "total": 33.045916000000034
       }
     },
     {
@@ -1455,9 +1521,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -1517,7 +1585,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 522,
+          "tokens": 524,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -1535,10 +1603,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.24062500000002274,
-        "evidence": 32.50137499999994,
-        "validation": 0.00012500000002546585,
-        "total": 32.88904200000002
+        "retrieval": 0.361582999999996,
+        "evidence": 27.626833000000033,
+        "validation": 0.00012499999991177901,
+        "total": 28.152583999999933
       }
     },
     {
@@ -1562,50 +1630,28 @@
           "objectives": []
         },
         "retrieval": {
-          "candidates": 20,
+          "candidates": 9,
           "selectedSeeds": [
-            "project:project-alfa",
             "notification:notification-proof",
-            "project:project-watercolor",
-            "project:project-unrelated",
             "milestone:milestone-final-production",
             "milestone:milestone-watercolor-assets",
             "task:task-review-proof",
             "task:task-archive-assets",
             "task:task-overdue-copy",
-            "task:task-completed-proof",
             "task:task-watercolor-assets",
             "task:task-watercolor-longterm",
-            "note:note-workday",
-            "transcript:transcript-workday-1",
-            "event:event-workday",
-            "reminder:reminder-proof",
-            "activity:activity-alfa",
-            "activity:activity-circle",
-            "external:slack-alfa",
-            "external:github-alfa"
+            "reminder:reminder-proof"
           ],
           "primary": [
-            "project:project-alfa",
             "notification:notification-proof",
-            "project:project-watercolor",
-            "project:project-unrelated",
             "milestone:milestone-final-production",
             "milestone:milestone-watercolor-assets",
             "task:task-review-proof",
             "task:task-archive-assets",
             "task:task-overdue-copy",
-            "task:task-completed-proof",
             "task:task-watercolor-assets",
             "task:task-watercolor-longterm",
-            "note:note-workday",
-            "transcript:transcript-workday-1",
-            "event:event-workday",
-            "reminder:reminder-proof",
-            "activity:activity-alfa",
-            "activity:activity-circle",
-            "external:slack-alfa",
-            "external:github-alfa"
+            "reminder:reminder-proof"
           ]
         },
         "graph": {
@@ -1613,16 +1659,16 @@
           "paths": 0
         },
         "evidence": {
-          "retrieved": 20,
+          "retrieved": 9,
           "selected": 6,
-          "tokens": 535,
+          "tokens": 538,
           "selectedKeys": [
-            "project:project-alfa",
             "notification:notification-proof",
             "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
             "task:task-review-proof",
-            "note:note-workday",
-            "transcript:transcript-workday-1"
+            "task:task-watercolor-assets"
           ]
         },
         "generation": {
@@ -1633,10 +1679,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.2443749999999909,
-        "evidence": 27.844832999999994,
-        "validation": 0.00020900000004075991,
-        "total": 28.284208000000035
+        "retrieval": 0.32433400000002166,
+        "evidence": 22.23899999999992,
+        "validation": 0.00012500000002546585,
+        "total": 22.689709000000107
       }
     },
     {
@@ -1713,7 +1759,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 520,
+          "tokens": 522,
           "selectedKeys": [
             "project:project-alfa",
             "task:task-review-proof",
@@ -1731,10 +1777,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.2337079999999787,
-        "evidence": 32.97849999999994,
-        "validation": 0.00012500000002546585,
-        "total": 33.353624999999965
+        "retrieval": 0.30437500000005,
+        "evidence": 28.425166999999988,
+        "validation": 0.00016600000003563764,
+        "total": 28.868791999999985
       }
     },
     {
@@ -1749,9 +1795,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "quick",
@@ -1811,7 +1859,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 520,
+          "tokens": 523,
           "selectedKeys": [
             "project:project-alfa",
             "milestone:milestone-final-production",
@@ -1829,10 +1877,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.39370899999994435,
-        "evidence": 33.316832999999974,
-        "validation": 0.00012500000002546585,
-        "total": 33.861125000000015
+        "retrieval": 5.679124999999999,
+        "evidence": 27.84008300000005,
+        "validation": 0.00012499999991177901,
+        "total": 33.68462499999998
       }
     },
     {
@@ -1856,19 +1904,27 @@
           "objectives": []
         },
         "retrieval": {
-          "candidates": 6,
+          "candidates": 10,
           "selectedSeeds": [
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
             "task:task-review-proof",
+            "task:task-archive-assets",
             "task:task-overdue-copy",
             "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
             "reminder:reminder-proof",
             "notification:notification-proof",
             "activity:activity-circle"
           ],
           "primary": [
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
             "task:task-review-proof",
+            "task:task-archive-assets",
             "task:task-overdue-copy",
             "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
             "reminder:reminder-proof",
             "notification:notification-proof",
             "activity:activity-circle"
@@ -1879,16 +1935,16 @@
           "paths": 0
         },
         "evidence": {
-          "retrieved": 6,
+          "retrieved": 10,
           "selected": 6,
-          "tokens": 519,
+          "tokens": 532,
           "selectedKeys": [
+            "milestone:milestone-final-production",
             "task:task-overdue-copy",
             "reminder:reminder-proof",
             "notification:notification-proof",
             "activity:activity-circle",
-            "task:task-review-proof",
-            "task:task-watercolor-assets"
+            "task:task-review-proof"
           ]
         },
         "generation": {
@@ -1899,10 +1955,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.2556250000000091,
-        "evidence": 14.447000000000003,
+        "retrieval": 0.32312500000000455,
+        "evidence": 24.801917000000003,
         "validation": 0.00012499999991177901,
-        "total": 14.87129200000004
+        "total": 25.25029200000006
       }
     },
     {
@@ -1943,7 +1999,7 @@
         "evidence": {
           "retrieved": 14,
           "selected": 6,
-          "tokens": 486,
+          "tokens": 487,
           "selectedKeys": [
             "activity:activity-circle",
             "activity:activity-alfa",
@@ -1961,10 +2017,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.21391700000003766,
-        "evidence": 21.062624999999912,
-        "validation": 0.00012500000002546585,
-        "total": 21.41137500000002
+        "retrieval": 0.2876660000000584,
+        "evidence": 21.52612499999998,
+        "validation": 0.00008300000001781882,
+        "total": 21.956624999999917
       }
     },
     {
@@ -2041,7 +2097,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 494,
+          "tokens": 496,
           "selectedKeys": [
             "external:slack-alfa",
             "project:project-alfa",
@@ -2059,10 +2115,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.6209169999999631,
-        "evidence": 34.202,
-        "validation": 0.00008400000001529406,
-        "total": 35.02362500000004
+        "retrieval": 0.7695410000000038,
+        "evidence": 32.226541999999995,
+        "validation": 0.00012500000002546585,
+        "total": 33.11900000000003
       }
     },
     {
@@ -2130,10 +2186,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.4588329999999132,
-        "evidence": 0.012833000000000538,
-        "validation": 0.00012500000002546585,
-        "total": 0.6064999999999827
+        "retrieval": 0.49054199999989123,
+        "evidence": 0.016417000000046755,
+        "validation": 0.00008300000001781882,
+        "total": 0.6176659999999856
       }
     },
     {
@@ -2201,10 +2257,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.14141700000004676,
-        "evidence": 1.3312909999999647,
-        "validation": 0.00012500000002546585,
-        "total": 1.547458000000006
+        "retrieval": 0.17899999999997362,
+        "evidence": 1.4105409999999665,
+        "validation": 0.00012499999991177901,
+        "total": 1.6622499999999718
       }
     },
     {
@@ -2272,10 +2328,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.10470899999995709,
-        "evidence": 1.3469169999999622,
-        "validation": 0.00012500000002546585,
-        "total": 1.540083999999979
+        "retrieval": 0.1515829999999596,
+        "evidence": 1.3843749999999773,
+        "validation": 0.00008300000001781882,
+        "total": 1.6062499999999318
       }
     },
     {
@@ -2290,9 +2346,11 @@
         "groundedness": 1,
         "synthesisQuality": 0,
         "usefulness": 0,
-        "passed": true
+        "passed": false
       },
-      "failures": [],
+      "failures": [
+        "forbidden_resource_context"
+      ],
       "stages": {
         "route": {
           "mode": "research",
@@ -2363,8 +2421,8 @@
         },
         "evidence": {
           "retrieved": 20,
-          "selected": 20,
-          "tokens": 1924,
+          "selected": 18,
+          "tokens": 1720,
           "selectedKeys": [
             "external:github-alfa",
             "project:project-unrelated",
@@ -2378,10 +2436,8 @@
             "project:project-watercolor",
             "milestone:milestone-watercolor-assets",
             "task:task-archive-assets",
-            "task:task-watercolor-longterm",
             "notification:notification-proof",
             "external:figma-watercolor",
-            "task:task-completed-proof",
             "event:event-workday",
             "note:note-irrelevant",
             "activity:activity-alfa",
@@ -2396,10 +2452,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 1.0827079999999114,
-        "evidence": 63.06816600000002,
-        "validation": 0.00012500000002546585,
-        "total": 64.24279200000001
+        "retrieval": 1.317124999999919,
+        "evidence": 41.79266700000005,
+        "validation": 0.00012499999991177901,
+        "total": 43.205082999999945
       }
     },
     {
@@ -2447,10 +2503,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.1150000000000091,
-        "evidence": 0.009124999999926331,
-        "validation": 0.00008300000001781882,
-        "total": 0.23654199999998582
+        "retrieval": 0.17670799999996234,
+        "evidence": 0.010457999999971435,
+        "validation": 0.00012500000002546585,
+        "total": 0.30929200000002766
       }
     },
     {
@@ -2518,10 +2574,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.13320899999996527,
-        "evidence": 0.09141699999997854,
-        "validation": 0.00012499999991177901,
-        "total": 0.2850419999999758
+        "retrieval": 0.2017919999999549,
+        "evidence": 0.08979099999999107,
+        "validation": 0.00012500000002546585,
+        "total": 0.3578330000000278
       }
     },
     {
@@ -2598,7 +2654,7 @@
         "evidence": {
           "retrieved": 20,
           "selected": 6,
-          "tokens": 522,
+          "tokens": 524,
           "selectedKeys": [
             "project:project-alfa",
             "task:task-review-proof",
@@ -2616,10 +2672,10 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.20650000000000546,
-        "evidence": 33.82783299999994,
-        "validation": 0.00012500000002546585,
-        "total": 34.120750000000044
+        "retrieval": 0.2707919999999149,
+        "evidence": 30.853916000000027,
+        "validation": 0.00016699999991942605,
+        "total": 31.21720899999991
       }
     },
     {
@@ -2674,42 +2730,42 @@
         }
       },
       "latencyMs": {
-        "retrieval": 0.10758399999997437,
-        "evidence": 4.77208399999995,
-        "validation": 0.00016700000003311288,
-        "total": 4.990124999999921
+        "retrieval": 0.16037500000004457,
+        "evidence": 4.872333000000026,
+        "validation": 0.00012500000002546585,
+        "total": 5.150041999999985
       }
     }
   ],
   "summary": {
-    "totalCases": 32,
-    "passed": 28,
-    "passRate": 0.875,
+    "totalCases": 33,
+    "passed": 18,
+    "passRate": 0.5454545454545454,
     "byCategory": {
       "simple_facts": {
-        "cases": 4,
-        "passed": 3,
-        "passRate": 0.75
-      },
-      "resource_understanding": {
-        "cases": 4,
-        "passed": 4,
-        "passRate": 1
-      },
-      "meeting_intelligence": {
         "cases": 4,
         "passed": 2,
         "passRate": 0.5
       },
-      "cross_resource_research": {
+      "resource_understanding": {
         "cases": 4,
-        "passed": 4,
-        "passRate": 1
+        "passed": 0,
+        "passRate": 0
+      },
+      "meeting_intelligence": {
+        "cases": 4,
+        "passed": 3,
+        "passRate": 0.75
+      },
+      "cross_resource_research": {
+        "cases": 5,
+        "passed": 2,
+        "passRate": 0.4
       },
       "task_intelligence": {
         "cases": 5,
-        "passed": 5,
-        "passRate": 1
+        "passed": 2,
+        "passRate": 0.4
       },
       "attention": {
         "cases": 3,
@@ -2718,8 +2774,8 @@
       },
       "integration_context": {
         "cases": 4,
-        "passed": 3,
-        "passRate": 0.75
+        "passed": 2,
+        "passRate": 0.5
       },
       "missing_uncertain_evidence": {
         "cases": 4,
@@ -2727,14 +2783,22 @@
         "passRate": 1
       }
     },
-    "averageLatencyMs": 24.563592499999995,
-    "averageEvidenceResources": 7.09375,
-    "averageEvidenceTokens": 669,
+    "averageLatencyMs": 22.7815152121212,
+    "averageEvidenceResources": 6.363636363636363,
+    "averageEvidenceTokens": 602.7272727272727,
     "failureCategories": {
-      "wrong_seed": 2,
-      "missing_relationship_context": 3
+      "forbidden_resource_context": 11,
+      "wrong_seed": 3,
+      "missing_relationship_context": 2
     },
     "worstCases": [
+      {
+        "caseId": "fact-due",
+        "category": "simple_facts",
+        "failures": [
+          "forbidden_resource_context"
+        ]
+      },
       {
         "caseId": "fact-milestone",
         "category": "simple_facts",
@@ -2744,22 +2808,22 @@
         ]
       },
       {
-        "caseId": "meeting-decisions",
-        "category": "meeting_intelligence",
+        "caseId": "project-alfa",
+        "category": "resource_understanding",
         "failures": [
-          "missing_relationship_context"
+          "forbidden_resource_context"
         ]
       },
       {
-        "caseId": "meeting-followups",
-        "category": "meeting_intelligence",
+        "caseId": "project-watercolor",
+        "category": "resource_understanding",
         "failures": [
-          "missing_relationship_context"
+          "forbidden_resource_context"
         ]
       },
       {
-        "caseId": "integration-slack",
-        "category": "integration_context",
+        "caseId": "project-next",
+        "category": "resource_understanding",
         "failures": [
           "wrong_seed"
         ]
@@ -2769,28 +2833,28 @@
   "thresholds": {
     "simple_facts": {
       "threshold": 0.95,
-      "actual": 0.75,
+      "actual": 0.5,
       "passed": false
     },
     "resource_understanding": {
       "threshold": 0.75,
-      "actual": 1,
-      "passed": true
+      "actual": 0,
+      "passed": false
     },
     "meeting_intelligence": {
       "threshold": 0.75,
-      "actual": 0.5,
-      "passed": false
+      "actual": 0.75,
+      "passed": true
     },
     "cross_resource_research": {
       "threshold": 0.7,
-      "actual": 1,
-      "passed": true
+      "actual": 0.4,
+      "passed": false
     },
     "task_intelligence": {
       "threshold": 0.85,
-      "actual": 1,
-      "passed": true
+      "actual": 0.4,
+      "passed": false
     },
     "attention": {
       "threshold": 0.75,
@@ -2799,3889 +2863,13 @@
     },
     "integration_context": {
       "threshold": 0.75,
-      "actual": 0.75,
-      "passed": true
+      "actual": 0.5,
+      "passed": false
     },
     "missing_uncertain_evidence": {
       "threshold": 0.85,
       "actual": 1,
       "passed": true
-    }
-  },
-  "liveModelBenchmark": {
-    "schemaVersion": 1,
-    "generatedAt": "2026-08-21T13:20:14.348Z",
-    "platform": "darwin",
-    "architecture": "arm64",
-    "runtimeVersion": "unknown",
-    "cases": [
-      {
-        "id": "fact-due",
-        "category": "simple_facts",
-        "promptTokens": 274,
-        "sources": [
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-circle",
-            "title": "Circle design alert",
-            "sourceLabel": "Circle",
-            "updatedAt": "2026-08-18T06:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "fact-owner",
-        "category": "simple_facts",
-        "promptTokens": 337,
-        "sources": [
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-longterm",
-            "title": "Plan Exhibition Outreach",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "fact-milestone",
-        "category": "simple_facts",
-        "promptTokens": 0,
-        "sources": []
-      },
-      {
-        "id": "fact-today",
-        "category": "simple_facts",
-        "promptTokens": 230,
-        "sources": [
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "project-alfa",
-        "category": "resource_understanding",
-        "promptTokens": 283,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          }
-        ]
-      },
-      {
-        "id": "project-watercolor",
-        "category": "resource_understanding",
-        "promptTokens": 283,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "project-next",
-        "category": "resource_understanding",
-        "promptTokens": 928,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-watercolor",
-            "title": "Watercolor Exhibition",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-unrelated",
-            "title": "Unrelated Garden Plans",
-            "projectId": "project-unrelated",
-            "projectName": "Unrelated Garden Plans",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-watercolor-assets",
-            "title": "Asset Review",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-longterm",
-            "title": "Plan Exhibition Outreach",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          }
-        ]
-      },
-      {
-        "id": "project-status",
-        "category": "resource_understanding",
-        "promptTokens": 928,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-watercolor",
-            "title": "Watercolor Exhibition",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-unrelated",
-            "title": "Unrelated Garden Plans",
-            "projectId": "project-unrelated",
-            "projectName": "Unrelated Garden Plans",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-watercolor-assets",
-            "title": "Asset Review",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-longterm",
-            "title": "Plan Exhibition Outreach",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          }
-        ]
-      },
-      {
-        "id": "meeting-latest",
-        "category": "meeting_intelligence",
-        "promptTokens": 303,
-        "sources": [
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "meeting-decisions",
-        "category": "meeting_intelligence",
-        "promptTokens": 96,
-        "sources": [
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "meeting-followups",
-        "category": "meeting_intelligence",
-        "promptTokens": 125,
-        "sources": [
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "meeting-project-link",
-        "category": "meeting_intelligence",
-        "promptTokens": 654,
-        "sources": [
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "research-meetings-projects",
-        "category": "cross_resource_research",
-        "promptTokens": 654,
-        "sources": [
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "research-project-state",
-        "category": "cross_resource_research",
-        "promptTokens": 928,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-watercolor",
-            "title": "Watercolor Exhibition",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-unrelated",
-            "title": "Unrelated Garden Plans",
-            "projectId": "project-unrelated",
-            "projectName": "Unrelated Garden Plans",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-watercolor-assets",
-            "title": "Asset Review",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-longterm",
-            "title": "Plan Exhibition Outreach",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          }
-        ]
-      },
-      {
-        "id": "research-week",
-        "category": "cross_resource_research",
-        "promptTokens": 280,
-        "sources": [
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "research-tying-summary",
-        "category": "cross_resource_research",
-        "promptTokens": 725,
-        "sources": [
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-unrelated",
-            "title": "Unrelated Garden Plans",
-            "projectId": "project-unrelated",
-            "projectName": "Unrelated Garden Plans",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "task-focus",
-        "category": "task_intelligence",
-        "promptTokens": 280,
-        "sources": [
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "task-long-term",
-        "category": "task_intelligence",
-        "promptTokens": 289,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "task-overdue",
-        "category": "task_intelligence",
-        "promptTokens": 293,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          }
-        ]
-      },
-      {
-        "id": "task-blocked",
-        "category": "task_intelligence",
-        "promptTokens": 289,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "task-completed",
-        "category": "task_intelligence",
-        "promptTokens": 289,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "attention-now",
-        "category": "attention",
-        "promptTokens": 307,
-        "sources": [
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-circle",
-            "title": "Circle design alert",
-            "sourceLabel": "Circle",
-            "updatedAt": "2026-08-18T06:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "attention-away",
-        "category": "attention",
-        "promptTokens": 274,
-        "sources": [
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-circle",
-            "title": "Circle design alert",
-            "sourceLabel": "Circle",
-            "updatedAt": "2026-08-18T06:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "attention-circle",
-        "category": "attention",
-        "promptTokens": 279,
-        "sources": [
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "integration-slack",
-        "category": "integration_context",
-        "promptTokens": 0,
-        "sources": []
-      },
-      {
-        "id": "integration-github",
-        "category": "integration_context",
-        "promptTokens": 38,
-        "sources": [
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "integration-figma",
-        "category": "integration_context",
-        "promptTokens": 32,
-        "sources": [
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "integration-mixed",
-        "category": "integration_context",
-        "promptTokens": 928,
-        "sources": [
-          {
-            "resourceType": "external",
-            "resourceId": "github-alfa",
-            "title": "GitHub PR #142 — catalog export fixes",
-            "projectId": "project-alfa",
-            "integrationProvider": "github",
-            "integrationResourceType": "pull_request",
-            "externalId": "github-pr-142",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:30:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-unrelated",
-            "title": "Unrelated Garden Plans",
-            "projectId": "project-unrelated",
-            "projectName": "Unrelated Garden Plans",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-overdue-copy",
-            "title": "Resolve Outstanding Copy",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "reminder",
-            "resourceId": "reminder-proof",
-            "title": "Send final version for review",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:00:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "slack-alfa",
-            "title": "Slack #catalog — final writing",
-            "projectId": "project-alfa",
-            "integrationProvider": "slack",
-            "integrationResourceType": "message",
-            "externalId": "slack-msg-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-18T11:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-assets",
-            "title": "Review Watercolor Assets",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "project",
-            "resourceId": "project-watercolor",
-            "title": "Watercolor Exhibition",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-watercolor-assets",
-            "title": "Asset Review",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-archive-assets",
-            "title": "Archive Final Assets",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-watercolor-longterm",
-            "title": "Plan Exhibition Outreach",
-            "projectId": "project-watercolor",
-            "projectName": "Watercolor Exhibition",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "notification",
-            "resourceId": "notification-proof",
-            "title": "Review Final Proof is overdue",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T08:30:00Z"
-          },
-          {
-            "resourceType": "external",
-            "resourceId": "figma-watercolor",
-            "title": "Figma — Watercolor Exhibition Layout",
-            "projectId": "project-watercolor",
-            "integrationProvider": "figma",
-            "integrationResourceType": "file",
-            "externalId": "figma-file-1",
-            "explicitIntegrationLink": true,
-            "updatedAt": "2026-08-17T11:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-completed-proof",
-            "title": "Send Approved Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-irrelevant",
-            "title": "Garden meeting notes",
-            "projectId": "project-unrelated",
-            "updatedAt": "2026-08-18T12:30:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          }
-        ]
-      },
-      {
-        "id": "missing-reminders",
-        "category": "missing_uncertain_evidence",
-        "promptTokens": 0,
-        "sources": []
-      },
-      {
-        "id": "missing-github",
-        "category": "missing_uncertain_evidence",
-        "promptTokens": 0,
-        "sources": []
-      },
-      {
-        "id": "conflicting-state",
-        "category": "missing_uncertain_evidence",
-        "promptTokens": 289,
-        "sources": [
-          {
-            "resourceType": "project",
-            "resourceId": "project-alfa",
-            "title": "Alfa 2026 Catalog",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T12:00:00Z"
-          },
-          {
-            "resourceType": "task",
-            "resourceId": "task-review-proof",
-            "title": "Review Final Proof",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T09:00:00Z"
-          },
-          {
-            "resourceType": "milestone",
-            "resourceId": "milestone-final-production",
-            "title": "Final Production",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-18T10:00:00Z"
-          },
-          {
-            "resourceType": "note",
-            "resourceId": "note-workday",
-            "title": "Workday Meeting — Alfa and Watercolor",
-            "projectId": "project-alfa",
-            "projectName": "Alfa 2026 Catalog",
-            "updatedAt": "2026-08-17T16:00:00Z",
-            "parentResourceId": "event-workday"
-          },
-          {
-            "resourceType": "transcript",
-            "resourceId": "transcript-workday-1",
-            "title": "Workday transcript — final writing",
-            "updatedAt": "2026-08-17T16:05:00Z",
-            "parentResourceId": "note-workday"
-          },
-          {
-            "resourceType": "event",
-            "resourceId": "event-workday",
-            "title": "Workday Meeting — Aug 17",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-17T16:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "no-results",
-        "category": "missing_uncertain_evidence",
-        "promptTokens": 67,
-        "sources": [
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-circle",
-            "title": "Circle design alert",
-            "sourceLabel": "Circle",
-            "updatedAt": "2026-08-18T06:00:00Z"
-          },
-          {
-            "resourceType": "activity",
-            "resourceId": "activity-alfa",
-            "title": "Alfa milestone changed",
-            "projectId": "project-alfa",
-            "updatedAt": "2026-08-18T07:00:00Z"
-          }
-        ]
-      }
-    ],
-    "results": [
-      {
-        "caseId": "fact-due",
-        "category": "simple_facts",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 274,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-owner",
-        "category": "simple_facts",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 337,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-milestone",
-        "category": "simple_facts",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-today",
-        "category": "simple_facts",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 230,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-alfa",
-        "category": "resource_understanding",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 283,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-watercolor",
-        "category": "resource_understanding",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 283,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-next",
-        "category": "resource_understanding",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-status",
-        "category": "resource_understanding",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-latest",
-        "category": "meeting_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 303,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-decisions",
-        "category": "meeting_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 96,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-followups",
-        "category": "meeting_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 125,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-project-link",
-        "category": "meeting_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 654,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-meetings-projects",
-        "category": "cross_resource_research",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 654,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-project-state",
-        "category": "cross_resource_research",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-week",
-        "category": "cross_resource_research",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 280,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-tying-summary",
-        "category": "cross_resource_research",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 725,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-focus",
-        "category": "task_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 280,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-long-term",
-        "category": "task_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-overdue",
-        "category": "task_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 293,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-blocked",
-        "category": "task_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-completed",
-        "category": "task_intelligence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-now",
-        "category": "attention",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 307,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-away",
-        "category": "attention",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 274,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-circle",
-        "category": "attention",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 279,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-slack",
-        "category": "integration_context",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-github",
-        "category": "integration_context",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 38,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-figma",
-        "category": "integration_context",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 32,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-mixed",
-        "category": "integration_context",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "missing-reminders",
-        "category": "missing_uncertain_evidence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "missing-github",
-        "category": "missing_uncertain_evidence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "conflicting-state",
-        "category": "missing_uncertain_evidence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "no-results",
-        "category": "missing_uncertain_evidence",
-        "tier": "fast",
-        "model": {
-          "id": "qwen3-1.7b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-1.7b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 67,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-due",
-        "category": "simple_facts",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 274,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-owner",
-        "category": "simple_facts",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 337,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-milestone",
-        "category": "simple_facts",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "fact-today",
-        "category": "simple_facts",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 230,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-alfa",
-        "category": "resource_understanding",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 283,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-watercolor",
-        "category": "resource_understanding",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 283,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-next",
-        "category": "resource_understanding",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "project-status",
-        "category": "resource_understanding",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-latest",
-        "category": "meeting_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 303,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-decisions",
-        "category": "meeting_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 96,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-followups",
-        "category": "meeting_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 125,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "meeting-project-link",
-        "category": "meeting_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 654,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-meetings-projects",
-        "category": "cross_resource_research",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 654,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-project-state",
-        "category": "cross_resource_research",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-week",
-        "category": "cross_resource_research",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 280,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "research-tying-summary",
-        "category": "cross_resource_research",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 725,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-focus",
-        "category": "task_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 280,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-long-term",
-        "category": "task_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-overdue",
-        "category": "task_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 293,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-blocked",
-        "category": "task_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "task-completed",
-        "category": "task_intelligence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-now",
-        "category": "attention",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 307,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-away",
-        "category": "attention",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 274,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "attention-circle",
-        "category": "attention",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 279,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-slack",
-        "category": "integration_context",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-github",
-        "category": "integration_context",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 38,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-figma",
-        "category": "integration_context",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 32,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "integration-mixed",
-        "category": "integration_context",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 928,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "missing-reminders",
-        "category": "missing_uncertain_evidence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "missing-github",
-        "category": "missing_uncertain_evidence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 0,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "conflicting-state",
-        "category": "missing_uncertain_evidence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 289,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      },
-      {
-        "caseId": "no-results",
-        "category": "missing_uncertain_evidence",
-        "tier": "balanced",
-        "model": {
-          "id": "qwen3-4b-q4-k-m",
-          "version": "1",
-          "fileName": "qwen3-4b-q4_k_m.gguf",
-          "quantization": "Q4_K_M",
-          "fileSizeBytes": null
-        },
-        "promptTokens": 67,
-        "sources": [],
-        "output": "",
-        "metrics": {},
-        "score": {
-          "factualCorrectness": null,
-          "unsupportedClaims": 0,
-          "abstentionCorrect": null,
-          "requiredStructure": null,
-          "actionSchemaValid": null,
-          "passed": null
-        },
-        "error": {
-          "code": "model_not_installed",
-          "message": "Model is not installed; benchmark skipped."
-        }
-      }
-    ],
-    "summary": {
-      "fast": {
-        "tested": 0,
-        "passed": 0,
-        "averageFirstTokenMs": null,
-        "averageTokensPerSecond": null,
-        "averageTotalMs": null,
-        "averageProcessRssDeltaBytes": null,
-        "fileSizeBytes": null
-      },
-      "balanced": {
-        "tested": 0,
-        "passed": 0,
-        "averageFirstTokenMs": null,
-        "averageTokensPerSecond": null,
-        "averageTotalMs": null,
-        "averageProcessRssDeltaBytes": null,
-        "fileSizeBytes": null
-      }
     }
   }
 }

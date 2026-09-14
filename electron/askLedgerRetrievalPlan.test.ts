@@ -17,6 +17,18 @@ test('uses the canonical query plan for operation and entity identity', () => {
   assert.equal(plan.entityQuery, 'Alfa');
 });
 
+test('scopes due-date and what-is-going-on project questions', () => {
+  assert.deepEqual(buildRetrievalPlan('When is Alfa due?').primaryResourceTypes, ['project', 'milestone', 'task', 'event', 'reminder']);
+  assert.equal(buildRetrievalPlan("What's going on with Alfa?").entityQuery, 'Alfa');
+  assert.deepEqual(buildRetrievalPlan("What's going on with Alfa?").primaryResourceTypes, ['project']);
+});
+
+test('treats a direct named-project summary as project context', () => {
+  const plan = buildRetrievalPlan('Summarize Watercolor.');
+  assert.deepEqual(plan.primaryResourceTypes, ['project']);
+  assert.equal(plan.entityQuery, 'Watercolor');
+});
+
 test('builds a note container plan with ordering and count constraints', () => {
   const plan = buildRetrievalPlan('Can you look through my Workday meeting notes folder, last 3 notes or so, and summarize them?');
   assert.equal(plan.operation, 'summarize');
@@ -64,6 +76,12 @@ test('builds resource-aware plans for common constrained requests', () => {
   assert.equal(buildRetrievalPlan('Show my today tasks').structuredConstraints.horizon, 'today');
   assert.equal(buildRetrievalPlan('Show overdue tasks').structuredConstraints.overdue, true);
   assert.equal(buildRetrievalPlan('Show completed Alfa tasks').entityQuery, 'Alfa');
+});
+
+test('keeps both sides of task-to-milestone relationship lookups', () => {
+  const plan = buildRetrievalPlan('What milestone is Review Final Proof part of?');
+  assert.deepEqual(plan.primaryResourceTypes, ['milestone', 'task']);
+  assert.equal(plan.entityQuery, 'Review Final Proof');
 });
 
 test('recognizes a named month schedule as a calendar time window', () => {

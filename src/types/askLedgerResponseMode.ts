@@ -110,6 +110,7 @@ const workspaceOverviewSignals = /\b(?:this|my|our|the)\s+workspace\b[\s\S]{0,10
 const personalWeekOverviewSignals = /\b(?:what|whats|how|hows|show|give|tell)\b[\s\S]{0,40}\b(?:my|this|our)\s+week\b|\b(?:my|this|our)\s+week\b[\s\S]{0,40}\b(?:look|like|schedule|calendar|overview|busy|free|plan|going|happening)\b/i;
 const workspaceResourceWords = /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/i;
 const workspaceResourceStateSignals = /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|remaining|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/i;
+const workspaceCreativeProjectSignals = /\b(?:brainstorm(?:ing)?|ideas?|direction|creative direction|ask me (?:some )?questions?|help me (?:think|choose|develop|explore))\b/i;
 const researchSignals = /\b(?:across (?:all|the workspace|Atlas)|look through|actually blocking|where .* really stand\b|where .* really stands\b|connect|analy[sz]e .*dependencies|dependencies|compare .* and|compare .* evidence|all the context|contradictions?|cross[- ]resource|biggest .* risks?|keeping .* from moving)\b/i;
 const freshFollowUpSignals = /^(?:what happened\b|did (?:she|he|they|it|[a-z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)|what did we say\b|what about\b|when is that due\b)/i;
 const responseFactSignals = /\b(?:did|has)\s+(?:she|he|they|[A-Z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)/;
@@ -171,7 +172,7 @@ export const routeAskLedgerMessage = (
   // project/task work questions grounded even if the previous turn was
   // product help or the resource handoff was only partially preserved.
   const workspaceResourceStateQuestion = workspaceResourceWords.test(normalized)
-    && workspaceResourceStateSignals.test(normalized)
+    && (workspaceResourceStateSignals.test(normalized) || (/\bprojects?\b/i.test(normalized) && workspaceCreativeProjectSignals.test(normalized)))
     && (
       workspaceDataIntentDetected
       || namedWorkspaceEntity(message)

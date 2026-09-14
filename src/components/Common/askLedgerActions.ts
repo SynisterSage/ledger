@@ -52,12 +52,22 @@ export const proposeAskLedgerActions = ({
   }
 
   if (/\b(create|make|add|turn|convert)\b/.test(normalized) && /\b(note|notes)\b/.test(normalized)) {
-    const title = cleanTitle(question.replace(/.*?\b(?:create|make|add|turn|convert)\b.*?\bnotes?\b/i, '').replace(/^\s*(about|for|from)\s+/i, '')) || 'Ask Ledger notes';
+    const title = cleanTitle(
+      question
+        .replace(/.*?\b(?:create|make|add|turn|convert)\b.*?\bnotes?\b/i, '')
+        .replace(/^\s*(?:about|for|from)\s+(?:me\s+)?/i, '')
+        .replace(/\s+for me\s*[.!?]*$/i, '')
+    ) || 'Ask Ledger notes';
     return [make('create_note', { title, content: answer })];
   }
 
-  if (/\b(create|set|add)\b/.test(normalized) && /\b(reminder|remind)\b/.test(normalized)) {
-    const title = cleanTitle(question.replace(/.*?\b(?:reminder|remind)\b/i, '').replace(/^\s*(to|for)\s+/i, '')) || 'Follow up from Ask Ledger';
+  if (/\b(create|set|add|remind)\b/.test(normalized) && /\b(reminder|remind)\b/.test(normalized)) {
+    const title = cleanTitle(
+      question
+        .replace(/.*?\b(?:reminder|remind)\b/i, '')
+        .replace(/^\s*(?:me\s+)?(?:to|for)\s+/i, '')
+        .replace(/\s+(?:on\s+)?(?:this\s+coming\s+|next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*[.!?]*$/i, '')
+    ) || 'Follow up from Ask Ledger';
     const weekday = normalized.includes('friday') ? 5 : normalized.includes('thursday') ? 4 : normalized.includes('wednesday') ? 3 : normalized.includes('tuesday') ? 2 : normalized.includes('monday') ? 1 : normalized.includes('saturday') ? 6 : normalized.includes('sunday') ? 0 : null;
     return [make('create_reminder', { title, remind_at: weekday === null ? null : nextWeekday(weekday) })];
   }

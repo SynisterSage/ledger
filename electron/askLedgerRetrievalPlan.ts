@@ -109,6 +109,15 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  if (/\bwhen\s+is\s+[a-z0-9][a-z0-9 &'/-]{1,80}\s+due\b/.test(normalized)) return ['project', 'milestone', 'task', 'event', 'reminder'];
+  if (/\bwhat(?:s| is)\s+going\s+on\s+with\b/.test(normalized)) return ['project'];
+  // Relationship lookups need both sides available: the named task is the
+  // lexical seed, while the requested milestone/project is the answer.
+  if (/\b(?:what|which)\s+(?:milestone|project)\s+is\s+.+?\s+(?:part of|under|belongs to|linked to|associated with)\b/.test(normalized)) {
+    return normalized.includes('milestone') ? ['milestone', 'task'] : ['project', 'task'];
+  }
+  if (/\b(?:summarize|summary of|review|assess)\s+(?:my|the)?\s*[a-z0-9][a-z0-9 &'/-]{2,80}[.!?]?\s*$/.test(normalized)
+    && !/\b(?:meeting|meetings|note|notes|task|tasks|event|events|reminder|reminders|pdf|file|files)\b/.test(normalized)) return ['project'];
   const asksForWeekOverview = /\bmy week\b/.test(normalized)
     && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
   if (asksForWeekOverview) return ['event', 'reminder', 'task', 'milestone', 'project'];
@@ -198,11 +207,22 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     if (candidate && !/^(?:last|latest|newest|recent|upcoming|calendar|work)(?:\s+\d+)?$/i.test(candidate) && !/^\d+$/.test(candidate)) return candidate;
   }
   if (primaryResourceTypes.includes('project')) {
+    if (/\b(?:that|this)\s+project\b/i.test(question)) return undefined;
+    const dueProject = question.match(/\bwhen\s+is\s+(.+?)\s+due\b/i);
+    if (dueProject?.[1]) return dueProject[1].trim();
+    const goingOnProject = question.match(/\bwhat(?:'s|s| is)\s+going\s+on\s+with\s+(.+?)(?:[?.!]|$)/i);
+    if (goingOnProject?.[1]) return goingOnProject[1].trim();
+    const summaryProject = question.match(/\b(?:summarize|summary of|review|assess)\s+(?:my|the)?\s*(.+?)(?:[?.!]|$)/i);
+    if (summaryProject?.[1]) return summaryProject[1].trim();
     const namedProject = question.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/i);
     if (namedProject?.[1]) return namedProject[1].trim();
     const match = question.match(/\bproject\s+(.+?)(?=\s+(?:and|to|that|where|what|is|has)\b|[,?.]|$)/i);
     return match?.[1]?.trim();
   }
+  const relationshipTarget = question.match(
+    /\b(?:what|which)\s+(?:milestone|project)\s+is\s+(.+?)\s+(?:part of|under|belongs to|linked to|associated with)\b/i
+  );
+  if (relationshipTarget?.[1]) return relationshipTarget[1].trim();
   // In compound questions the primary type can be a child resource even
   // though the authoritative entity is the named project.
   if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {

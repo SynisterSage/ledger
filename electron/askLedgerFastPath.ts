@@ -1,6 +1,6 @@
 import type { AskLedgerContextItem, AskLedgerSource } from '../src/types/askLedgerContext.ts';
 
-export type AskLedgerFastPathKind = 'due_today' | 'meetings' | 'overdue_count' | 'project_due' | 'task_owner' | 'recent_notes' | 'active_reminders';
+export type AskLedgerFastPathKind = 'due_today' | 'meetings' | 'overdue_count' | 'project_due' | 'task_owner' | 'recent_notes' | 'active_reminders' | 'active_tasks';
 export type AskLedgerFastPathResolution = 'resolved' | 'not_found' | 'ambiguous' | 'insufficient_data' | 'unsupported';
 export type AskLedgerFastPathResult = { kind: AskLedgerFastPathKind; resolution: AskLedgerFastPathResolution; answer: string; items: AskLedgerContextItem[] };
 
@@ -47,6 +47,11 @@ export const resolveAskLedgerFastPath = (question: string, documents: AskLedgerC
   if (/\b(?:active|open|current) reminders?\b|\breminders?\s+(?:are|still)\s+active\b/.test(normalized)) {
     const items = unique(documents.filter((item) => item.resourceType === 'reminder' && !completed(item)));
     return { kind: 'active_reminders', resolution: items.length ? 'resolved' : 'not_found', answer: items.length ? `Active reminders:\n${items.map((item) => `- ${item.title}`).join('\n')}` : 'No active reminders.', items };
+  }
+  if (/\b(?:active|open|current)\s+tasks?\b|\bwhat tasks do i have\b|\bwhich tasks are open\b/.test(normalized)) {
+    const items = unique(documents.filter((item) => item.resourceType === 'task' && !completed(item)));
+    const lines = items.map((item) => '- ' + item.title + (item.projectName ? ' · ' + item.projectName : '') + (dateValue(item) ? ' · Due ' + displayDate(dateValue(item)) : ''));
+    return { kind: 'active_tasks', resolution: items.length ? 'resolved' : 'not_found', answer: items.length ? ['Active tasks (' + items.length + '):', ...lines].join('\n') : 'No active tasks.', items };
   }
   if (/\bwhen\b.*\bdue\b.*\bproject\b|\bproject\b.*\bdue\b/.test(normalized)) {
     const query = normalize(titleQuery(question));

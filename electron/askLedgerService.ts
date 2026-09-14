@@ -925,7 +925,7 @@ export class AskLedgerService {
       }
       const retrievalPlan = buildRetrievalPlan(request.question);
       routingMs = Date.now() - routingStartedAt;
-      const fastPath = route.executionMode !== 'ledger_product_help' && !skill && !request.explicitContext && !request.attachmentIds?.length && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length
+      const fastPath = route.executionMode !== 'ledger_product_help' && !skill && !request.explicitContext && !request.attachmentIds?.length
         ? resolveAskLedgerFastPath(request.question, request.documents)
         : undefined;
       const fastPathResolved = fastPath && (fastPath.resolution === 'resolved' || fastPath.resolution === 'not_found');

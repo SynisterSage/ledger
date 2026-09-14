@@ -12,6 +12,39 @@ test('proposes a task without inventing optional fields', () => {
   assert.deepEqual(actions[0].payload, { title: 'test the Windows runtime' });
 });
 
+test('extracts a clean title from a note request phrased for the user', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Can you make a note for me brainstorming UI/UX ideas for me?',
+    answer: 'I prepared a note for your review.',
+    sourceMessageId: 'assistant-note-1',
+  });
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].payload.title, 'brainstorming UI/UX ideas');
+});
+
+test('proposes a dated reminder with a confirmation payload', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Remind me to send the draft on Friday.',
+    answer: 'I prepared a reminder for your review.',
+    sourceMessageId: 'assistant-reminder-1',
+  });
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].type, 'create_reminder');
+  assert.equal(actions[0].payload.title, 'send the draft');
+  assert.match(String(actions[0].payload.remind_at), /^20\d\d-/);
+});
+
+test('proposes a task status update only with selected task context', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Mark this done.',
+    answer: 'The task is ready to be completed.',
+    initialContext: { resourceType: 'task', resourceId: 'task-1', title: 'Review draft' },
+    sourceMessageId: 'assistant-status-1',
+  });
+  assert.equal(actions.length, 1);
+  assert.deepEqual(actions[0].payload, { task_id: 'task-1', status: 'completed' });
+});
+
 test('turns grounded bullets into bounded task proposals with explicit project context', () => {
   const actions = proposeAskLedgerActions({
     question: 'Turn these into tasks.',

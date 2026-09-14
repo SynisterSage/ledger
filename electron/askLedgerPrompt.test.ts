@@ -145,6 +145,17 @@ test('constrains capability answers to application-owned capabilities', () => {
   assert.match(prompt, /Read attached PDF files through attachment retrieval/);
 });
 
+test('explains that supported write requests are ready for confirmation', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'Can you make a note for me brainstorming UI/UX ideas for me?',
+    responseMode: 'workspace_grounded',
+  });
+  assert.match(prompt, /supported Ledger action/);
+  assert.match(prompt, /Do not say that you cannot create, save, or add this Ledger record/);
+  assert.match(prompt, /confirm it to save/);
+  assert.match(prompt, /Never claim that the record was saved or created until the user confirms/);
+});
+
 test('passes adaptive depth guidance through the shared grounded prompt', () => {
   const brief = buildAskLedgerPrompt({ question: 'Is Task X done?', responseMode: 'workspace_grounded', answerDepth: 'brief' });
   const detailed = buildAskLedgerPrompt({ question: 'Why is Project A blocked?', responseMode: 'workspace_grounded', answerDepth: 'detailed' });

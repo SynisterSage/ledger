@@ -189,12 +189,12 @@ export const ASK_LEDGER_TOOL_DEFINITIONS: AskLedgerToolDefinition[] = [
     inputSchema: schema(
       {
         title: { type: 'string', description: 'Task title.' },
-        projectId: resourceId('Optional project ID.'),
-        dueDate: { type: 'string', description: 'Optional ISO due date.' },
+        project_id: resourceId('Optional project ID.'),
+        due_date: { type: 'string', description: 'Optional ISO due date.' },
         priority: { type: 'string', description: 'Optional task priority.' },
-        idempotencyKey: { type: 'string', description: 'Stable key for safe retries.' },
+        idempotency_key: { type: 'string', description: 'Stable key for safe retries.' },
       },
-      ['title', 'idempotencyKey']
+      ['title', 'idempotency_key']
     ),
     surfaces: ['ask_ledger', 'projects_ask', 'project_lens', 'overview_lens', 'notes_ask', 'files_ask'],
     requiredScopes: ['tasks:write'],
@@ -208,13 +208,13 @@ export const ASK_LEDGER_TOOL_DEFINITIONS: AskLedgerToolDefinition[] = [
     description: 'Update bounded planning fields on an existing Ledger task.',
     inputSchema: schema(
       {
-        taskId: resourceId('The task ID.'),
+        task_id: resourceId('The task ID.'),
         status: { type: 'string', description: 'Optional new task status.' },
-        dueDate: { type: 'string', description: 'Optional ISO due date.' },
-        expectedUpdatedAt: { type: 'string', description: 'Expected revision timestamp.' },
-        idempotencyKey: { type: 'string', description: 'Stable key for safe retries.' },
+        due_date: { type: 'string', description: 'Optional ISO due date.' },
+        expected_updated_at: { type: 'string', description: 'Expected revision timestamp.' },
+        idempotency_key: { type: 'string', description: 'Stable key for safe retries.' },
       },
-      ['taskId', 'idempotencyKey']
+      ['task_id', 'idempotency_key']
     ),
     surfaces: ['ask_ledger', 'projects_ask', 'project_lens', 'overview_lens', 'notes_ask', 'files_ask'],
     requiredScopes: ['tasks:write'],
@@ -230,10 +230,10 @@ export const ASK_LEDGER_TOOL_DEFINITIONS: AskLedgerToolDefinition[] = [
       {
         title: { type: 'string', description: 'Note title.' },
         content: { type: 'string', description: 'Bounded note content.' },
-        projectId: resourceId('Optional project ID.'),
-        idempotencyKey: { type: 'string', description: 'Stable key for safe retries.' },
+        project_id: resourceId('Optional project ID.'),
+        idempotency_key: { type: 'string', description: 'Stable key for safe retries.' },
       },
-      ['title', 'idempotencyKey']
+      ['title', 'idempotency_key']
     ),
     surfaces: ['ask_ledger', 'notes_ask', 'files_ask'],
     requiredScopes: ['notes:write'],
@@ -248,11 +248,11 @@ export const ASK_LEDGER_TOOL_DEFINITIONS: AskLedgerToolDefinition[] = [
     inputSchema: schema(
       {
         title: { type: 'string', description: 'Reminder title.' },
-        remindAt: { type: 'string', description: 'ISO reminder timestamp.' },
-        projectId: resourceId('Optional project ID.'),
-        idempotencyKey: { type: 'string', description: 'Stable key for safe retries.' },
+        remind_at: { type: 'string', description: 'ISO reminder timestamp.' },
+        project_id: resourceId('Optional project ID.'),
+        idempotency_key: { type: 'string', description: 'Stable key for safe retries.' },
       },
-      ['title', 'remindAt', 'idempotencyKey']
+      ['title', 'remind_at', 'idempotency_key']
     ),
     surfaces: ['ask_ledger', 'project_lens', 'overview_lens', 'notes_ask', 'files_ask'],
     requiredScopes: ['daily:write'],

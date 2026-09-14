@@ -496,6 +496,9 @@ const askLedgerDocumentScope = (question: string) => {
 
 const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
   const value = question.toLowerCase().replace(/[’']/g, '').trim();
+  const creativeProjectRequest =
+    /\bprojects?\b/.test(value) &&
+    /\b(?:brainstorm(?:ing)?|ideas?|direction|ask me (?:some )?questions?|help me (?:think|choose|develop|explore))\b/.test(value);
   return (
     /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/.test(
       value
@@ -503,6 +506,7 @@ const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
     /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next actions?|next steps?|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|what do i need to do|needs? to happen|needs? attention|what should i do)\b/.test(
       value
     ) || /\b(?:in|for|about)\s+(?:the\s+)?[^?.,]{2,80}\s+projects?\b/.test(value)
+    || creativeProjectRequest
   );
 };
 
@@ -527,7 +531,7 @@ const askLedgerDateWindow = (question: string) => {
   return {};
 };
 
-export const askLedgerProjectReference = (question: string) => {
+const askLedgerProjectReference = (question: string) => {
   if (!/\bprojects?\b/i.test(question)) return undefined;
   // Compound questions commonly continue immediately with an intent clause:
   // "project History of Photo what are the next actions ...". Stop at that
@@ -1068,6 +1072,7 @@ const AskLedgerActivityTrace = ({
           detail="Getting the right Ledger context ready."
           active
           compact={compact}
+          className="border-0 bg-transparent px-0 py-0"
         />
       </div>
     );
@@ -1080,6 +1085,7 @@ const AskLedgerActivityTrace = ({
           detail={current ? askLedgerActivityDescription(current) : undefined}
           active={active}
           compact={compact}
+          className="border-0 bg-transparent px-0 py-0"
         />
         <span className="sr-only">{expanded ? 'Hide run details' : 'Show run details'}</span>
       </button>
@@ -2627,8 +2633,20 @@ export const AskLedgerPanel = ({
     requestInitializingRef.current = true;
     const preflightStartedAt = Date.now();
     const projectAnchoredRequest = submittedContext?.resourceType === 'project';
+    const previousProjectSource = conversationRef.current?.previousSources?.find(
+      (source) => source.type === 'project' && source.title
+    );
+    const previousQuestionProject = conversationRef.current?.previousQuestion
+      ? askLedgerProjectReference(conversationRef.current.previousQuestion)
+      : undefined;
+    const conversationProjectTitle = previousProjectSource?.title ?? previousQuestionProject;
+    const conversationProjectRequest = Boolean(conversationProjectTitle);
+    const vagueProjectReference = /\b(?:that|this)\s+project\b/i.test(effectiveQuestion);
+    const requestedProjectReference = vagueProjectReference
+      ? undefined
+      : askLedgerProjectReference(effectiveQuestion);
     const relatedWorkspaceRequest =
-      projectAnchoredRequest || askLedgerNeedsRelatedWorkspaceContext(effectiveQuestion);
+      projectAnchoredRequest || conversationProjectRequest || askLedgerNeedsRelatedWorkspaceContext(effectiveQuestion);
     const projectRequestOptions = relatedWorkspaceRequest
       ? {
           // A project handoff needs its exact work records, not just the
@@ -2639,14 +2657,14 @@ export const AskLedgerPanel = ({
           // this, "my History of Photo project ... and its events" falls
           // back to broad retrieval and can lose the authoritative project
           // row before the orchestrator sees it.
-          project: submittedContext?.title ?? askLedgerProjectReference(effectiveQuestion),
+          project: submittedContext?.title ?? requestedProjectReference ?? conversationProjectTitle,
           integrationQuery: effectiveQuestion,
         }
       : {
           scope: askLedgerDocumentScope(effectiveQuestion),
           ...askLedgerDateWindow(effectiveQuestion),
           openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion),
-          project: askLedgerProjectReference(effectiveQuestion),
+          project: requestedProjectReference,
           taskHorizon: askLedgerTaskHorizon(effectiveQuestion),
           assignedToMe: askLedgerAssignedToMe(
             effectiveQuestion,
@@ -2654,13 +2672,68 @@ export const AskLedgerPanel = ({
           ),
           integrationQuery: effectiveQuestion,
         };
+    const loadAskLedgerDocuments = async () => {
+      const initial = (await api.getAskLedgerDocuments(workspaceId, projectRequestOptions)) as {
+        workspaceId?: string;
+        documents?: Array<Record<string, unknown>>;
+      };
+      const scope = projectRequestOptions.scope;
+      const requestedTaskData = scope === 'tasks' || scope === 'open_actions' || scope === 'deadlines';
+      const hasTaskDocuments = (initial.documents ?? []).some((item) => item.resourceType === 'task');
+      if (!requestedTaskData || hasTaskDocuments || projectAnchoredRequest) return initial;
+      const fallback = (await api.getAskLedgerDocuments(workspaceId, { ...projectRequestOptions, scope: 'all' })) as {
+        workspaceId?: string;
+        documents?: Array<Record<string, unknown>>;
+      };
+      let taskDocuments: Array<Record<string, unknown>> = [];
+      const fallbackHasTaskDocuments = (fallback.documents ?? []).some((item) => item.resourceType === 'task');
+      if (!fallbackHasTaskDocuments) {
+        // The task list endpoint is also the source used by Projects and
+        // Calendar. Keep task lookup useful when an older/deployed
+        // ai-documents endpoint omits tasks from its response.
+        const taskPayload = await api.getTasks().catch(() => []);
+        const taskRows = Array.isArray(taskPayload) ? taskPayload : [];
+        taskDocuments = taskRows.map((row) => {
+          const record = row as Record<string, unknown>;
+          const dueDate = record.due_date ? String(record.due_date) : '';
+          const dueTime = record.due_time ? String(record.due_time) : '';
+          const status = record.status ? String(record.status) : undefined;
+          return {
+            workspaceId,
+            resourceType: 'task',
+            resourceId: String(record.id ?? ''),
+            title: String(record.title ?? 'Untitled task'),
+            content: [
+              record.description,
+              record.notes,
+              record.task_horizon ? `Horizon: ${record.task_horizon}` : null,
+              record.priority ? `Priority: ${record.priority}` : null,
+              dueDate ? `Due: ${dueDate}${dueTime ? ` ${dueTime}` : ''}` : null,
+            ].filter(Boolean).join(' '),
+            projectId: record.project_id ?? undefined,
+            milestoneId: record.milestone_id ?? undefined,
+            status,
+            taskHorizon: record.task_horizon ?? undefined,
+            horizon: record.task_horizon ?? undefined,
+            dueAt: dueDate ? `${dueDate}${dueTime ? `T${dueTime}` : ''}` : undefined,
+            priority: record.priority ?? undefined,
+            assigneeId: record.assigned_to_user_id ?? record.assigned_to ?? undefined,
+            teamId: record.assigned_to_team_id ?? record.assigned_team_id ?? undefined,
+            createdAt: record.created_at ?? undefined,
+            updatedAt: record.updated_at ?? record.created_at ?? undefined,
+            sourceLabel: 'Task',
+          };
+        }).filter((record) => Boolean(record.resourceId));
+      }
+      return {
+        ...fallback,
+        documents: [...(initial.documents ?? []), ...(fallback.documents ?? []), ...taskDocuments],
+      };
+    };
     void Promise.all(
       route.retrievalRequired
         ? [
-            api.getAskLedgerDocuments(workspaceId, projectRequestOptions) as Promise<{
-              workspaceId?: string;
-              documents?: Array<Record<string, unknown>>;
-            }>,
+            loadAskLedgerDocuments(),
             effectiveQuestion
               ? (api.searchWorkspace(workspaceId, effectiveQuestion) as Promise<
                   Array<Record<string, unknown>>
@@ -5391,7 +5464,7 @@ export const AskLedgerPanel = ({
             />
           ) : null}
           <p
-            className={`mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${
+            className={`mt-10 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${
               !state.response.answer ? 'ledger-ask-generating' : ''
             }`}
           >
