@@ -4847,14 +4847,34 @@ export const CalendarWindow = ({
     if (selectedMatchingIds?.length) {
       try {
         const shiftMs = start.getTime() - originalStart.getTime();
-        const result = (await api.bulkShiftEvents(selectedMatchingIds, shiftMs)) as {
-          success?: boolean;
-          shifted_ids?: string[];
-        };
-        if (!result.success || !Array.isArray(result.shifted_ids) || result.shifted_ids.length !== selectedMatchingIds.length) {
-          throw new Error('The calendar changed before updating. Review the matches again.');
+        let shiftedIds: Set<string>;
+        try {
+          const result = (await api.bulkShiftEvents(selectedMatchingIds, shiftMs)) as {
+            success?: boolean;
+            shifted_ids?: string[];
+          };
+          if (!result.success || !Array.isArray(result.shifted_ids) || result.shifted_ids.length !== selectedMatchingIds.length) {
+            throw new Error('The calendar changed before updating. Review the matches again.');
+          }
+          shiftedIds = new Set(result.shifted_ids);
+        } catch (bulkError) {
+          // Keep this compatible with an older backend while the desktop app
+          // rolls out: the reviewed IDs are still authoritative, and each
+          // existing event PATCH applies the same shift.
+          const status = (bulkError as { status?: number })?.status;
+          if (status !== 404 && status !== 500) throw bulkError;
+          const fallbackRows = await Promise.all(
+            selectedMatchingIds.map(async (id) => {
+              const event = events.find((item) => baseEventId(item.id) === id);
+              if (!event) throw new Error('The calendar changed before updating. Review the matches again.');
+              return (await api.updateEvent(id, {
+                start_at: new Date(new Date(event.start_at).getTime() + shiftMs).toISOString(),
+                end_at: new Date(new Date(event.end_at).getTime() + shiftMs).toISOString(),
+              })) as EventRow;
+            })
+          );
+          shiftedIds = new Set(fallbackRows.map((event) => baseEventId(event.id)));
         }
-        const shiftedIds = new Set(result.shifted_ids);
         setEvents((prev) =>
           prev.map((event) => {
             if (!shiftedIds.has(baseEventId(event.id))) return event;

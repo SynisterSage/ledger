@@ -21798,7 +21798,7 @@ app.post('/api/events/bulk-shift', authMiddleware, rateLimit('write'), async (re
 
     const { data: rows, error: rowsError } = await supabase
       .from('events')
-      .select('id, workspace_id, source_platform')
+      .select('id, workspace_id, source_platform, start_at, end_at')
       .in('id', eventIds);
     if (rowsError) throw rowsError;
     if (!Array.isArray(rows) || rows.length !== eventIds.length) {
@@ -21813,13 +21813,30 @@ app.post('/api/events/bulk-shift', authMiddleware, rateLimit('write'), async (re
       return res.status(409).json({ error: 'Connected calendar events must be changed from their source calendar.' });
     }
 
-    const { data: shifted, error: shiftError } = await supabase.rpc('bulk_shift_calendar_events', {
-      p_workspace_id: workspaceId,
-      p_event_ids: eventIds,
-      p_shift_ms: shiftMs,
-    });
-    if (shiftError) throw shiftError;
-    const shiftedIds = Array.isArray(shifted) ? shifted.map((row) => String(row.id)) : [];
+    const shiftedRows = await Promise.all(
+      rows.map(async (row) => {
+        const startAt = new Date(row.start_at);
+        const endAt = new Date(row.end_at);
+        if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+          throw new Error('One or more matching events has an invalid time.');
+        }
+        const { data, error } = await supabase
+          .from('events')
+          .update({
+            start_at: new Date(startAt.getTime() + shiftMs).toISOString(),
+            end_at: new Date(endAt.getTime() + shiftMs).toISOString(),
+            updated_by: req.authUser.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', row.id)
+          .eq('workspace_id', workspaceId)
+          .select('id')
+          .single();
+        if (error) throw error;
+        return data;
+      })
+    );
+    const shiftedIds = shiftedRows.map((row) => String(row.id));
     if (shiftedIds.length !== eventIds.length) {
       return res.status(409).json({ error: 'The calendar changed before updating. Review the matches again.' });
     }
