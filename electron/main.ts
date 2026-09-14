@@ -987,16 +987,16 @@ ipcMain.handle('meeting-transcription:model-status', () => localTranscriptionSer
 const localModelDownloadPickerGrants = new Map<number, number>();
 const localModelStorageCanChange = () => {
   const localAIStatus = localAIAssets.status();
-  return !Object.values(localAIStatus.generationModels).some((model) => model.installed || model.downloading) &&
-    !localAIStatus.embedding.installed && !localAIStatus.embedding.downloading &&
-    !localTranscriptionService.modelStatus().installed && !localTranscriptionService.modelStatus().downloading &&
-    !localVisionAssets.status().available && !localVisionAssets.status().downloading;
+  return !Object.values(localAIStatus.generationModels).some((model) => model.downloading) &&
+    !localAIStatus.embedding.downloading &&
+    !localTranscriptionService.modelStatus().downloading &&
+    !localVisionAssets.status().downloading;
 };
 const selectLocalModelStorage = async (event: Electron.IpcMainInvokeEvent, forDownload = false, downloadCount = 1) => {
   const options = { title: 'Choose where Ledger stores local models', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
   const selection = await showLedgerOpenDialog(event, options);
   if (selection.canceled || !selection.filePaths[0]) return { canceled: true, root: getLocalModelStorageRoot(), defaultRoot: defaultLocalModelStorageRoot() };
-  if (!localModelStorageCanChange()) throw new Error('Delete installed local models and stop active downloads before changing model storage. Existing models are not moved automatically.');
+  if (!localModelStorageCanChange()) throw new Error('Stop active local model downloads before changing model storage. Existing models stay in their current folder and are detected there.');
   const result = await setLocalModelStorageRoot(selection.filePaths[0]);
   if (forDownload) localModelDownloadPickerGrants.set(event.sender.id, Math.max(1, Math.floor(downloadCount)));
   return { canceled: false, ...result, defaultRoot: defaultLocalModelStorageRoot() };

@@ -4,7 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { getLocalModelStorageRoot } from './localModelStorage.ts';
+import { getLocalModelStorageRoot, localModelPathCandidates } from './localModelStorage.ts';
 
 // `electron` resolves to a harmless executable path when these model-layer
 // tests run under plain Node. Keep the asset contract testable without a
@@ -130,6 +130,7 @@ export type LocalAIStatus = {
 
 const assetRoot = () => path.join(getLocalModelStorageRoot(), 'ai');
 const modelPath = (asset: LocalAIAssetManifest) => path.join(assetRoot(), 'models', asset.role, asset.role === 'generation' && asset.id !== DEFAULT_GENERATION_MODEL_ID ? asset.id : '', asset.fileName);
+const modelPathCandidates = (asset: LocalAIAssetManifest) => localModelPathCandidates('ai', 'models', asset.role, asset.role === 'generation' && asset.id !== DEFAULT_GENERATION_MODEL_ID ? asset.id : '', asset.fileName);
 const temporaryModelPath = (asset: LocalAIAssetManifest, target = modelPath(asset)) => `${target}.${process.pid}.part`;
 const selectionPath = () => path.join(assetRoot(), 'metadata', 'generation-selection.json');
 
@@ -211,6 +212,15 @@ export class LocalAIAssetManager {
     const override = model.tier === 'fast'
       ? process.env.LEDGER_LOCAL_AI_MODEL_PATH?.trim()
       : process.env.LEDGER_LOCAL_AI_BALANCED_MODEL_PATH?.trim();
+    if (override) return path.resolve(override);
+    return modelPathCandidates(model).find((candidate) => fs.existsSync(candidate)) ?? modelPath(model);
+  }
+  private generationDownloadPath(modelId: string) {
+    const model = this.generationModel(modelId);
+    if (!model) throw new Error('Invalid generation model.');
+    const override = model.tier === 'fast'
+      ? process.env.LEDGER_LOCAL_AI_MODEL_PATH?.trim()
+      : process.env.LEDGER_LOCAL_AI_BALANCED_MODEL_PATH?.trim();
     return override ? path.resolve(override) : modelPath(model);
   }
   setSelectedGenerationTier(tier: unknown) {
@@ -226,12 +236,15 @@ export class LocalAIAssetManager {
     if (role === 'generation') return this.getGenerationModelPath(this.getSelectedGenerationModel().id);
     const asset = this.manifest(role);
     const override = process.env.LEDGER_LOCAL_AI_EMBEDDING_MODEL_PATH;
-    return override?.trim() ? path.resolve(override) : modelPath(asset);
+    if (override?.trim()) return path.resolve(override);
+    return modelPathCandidates(asset).find((candidate) => fs.existsSync(candidate)) ?? modelPath(asset);
   }
   private statusFor(asset: LocalAIAssetManifest): LocalAIAssetStatus {
       const downloading = this.downloads.has(asset.id);
       const verifying = this.verifying.has(asset.id);
-      const file = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : this.pathFor(asset.role);
+      const file = downloading
+        ? asset.role === 'generation' ? this.generationDownloadPath(asset.id) : modelPath(asset)
+        : asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : this.pathFor(asset.role);
       const progressFile = downloading ? temporaryModelPath(asset, file) : file;
       let installed = false; let bytesDownloaded = 0; let error: string | null = null;
       try { const stat = fs.statSync(progressFile); bytesDownloaded = stat.size; } catch { bytesDownloaded = 0; }
@@ -306,7 +319,7 @@ export class LocalAIAssetManager {
     const free = await fs.promises.statfs(assetRoot());
     if (Number(free.bavail) * Number(free.bsize) < expectedSize! + 256 * 1024 * 1024) { this.downloadErrors.set(asset.id, { code: 'disk_space', message: 'There is not enough disk space for Local AI.' }); this.emit(); throw new Error('There is not enough disk space for Local AI.'); }
     const controller = new AbortController(); this.downloads.set(asset.id, controller); if (asset.role === 'generation') this.generationDownloadId = asset.id; this.downloadErrors.delete(asset.id); this.emit();
-    const target = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : modelPath(asset); const temporary = temporaryModelPath(asset, target);
+    const target = asset.role === 'generation' ? this.generationDownloadPath(asset.id) : modelPath(asset); const temporary = temporaryModelPath(asset, target);
     try {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const response = await fetch(downloadUrl!, { signal: controller.signal, redirect: 'follow' });

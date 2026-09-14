@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import https from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
-import { localModelPath } from './localModelStorage.ts';
+import { localModelPath, localModelPathCandidates } from './localModelStorage.ts';
 import electron from 'electron';
 
 const electronApp = (electron as unknown as { app?: { getPath(name: string): string } }).app;
@@ -47,7 +47,8 @@ export class TranscriptionModelManager {
 
   onChange(listener: (status: ModelStatus) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   status() { return { ...this.statusValue, installed: this.isInstalled() }; }
-  modelPath() { return path.join(this.root, RECOMMENDED_MODEL.fileName); }
+  modelPath() { return localModelPathCandidates('models', 'whisper', RECOMMENDED_MODEL.fileName).find((candidate) => fs.existsSync(candidate)) ?? path.join(this.root, RECOMMENDED_MODEL.fileName); }
+  private downloadModelPath() { return path.join(this.root, RECOMMENDED_MODEL.fileName); }
 
   async download() {
     if (this.downloadPromise) return this.downloadPromise;
@@ -60,7 +61,7 @@ export class TranscriptionModelManager {
   }
 
   private async performDownload() {
-    const temporary = `${this.modelPath()}.${process.pid}.download`;
+    const temporary = `${this.downloadModelPath()}.${process.pid}.download`;
     await fs.promises.mkdir(this.root, { recursive: true });
     await fs.promises.rm(temporary, { force: true });
     this.downloadStartedAt = Date.now();
@@ -70,7 +71,7 @@ export class TranscriptionModelManager {
       const result = await this.downloadFrom(this.RECOMMENDED_URL, temporary);
       if (result.bytes !== RECOMMENDED_MODEL.expectedBytes) throw new Error('The Whisper download failed expected-size verification.');
       if (result.sha256 !== RECOMMENDED_MODEL.sha256) throw new Error('The Whisper download failed SHA-256 verification.');
-      await fs.promises.rename(temporary, this.modelPath());
+      await fs.promises.rename(temporary, this.downloadModelPath());
       if (!this.isInstalled()) throw new Error('The downloaded Whisper model failed validation.');
       this.statusValue = { ...this.status(), downloading: false, bytesDownloaded: RECOMMENDED_MODEL.expectedBytes, estimatedSecondsRemaining: 0, error: null };
       this.emit();

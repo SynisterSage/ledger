@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { localModelPath } from './localModelStorage.ts';
+import { localModelPath, localModelPathCandidates } from './localModelStorage.ts';
 const root = () => localModelPath('ai', 'models', 'vision', 'gemma-3-4b-it');
 
 export const LOCAL_VISION_ASSETS = {
@@ -31,8 +31,10 @@ export type LocalVisionAssetStatus = {
 };
 
 const filePath = (asset: keyof typeof LOCAL_VISION_ASSETS) => path.join(root(), LOCAL_VISION_ASSETS[asset].fileName);
+const filePathCandidates = (asset: keyof typeof LOCAL_VISION_ASSETS) => localModelPathCandidates('ai', 'models', 'vision', 'gemma-3-4b-it', LOCAL_VISION_ASSETS[asset].fileName);
+const existingFilePath = (asset: keyof typeof LOCAL_VISION_ASSETS) => filePathCandidates(asset).find((candidate) => fs.existsSync(candidate)) ?? filePath(asset);
 const validFile = (asset: keyof typeof LOCAL_VISION_ASSETS) => {
-  try { return fs.statSync(filePath(asset)).size === LOCAL_VISION_ASSETS[asset].size; } catch { return false; }
+  try { return fs.statSync(existingFilePath(asset)).size === LOCAL_VISION_ASSETS[asset].size; } catch { return false; }
 };
 
 export class LocalVisionAssetManager {
@@ -44,14 +46,14 @@ export class LocalVisionAssetManager {
   private emit() { const status = this.status(); this.listeners.forEach((listener) => listener(status)); }
 
   status(): LocalVisionAssetStatus {
-    const modelBytes = (() => { try { return fs.statSync(filePath('model')).size; } catch { return 0; } })();
-    const mmprojBytes = (() => { try { return fs.statSync(filePath('mmproj')).size; } catch { return 0; } })();
+    const modelBytes = (() => { try { return fs.statSync(existingFilePath('model')).size; } catch { return 0; } })();
+    const mmprojBytes = (() => { try { return fs.statSync(existingFilePath('mmproj')).size; } catch { return 0; } })();
     const totalBytes = LOCAL_VISION_ASSETS.model.size + LOCAL_VISION_ASSETS.mmproj.size;
     return {
       available: validFile('model') && validFile('mmproj'),
       downloading: this.downloading,
-      modelPath: filePath('model'),
-      mmprojPath: filePath('mmproj'),
+      modelPath: existingFilePath('model'),
+      mmprojPath: existingFilePath('mmproj'),
       modelBytes,
       mmprojBytes,
       totalBytes,
