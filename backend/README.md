@@ -32,6 +32,11 @@ npm run dev
 - `INTEGRATION_TOKEN_ENCRYPTION_KEY` - Server-side key used to protect stored integration tokens
 - `SLACK_CLIENT_ID` - Slack app client id
 - `SLACK_CLIENT_SECRET` - Slack app client secret
+- `MICROSOFT_CLIENT_ID` - Microsoft Entra app registration client id for Outlook mail
+- `MICROSOFT_CLIENT_SECRET` - Microsoft Entra app registration client secret
+- `MICROSOFT_TENANT_ID` - Microsoft tenant or `organizations` for work/school accounts
+- `OUTLOOK_REDIRECT_URI` - OAuth callback, for example `https://api.ledgerworkspace.com/api/integrations/outlook/oauth/callback`
+- `OUTLOOK_STATE_SECRET` - Secret used to sign Outlook OAuth state
 - `SLACK_SIGNING_SECRET` - Slack request signing secret
 - `SLACK_STATE_SECRET` - Optional separate HMAC secret for Slack OAuth state
 - `SLACK_REDIRECT_URI` - Slack OAuth callback URL

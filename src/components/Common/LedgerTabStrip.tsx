@@ -1355,6 +1355,31 @@ export const LedgerTabStrip = () => {
   }, [closeTab]);
 
   useEffect(() => {
+    const handleResourceRoute = (event: Event) => {
+      const detail = (event as CustomEvent<{ route?: ModuleFocusPayload }>).detail;
+      const route = normalizeRoute(detail?.route);
+      if (!route) return;
+      const key = routeKey(route);
+      const nextClosed = new Set(closedTabKeysRef.current);
+      nextClosed.delete(key);
+      closedTabKeysRef.current = nextClosed;
+      setClosedTabKeys(nextClosed);
+      const current = tabOrderRef.current;
+      const existingIndex = current.findIndex((candidate) => routeKey(candidate) === key);
+      const nextOrder = existingIndex >= 0
+        ? current.map((candidate, index) => (index === existingIndex ? route : candidate))
+        : [...current, route];
+      tabOrderRef.current = nextOrder;
+      setTabOrder(nextOrder);
+      setVisualRouteOverride(route);
+      visualCurrentRouteRef.current = route;
+      selectWorkspaceTabRoute(route, activeWorkspaceId);
+    };
+    window.addEventListener('ledger:workspace-resource-route', handleResourceRoute);
+    return () => window.removeEventListener('ledger:workspace-resource-route', handleResourceRoute);
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     const handleRouteReplaced = (event: Event) => {
       const detail = (event as CustomEvent<{
         from?: ModuleFocusPayload;

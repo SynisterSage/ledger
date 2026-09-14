@@ -2743,6 +2743,16 @@ export const ProjectsWindow = ({
       const saved = await flushProjectDraft();
       if (!saved && isDirtyRef.current) return;
       setSelectedProjectId(project.id);
+      window.dispatchEvent(new CustomEvent('ledger:workspace-resource-route', {
+        detail: {
+          route: {
+            kind: 'projects',
+            focusProjectId: project.id,
+            focusSection: formatProjectsSection(projectsOverviewView, projectsOverviewRange),
+            focusContext: focusedTeamId ? `team:${focusedTeamId}` : null,
+          },
+        },
+      }));
       syncDraftFromProject(project);
       setSelectedTaskId(null);
       setActiveTab('overview');
@@ -2752,7 +2762,7 @@ export const ProjectsWindow = ({
       setIsTaskComposerOpen(false);
       resetTaskComposer();
     },
-    [flushProjectDraft, resetTaskComposer, selectedProjectId, syncDraftFromProject]
+    [flushProjectDraft, focusedTeamId, formatProjectsSection, projectsOverviewRange, projectsOverviewView, resetTaskComposer, selectedProjectId, syncDraftFromProject]
   );
 
   const selectProjectsTimeline = useCallback(async () => {

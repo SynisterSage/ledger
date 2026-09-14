@@ -1,13 +1,14 @@
 import { Globe } from 'lucide-react';
 import { FigmaMark } from './FigmaMark';
 
-export type IntegrationProviderKey = 'github' | 'slack' | 'figma' | 'browser' | null;
+export type IntegrationProviderKey = 'github' | 'slack' | 'figma' | 'outlook' | 'browser' | null;
 
 export const normalizeIntegrationProvider = (...values: unknown[]): IntegrationProviderKey => {
   const value = values.map((entry) => String(entry ?? '').trim().toLowerCase()).join(' ');
   if (value.includes('github')) return 'github';
   if (value.includes('slack')) return 'slack';
   if (value.includes('figma')) return 'figma';
+  if (value.includes('outlook') || value.includes('microsoft')) return 'outlook';
   if (value.includes('browser') || value.includes('extension') || value.includes('web_capture')) return 'browser';
   return null;
 };
@@ -16,6 +17,7 @@ const providerLabels: Record<Exclude<IntegrationProviderKey, null>, string> = {
   github: 'GitHub',
   slack: 'Slack',
   figma: 'Figma',
+  outlook: 'Outlook',
   browser: 'Browser extension',
 };
 
@@ -39,5 +41,6 @@ export function IntegrationProviderMark({
   if (key === 'slack') {
     return <img src={`${import.meta.env.BASE_URL}slack.svg`} alt={label} title={label} className={className} style={{ width: size, height: size }} />;
   }
+  if (key === 'outlook') return <span role="img" aria-label={label} title={label} className={`text-[#0078d4] ${className}`} style={{ fontSize: size, lineHeight: 1 }}>✉</span>;
   return <Globe size={size} aria-label={label} className={className} />;
 }

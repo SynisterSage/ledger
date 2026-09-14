@@ -7884,6 +7884,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         }
       }
       setSelectedNoteId(note.id);
+      window.dispatchEvent(new CustomEvent('ledger:workspace-resource-route', {
+        detail: {
+          route: {
+            kind: 'notes',
+            focusNoteId: note.id,
+            focusContext: initialView ? `note-view:${initialView}` : 'note-view:write',
+          },
+        },
+      }));
       if (!bulkSidebarSelectionRef.current) {
         setSelectedNoteIds([note.id]);
         selectionAnchorNoteIdRef.current = note.id;
@@ -7952,6 +7961,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           return [fetched, ...prev];
         });
         setSelectedNoteId(fetched.id);
+        window.dispatchEvent(new CustomEvent('ledger:workspace-resource-route', {
+          detail: {
+            route: {
+              kind: 'notes',
+              focusNoteId: fetched.id,
+              focusContext: initialView ? `note-view:${initialView}` : 'note-view:write',
+            },
+          },
+        }));
         if (!bulkSidebarSelectionRef.current) {
           setSelectedNoteIds([fetched.id]);
           selectionAnchorNoteIdRef.current = fetched.id;

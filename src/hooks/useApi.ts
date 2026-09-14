@@ -475,6 +475,12 @@ export const useApi = () => {
           method: 'DELETE',
           skipWorkspaceHeader: true,
         }),
+      getOutlookIntegrationStatus: (workspaceId: string) => request(`/api/integrations/outlook/status?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      getOutlookConnectUrl: (workspaceId: string) => request(`/api/integrations/outlook/connect-url?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      disconnectOutlookIntegration: (workspaceId: string) => request(`/api/integrations/outlook/disconnect?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
+      syncOutlookIntegration: (workspaceId: string) => request(`/api/integrations/outlook/sync?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
+      getOutlookCaptureSettings: (workspaceId: string) => request(`/api/integrations/outlook/capture-settings?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      updateOutlookCaptureSettings: (workspaceId: string, payload: unknown) => request(`/api/integrations/outlook/capture-settings?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'PATCH', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
       getFigmaIntegrationStatus: (workspaceId: string) =>
         request(`/api/integrations/figma/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
           skipWorkspaceHeader: true,

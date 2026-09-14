@@ -80,6 +80,7 @@ import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
 import { SlackIntegrationPage } from './SlackIntegrationPage';
+import { OutlookIntegrationPage, type OutlookIntegrationStatus } from './OutlookIntegrationPage';
 import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
 import { GithubIntegrationPage } from './GithubIntegrationPage';
@@ -1630,6 +1631,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
   const [createTeamError, setCreateTeamError] = useState<string | null>(null);
   const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
+  const [outlookStatus, setOutlookStatus] = useState<OutlookIntegrationStatus | null>(null);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
@@ -1638,6 +1640,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
   const [githubDetailOpen, setGithubDetailOpen] = useState(false);
   const [slackDetailOpen, setSlackDetailOpen] = useState(() => new URLSearchParams(window.location.search).get('focusContext') === 'integration:slack');
+  const [outlookDetailOpen, setOutlookDetailOpen] = useState(() => new URLSearchParams(window.location.search).get('focusContext') === 'integration:outlook');
   const [googleDriveDetailOpen, setGoogleDriveDetailOpen] = useState(() => window.location.pathname === '/settings/integrations/google-drive');
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
     null
@@ -3321,6 +3324,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
         focusContext: 'integration:slack',
       });
     }
+  };
+
+  const openOutlookManagement = () => {
+    setGithubDetailOpen(false); setFigmaDetailOpen(false); setGoogleDriveDetailOpen(false); setMcpDetailOpen(false); setSlackDetailOpen(false); setOutlookDetailOpen(true);
   };
 
   const openAppleIntegrationManagement = (kind: 'calendar' | 'reminders') => {
@@ -5822,6 +5829,13 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   onBack={() => setSlackDetailOpen(false)}
                   onStatusChange={(next) => setSlackStatus(next as SlackIntegrationStatus)}
                 />
+              ) : activeSection === 'integrations' && outlookDetailOpen ? (
+                <OutlookIntegrationPage
+                  workspaceId={activeWorkspaceId}
+                  canManage={canManageWorkspace}
+                  onBack={() => setOutlookDetailOpen(false)}
+                  onStatusChange={setOutlookStatus}
+                />
               ) : activeSection === 'integrations' && googleDriveDetailOpen ? (
                 <GoogleDriveIntegrationPage
                   workspaceId={activeWorkspaceId}
@@ -5947,6 +5961,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                 : 'Connect'}
                             </button>
                           </div>
+                        </div>
+                        <div className="flex items-center gap-3 px-4 py-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]"><span className="text-[18px] leading-none text-[#0078d4]">✉</span></span>
+                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Outlook <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{outlookStatus?.connected ? `Connected as ${outlookStatus.account_email || 'your Microsoft account'}` : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Bring new Outlook messages into Intake.</p></div>
+                          <button type="button" onClick={() => openOutlookManagement()} disabled={!activeWorkspaceId} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{outlookStatus?.connected ? 'Manage' : 'Connect'}</button>
                         </div>
                         <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} onManage={() => setGithubDetailOpen(true)} />
 

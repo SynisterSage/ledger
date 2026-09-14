@@ -4836,6 +4836,15 @@ const getSlackRedirectUri = () => {
   return null;
 };
 
+const getOutlookRedirectUri = () => {
+  const explicit = process.env.OUTLOOK_REDIRECT_URI?.trim();
+  if (explicit) return explicit;
+  const publicBackendUrl = process.env.PUBLIC_BACKEND_URL?.trim();
+  return publicBackendUrl
+    ? `${publicBackendUrl.replace(/\/$/, '')}/api/integrations/outlook/oauth/callback`
+    : null;
+};
+
 const SLACK_ACTIVITY_BOT_SCOPES = ['app_mentions:read', 'channels:history', 'groups:history'];
 
 const getFigmaRedirectUri = () => {
@@ -4852,6 +4861,7 @@ const ephemeralOAuthStateSecrets = {
   googleDrive: crypto.randomBytes(32).toString('hex'),
   figma: crypto.randomBytes(32).toString('hex'),
   slack: crypto.randomBytes(32).toString('hex'),
+  outlook: crypto.randomBytes(32).toString('hex'),
 };
 const allowDevelopmentOAuthFallbacks =
   process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_FALLBACKS === 'true';
@@ -4862,6 +4872,36 @@ const getConfiguredOAuthStateSecret = (names, ephemeralSecret) => {
   }
   return allowDevelopmentOAuthFallbacks ? ephemeralSecret : null;
 };
+
+const getOutlookStateSecret = () =>
+  getConfiguredOAuthStateSecret(['OUTLOOK_STATE_SECRET', 'MICROSOFT_STATE_SECRET'], ephemeralOAuthStateSecrets.outlook);
+const createOutlookOAuthState = ({ workspaceId, userId }) => {
+  const secret = getOutlookStateSecret();
+  if (!secret) throw Object.assign(new Error('Outlook OAuth state signing is not configured'), { statusCode: 500 });
+  const payload = { workspace_id: workspaceId, user_id: userId, nonce: crypto.randomBytes(24).toString('hex'), iat: Math.floor(Date.now() / 1000) };
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  return `${encoded}.${crypto.createHmac('sha256', secret).update(encoded).digest('base64url')}`;
+};
+const verifyOutlookOAuthState = (state) => {
+  const secret = getOutlookStateSecret();
+  if (!secret) return null;
+  const [encoded, signature] = String(state ?? '').split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+  if (expected.length !== signature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+  const payload = safeJson(Buffer.from(encoded, 'base64url').toString('utf8'), null);
+  if (!payload?.workspace_id || !payload?.user_id || !payload?.nonce || Math.floor(Date.now() / 1000) - Number(payload.iat || 0) > 10 * 60) return null;
+  return payload;
+};
+const getOutlookTenant = () => process.env.MICROSOFT_TENANT_ID?.trim() || 'organizations';
+const outlookOAuthScopes = ['openid', 'profile', 'offline_access', 'User.Read', 'Mail.Read'];
+const buildOutlookAuthorizeUrl = ({ workspaceId, userId }) => {
+  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim() || process.env.OUTLOOK_CLIENT_ID?.trim();
+  const redirectUri = getOutlookRedirectUri();
+  if (!clientId || !redirectUri) throw Object.assign(new Error('Outlook OAuth is not configured'), { statusCode: 500 });
+  return `https://login.microsoftonline.com/${encodeURIComponent(getOutlookTenant())}/oauth2/v2.0/authorize?${new URLSearchParams({ client_id: clientId, response_type: 'code', redirect_uri: redirectUri, response_mode: 'query', scope: outlookOAuthScopes.join(' '), state: createOutlookOAuthState({ workspaceId, userId }) }).toString()}`;
+};
+const outlookCompleteHtml = (success, message = '') => buildIntegrationCompleteHtml({ providerName: 'Outlook', providerIcon: 'https://ledgerworkspace.com/outlook.svg', title: success ? 'Outlook connected' : 'Outlook connection failed', message: message || (success ? 'Your Outlook account is now connected to Ledger.' : 'Return to Ledger and try connecting again.'), success, deepLink: success ? 'ledger://settings/integrations' : null, autoClose: success, closeDelay: 5000 });
 const getGoogleDriveStateSecret = () =>
   getConfiguredOAuthStateSecret(['GOOGLE_DRIVE_STATE_SECRET', 'FIGMA_STATE_SECRET'], ephemeralOAuthStateSecrets.googleDrive);
 const createGoogleDriveOAuthState = ({ userId }) => {
@@ -7083,6 +7123,234 @@ const resolveSlackWorkspaceForRequest = async (req) => {
   }
   return resolveWorkspaceIdForRequest(req);
 };
+
+const resolveOutlookWorkspaceForRequest = async (req) => {
+  const requestedWorkspaceId = String(req.query?.workspaceId ?? req.query?.workspace_id ?? req.headers['x-workspace-id'] ?? '').trim();
+  if (requestedWorkspaceId) {
+    await requireWorkspaceAccess(req.authUser.id, requestedWorkspaceId, 'member');
+    return requestedWorkspaceId;
+  }
+  return resolveWorkspaceIdForRequest(req);
+};
+
+app.get('/api/integrations/outlook/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    if (!workspaceId) return res.json({ connected: false });
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('integration_accounts')
+      .select('id, provider_account_id, provider_account_email, scopes, connection_status, connection_error, installed_by, created_at, updated_at')
+      .eq('workspace_id', workspaceId).eq('provider', 'outlook').eq('installed_by', req.authUser.id)
+      .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'integration_accounts')) return res.json({ connected: false });
+      throw result.error;
+    }
+    if (!result.data?.id) return res.json({ connected: false });
+    return res.json({ connected: true, account_email: result.data.provider_account_email, provider_user_id: result.data.provider_account_id, scopes: result.data.scopes ?? [], status: result.data.connection_status ?? 'connected', error: result.data.connection_error ?? null, installed_by: result.data.installed_by, created_at: result.data.created_at, updated_at: result.data.updated_at });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/outlook/connect-url', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    if (!workspaceId) return res.status(400).json({ error: 'Select a workspace before connecting Outlook.' });
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    return res.json({ url: buildOutlookAuthorizeUrl({ workspaceId, userId: req.authUser.id }) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/integrations/outlook/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    if (!workspaceId) return res.status(400).json({ error: 'Select a workspace before disconnecting Outlook.' });
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('integration_accounts').delete().eq('workspace_id', workspaceId).eq('provider', 'outlook').eq('installed_by', req.authUser.id);
+    if (result.error) throw result.error;
+    return res.json({ connected: false });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const outlookTextFromHtml = (value) => String(value ?? '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
+
+const getOutlookAccessToken = async (account) => {
+  const current = readIntegrationToken(account.access_token_encrypted);
+  if (current && (!account.token_expires_at || new Date(account.token_expires_at).getTime() > Date.now() + 60_000)) return current;
+  const refreshToken = readIntegrationToken(account.refresh_token_encrypted);
+  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim() || process.env.OUTLOOK_CLIENT_ID?.trim();
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim() || process.env.OUTLOOK_CLIENT_SECRET?.trim();
+  if (!refreshToken || !clientId || !clientSecret) return null;
+  const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(getOutlookTenant())}/oauth2/v2.0/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token', scope: outlookOAuthScopes.join(' ') }) });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) return null;
+  await supabase.from('integration_accounts').update({ access_token_encrypted: protectIntegrationTokenForStorage(payload.access_token), refresh_token_encrypted: protectIntegrationTokenForStorage(payload.refresh_token || refreshToken), token_expires_at: new Date(Date.now() + Number(payload.expires_in || 3600) * 1000).toISOString(), connection_status: 'connected', connection_error: null, updated_at: new Date().toISOString() }).eq('id', account.id);
+  return payload.access_token;
+};
+
+const getOutlookNotificationUrl = () => process.env.OUTLOOK_NOTIFICATION_URL?.trim() || (process.env.PUBLIC_BACKEND_URL?.trim() ? `${process.env.PUBLIC_BACKEND_URL.replace(/\/$/, '')}/api/integrations/outlook/webhook` : null);
+const normalizeOutlookCaptureConfig = (value) => {
+  const config = value && typeof value === 'object' ? value : {};
+  const list = (input) => Array.isArray(input) ? input.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean).slice(0, 50) : [];
+  return { include_senders: list(config.include_senders), keywords: list(config.keywords), exclude_automated: Boolean(config.exclude_automated) };
+};
+const outlookMessageMatchesConfig = (message, value) => {
+  const config = normalizeOutlookCaptureConfig(value);
+  const sender = String(message.from?.emailAddress?.address || '').trim().toLowerCase();
+  const text = `${message.subject || ''} ${message.bodyPreview || ''}`.toLowerCase();
+  if (config.include_senders.length && !config.include_senders.some((entry) => sender === entry || sender.endsWith(`@${entry.replace(/^@/, '')}`))) return false;
+  if (config.keywords.length && !config.keywords.some((entry) => text.includes(entry))) return false;
+  if (config.exclude_automated && (sender.includes('noreply') || sender.includes('no-reply') || sender.includes(' donotreply') || /auto-generated|automated message|do not reply/.test(text))) return false;
+  return true;
+};
+const ensureOutlookSubscription = async (account) => {
+  const notificationUrl = getOutlookNotificationUrl();
+  if (!notificationUrl) return { configured: false };
+  const accessToken = await getOutlookAccessToken(account);
+  if (!accessToken) return { configured: false };
+  const clientState = readIntegrationToken(account.outlook_client_state_encrypted) || crypto.randomBytes(32).toString('base64url');
+  const expirationDateTime = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
+  if (account.outlook_subscription_id && account.outlook_subscription_expires_at && new Date(account.outlook_subscription_expires_at).getTime() > Date.now() + 24 * 60 * 60 * 1000) return { configured: true, renewed: false };
+  const graphResponse = account.outlook_subscription_id
+    ? await fetch(`https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(account.outlook_subscription_id)}`, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ expirationDateTime }) })
+    : await fetch('https://graph.microsoft.com/v1.0/subscriptions', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ changeType: 'created', notificationUrl, lifecycleNotificationUrl: notificationUrl, resource: '/me/mailFolders(\'inbox\')/messages', expirationDateTime, clientState }) });
+  const payload = await graphResponse.json();
+  if (!graphResponse.ok || !payload.id) throw new Error(payload?.error?.message || 'Outlook subscription could not be created.');
+  await supabase.from('integration_accounts').update({ outlook_subscription_id: payload.id, outlook_subscription_expires_at: payload.expirationDateTime || expirationDateTime, outlook_client_state_encrypted: protectIntegrationTokenForStorage(clientState), updated_at: new Date().toISOString() }).eq('id', account.id);
+  return { configured: true, renewed: true };
+};
+
+const reconcileOutlookDelta = async (account) => {
+  const accessToken = await getOutlookAccessToken(account);
+  if (!accessToken) return { scanned: 0, created: 0 };
+  let nextUrl = account.outlook_delta_link || `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages/delta?$select=id,subject,from,receivedDateTime,body,bodyPreview,webLink,internetMessageId&$filter=receivedDateTime%20ge%20${encodeURIComponent(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())}`;
+  let scanned = 0; let created = 0; let deltaLink = null;
+  for (let page = 0; page < 20 && nextUrl; page += 1) {
+    const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.body-content-type="text"' } });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error?.message || 'Outlook delta sync failed.');
+    for (const message of Array.isArray(payload.value) ? payload.value : []) {
+      if (!message.id || message['@removed'] || !outlookMessageMatchesConfig(message, account.outlook_capture_config)) continue;
+      scanned += 1;
+      const sender = message.from?.emailAddress?.address || message.from?.emailAddress?.name || 'Unknown sender';
+      const result = await supabase.from('inbox_items').insert({ workspace_id: account.workspace_id, user_id: account.installed_by, updated_by: account.installed_by, source: 'outlook', source_provider: 'outlook', source_id: message.id, source_url: message.webLink || null, title: String(message.subject || '(No subject)').trim(), body: clampMultilineText(`From: ${sender}\nReceived: ${message.receivedDateTime || ''}\n\n${message.body?.content || message.bodyPreview || ''}`, 20_000), raw_payload: { provider: 'outlook', sender, received_at: message.receivedDateTime || null, internet_message_id: message.internetMessageId || null }, status: 'unprocessed', suggested_type: 'note', updated_at: new Date().toISOString() });
+      if (!result.error) created += 1; else if (result.error.code !== '23505') throw result.error;
+    }
+    nextUrl = payload['@odata.nextLink'] || null;
+    deltaLink = payload['@odata.deltaLink'] || deltaLink;
+  }
+  if (deltaLink) await supabase.from('integration_accounts').update({ outlook_delta_link: deltaLink, connection_error: null, updated_at: new Date().toISOString() }).eq('id', account.id);
+  return { scanned, created };
+};
+
+const runOutlookDeltaWorker = async () => {
+  try {
+    const result = await supabase.from('integration_accounts').select('id, workspace_id, installed_by, access_token_encrypted, refresh_token_encrypted, token_expires_at, outlook_delta_link, outlook_capture_config').eq('provider', 'outlook').eq('connection_status', 'connected');
+    if (result.error) { if (!isMissingRelationError(result.error, 'integration_accounts')) throw result.error; return; }
+    for (const account of result.data ?? []) { try { await reconcileOutlookDelta(account); } catch (error) { console.error('[outlook] delta reconciliation failed', { accountId: account.id, message: error?.message || 'unknown_error' }); } }
+  } catch (error) { console.error('[outlook] delta worker failed', { message: error?.message || 'unknown_error' }); }
+};
+
+app.get('/api/integrations/outlook/capture-settings', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    const result = await supabase.from('integration_accounts').select('outlook_capture_config').eq('workspace_id', workspaceId).eq('provider', 'outlook').eq('installed_by', req.authUser.id).maybeSingle();
+    if (result.error) throw result.error;
+    return res.json(normalizeOutlookCaptureConfig(result.data?.outlook_capture_config));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/integrations/outlook/capture-settings', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    const config = normalizeOutlookCaptureConfig(req.body);
+    const result = await supabase.from('integration_accounts').update({ outlook_capture_config: config, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('provider', 'outlook').eq('installed_by', req.authUser.id).select('outlook_capture_config').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Connect Outlook before changing capture settings.' });
+    return res.json(normalizeOutlookCaptureConfig(result.data.outlook_capture_config));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/outlook/webhook', async (req, res) => {
+  const validationToken = String(req.query?.validationToken ?? '');
+  if (validationToken) return res.status(200).type('text/plain').send(validationToken);
+  res.status(202).json({ ok: true });
+  const notifications = Array.isArray(req.body?.value) ? req.body.value : [];
+  for (const notification of notifications) {
+    try {
+    const accountResult = await supabase.from('integration_accounts').select('id, workspace_id, installed_by, access_token_encrypted, refresh_token_encrypted, token_expires_at, outlook_subscription_id, outlook_subscription_expires_at, outlook_client_state_encrypted, outlook_capture_config').eq('provider', 'outlook').eq('outlook_subscription_id', notification.subscriptionId).maybeSingle();
+      const account = accountResult.data;
+      if (!account || !notification.clientState) continue;
+      const expected = readIntegrationToken(account.outlook_client_state_encrypted);
+      if (!expected || expected.length !== String(notification.clientState).length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(notification.clientState)))) continue;
+      if (notification.lifecycleEvent) { await ensureOutlookSubscription(account); continue; }
+      const token = await getOutlookAccessToken(account);
+      if (!token || !notification.resource) continue;
+      const messageResponse = await fetch(`https://graph.microsoft.com/v1.0/${String(notification.resource).replace(/^\//, '')}?$select=id,subject,from,toRecipients,receivedDateTime,body,bodyPreview,webLink,internetMessageId`, { headers: { Authorization: `Bearer ${token}`, Prefer: 'outlook.body-content-type="text"' } });
+      const message = await messageResponse.json();
+      if (!messageResponse.ok || !message.id) continue;
+      if (!outlookMessageMatchesConfig(message, account.outlook_capture_config)) continue;
+      const sender = message.from?.emailAddress?.address || message.from?.emailAddress?.name || 'Unknown sender';
+      await supabase.from('inbox_items').insert({ workspace_id: account.workspace_id, user_id: account.installed_by, updated_by: account.installed_by, source: 'outlook', source_provider: 'outlook', source_id: message.id, source_url: message.webLink || null, title: String(message.subject || '(No subject)').trim(), body: clampMultilineText(`From: ${sender}\nReceived: ${message.receivedDateTime || ''}\n\n${message.body?.content || message.bodyPreview || ''}`, 20_000), raw_payload: { provider: 'outlook', sender, received_at: message.receivedDateTime || null, internet_message_id: message.internetMessageId || null }, status: 'unprocessed', suggested_type: 'note', updated_at: new Date().toISOString() });
+    } catch (error) { console.error('Outlook webhook notification failed', error); }
+  }
+});
+
+app.post('/api/integrations/outlook/sync', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveOutlookWorkspaceForRequest(req);
+    if (!workspaceId) return res.status(400).json({ error: 'Select a workspace before syncing Outlook.' });
+    const accountResult = await supabase.from('integration_accounts').select('id, access_token_encrypted, refresh_token_encrypted, token_expires_at, provider_account_email, outlook_subscription_id, outlook_subscription_expires_at, outlook_client_state_encrypted, outlook_capture_config').eq('workspace_id', workspaceId).eq('provider', 'outlook').eq('installed_by', req.authUser.id).maybeSingle();
+    if (accountResult.error) throw accountResult.error;
+    if (!accountResult.data) return res.status(404).json({ error: 'Connect Outlook before syncing.' });
+    const accessToken = await getOutlookAccessToken(accountResult.data);
+    if (!accessToken) return res.status(409).json({ error: 'Outlook authorization has expired. Reconnect Outlook and try again.' });
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$orderby=receivedDateTime%20desc&$filter=receivedDateTime%20ge%20${encodeURIComponent(since)}&$select=id,subject,from,toRecipients,receivedDateTime,body,bodyPreview,webLink,internetMessageId`;
+    const graphResponse = await fetch(graphUrl, { headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.body-content-type="text"' } });
+    const graphPayload = await graphResponse.json();
+    if (!graphResponse.ok) {
+      await supabase.from('integration_accounts').update({ connection_status: graphResponse.status === 401 ? 'error' : 'connected', connection_error: graphPayload?.error?.code || 'outlook_sync_failed', updated_at: new Date().toISOString() }).eq('id', accountResult.data.id);
+      return res.status(graphResponse.status === 401 ? 409 : 502).json({ error: 'Outlook could not return your Inbox messages.' });
+    }
+    let created = 0; let duplicates = 0;
+    for (const message of Array.isArray(graphPayload.value) ? graphPayload.value : []) {
+      if (!outlookMessageMatchesConfig(message, accountResult.data.outlook_capture_config)) continue;
+      const sender = message.from?.emailAddress?.address || message.from?.emailAddress?.name || 'Unknown sender';
+      const subject = String(message.subject || '(No subject)').trim();
+      const body = clampMultilineText(`From: ${sender}\nReceived: ${message.receivedDateTime || ''}\n\n${message.body?.content || message.bodyPreview || ''}`, 20_000);
+      const result = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: req.authUser.id, updated_by: req.authUser.id, source: 'outlook', source_provider: 'outlook', source_id: message.id, source_url: message.webLink || null, title: subject, body, raw_payload: { provider: 'outlook', sender, received_at: message.receivedDateTime || null, internet_message_id: message.internetMessageId || null, to: (message.toRecipients || []).map((recipient) => recipient.emailAddress?.address).filter(Boolean) }, status: 'unprocessed', suggested_type: 'note', updated_at: new Date().toISOString() });
+      if (result.error?.code === '23505') duplicates += 1; else if (result.error) throw result.error; else created += 1;
+    }
+    await supabase.from('integration_accounts').update({ connection_status: 'connected', connection_error: null, updated_at: new Date().toISOString() }).eq('id', accountResult.data.id);
+    await ensureOutlookSubscription({ ...accountResult.data, outlook_subscription_id: accountResult.data.outlook_subscription_id, outlook_subscription_expires_at: accountResult.data.outlook_subscription_expires_at, outlook_client_state_encrypted: accountResult.data.outlook_client_state_encrypted }).catch((error) => console.error('Outlook subscription setup failed', error));
+    return res.json({ ok: true, created, duplicates, scanned: Array.isArray(graphPayload.value) ? graphPayload.value.length : 0 });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/outlook/oauth/callback', rateLimit('auth'), async (req, res) => {
+  try {
+    const code = String(req.query?.code ?? '').trim();
+    const statePayload = verifyOutlookOAuthState(req.query?.state);
+    if (!code || !statePayload) return res.status(400).type('html').send(outlookCompleteHtml(false, 'This Outlook authorization attempt is invalid or expired.'));
+    await requireWorkspaceAccess(statePayload.user_id, statePayload.workspace_id, 'member');
+    const clientId = process.env.MICROSOFT_CLIENT_ID?.trim() || process.env.OUTLOOK_CLIENT_ID?.trim();
+    const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim() || process.env.OUTLOOK_CLIENT_SECRET?.trim();
+    const redirectUri = getOutlookRedirectUri();
+    if (!clientId || !clientSecret || !redirectUri) return res.status(500).type('html').send(outlookCompleteHtml(false, 'Outlook is not configured for Ledger yet.'));
+    const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(getOutlookTenant())}/oauth2/v2.0/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri, grant_type: 'authorization_code', scope: outlookOAuthScopes.join(' ') }) });
+    const tokenPayload = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenPayload.access_token) return res.status(400).type('html').send(outlookCompleteHtml(false, 'Microsoft could not approve this Outlook connection.'));
+    const meResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName,displayName', { headers: { Authorization: `Bearer ${tokenPayload.access_token}` } });
+    const mePayload = await meResponse.json();
+    if (!meResponse.ok || !mePayload.id) return res.status(400).type('html').send(outlookCompleteHtml(false, 'Ledger could not verify this Microsoft account.'));
+    const accountPayload = { workspace_id: statePayload.workspace_id, provider: 'outlook', provider_account_id: mePayload.id, provider_account_email: mePayload.mail || mePayload.userPrincipalName || null, provider_user_id: mePayload.id, access_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.access_token), refresh_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.refresh_token), token_expires_at: new Date(Date.now() + Number(tokenPayload.expires_in || 3600) * 1000).toISOString(), scopes: String(tokenPayload.scope || '').split(' ').filter(Boolean), installed_by: statePayload.user_id, connection_status: 'connected', connection_error: null, updated_at: new Date().toISOString() };
+    const existing = await supabase.from('integration_accounts').select('id').eq('workspace_id', statePayload.workspace_id).eq('provider', 'outlook').eq('installed_by', statePayload.user_id).maybeSingle();
+    if (existing.error) throw existing.error;
+    const result = existing.data?.id ? await supabase.from('integration_accounts').update(accountPayload).eq('id', existing.data.id) : await supabase.from('integration_accounts').insert(accountPayload);
+    if (result.error) throw result.error;
+    return res.status(200).type('html').send(outlookCompleteHtml(true, `Connected ${mePayload.mail || mePayload.userPrincipalName || 'your Outlook account'}.`));
+  } catch (error) { console.error('Outlook OAuth callback failed', error); return res.status(getPublicErrorStatus(error)).type('html').send(outlookCompleteHtml(false, getPublicErrorMessage(error, getPublicErrorStatus(error)))); }
+});
 
 app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
@@ -26136,6 +26404,16 @@ const runGoogleDriveMonitoringWorker = async () => {
   } catch (error) { console.error('[google-drive] monitoring worker failed', { message: error?.message || 'unknown_error' }); }
 };
 
+const runOutlookSubscriptionWorker = async () => {
+  try {
+    const result = await supabase.from('integration_accounts').select('id, access_token_encrypted, refresh_token_encrypted, token_expires_at, outlook_subscription_id, outlook_subscription_expires_at, outlook_client_state_encrypted').eq('provider', 'outlook').eq('connection_status', 'connected');
+    if (result.error) { if (!isMissingRelationError(result.error, 'integration_accounts')) throw result.error; return; }
+    for (const account of result.data ?? []) {
+      try { await ensureOutlookSubscription(account); } catch (error) { console.error('[outlook] subscription renewal failed', { accountId: account.id, message: error?.message || 'unknown_error' }); await supabase.from('integration_accounts').update({ connection_status: 'error', connection_error: 'outlook_subscription_renewal_failed', updated_at: new Date().toISOString() }).eq('id', account.id); }
+    }
+  } catch (error) { console.error('[outlook] subscription worker failed', { message: error?.message || 'unknown_error' }); }
+};
+
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
   void runNotificationScheduler();
@@ -26147,4 +26425,8 @@ app.listen(PORT, () => {
   }, 10_000);
   void runGoogleDriveMonitoringWorker();
   setInterval(() => { void runGoogleDriveMonitoringWorker(); }, Math.max(15, Number(process.env.GOOGLE_DRIVE_RECONCILIATION_INTERVAL_HOURS) || 6) * 60 * 60 * 1000);
+  void runOutlookSubscriptionWorker();
+  setInterval(() => { void runOutlookSubscriptionWorker(); }, Math.max(15, Number(process.env.OUTLOOK_SUBSCRIPTION_RENEWAL_INTERVAL_HOURS) || 12) * 60 * 60 * 1000);
+  void runOutlookDeltaWorker();
+  setInterval(() => { void runOutlookDeltaWorker(); }, Math.max(5, Number(process.env.OUTLOOK_DELTA_RECONCILIATION_INTERVAL_MINUTES) || 15) * 60 * 1000);
 });
