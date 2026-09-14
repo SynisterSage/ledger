@@ -7,6 +7,14 @@ export type { AskLedgerActionProposal, AskLedgerActionStatus } from '../../share
 export { normalizeAskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
 import type { AskLedgerActionProposal } from '../../shared/askLedger/actions.ts';
 
+type AskLedgerActionSource = {
+  id?: string;
+  resourceId?: string;
+  title: string;
+  type: string;
+  projectId?: string;
+};
+
 const cleanTitle = (value: string) => value.replace(/^[-*•\d.)\s]+/, '').replace(/[.!?]+$/, '').trim().slice(0, 240);
 
 const answerItems = (answer: string) => {
@@ -32,12 +40,14 @@ export const proposeAskLedgerActions = ({
   answer,
   previousAnswer,
   initialContext,
+  sources,
   sourceMessageId,
 }: {
   question: string;
   answer: string;
   previousAnswer?: string;
   initialContext?: AskLedgerInitialContext | null;
+  sources?: AskLedgerActionSource[];
   sourceMessageId: string;
 }): AskLedgerActionProposal[] => {
   const normalized = question.trim().toLowerCase();
@@ -49,6 +59,23 @@ export const proposeAskLedgerActions = ({
   if (/\b(mark|set|move)\b/.test(normalized) && /\b(done|complete|completed|in progress|todo|to-do)\b/.test(normalized) && contextTaskId) {
     const status = /in progress/.test(normalized) ? 'in_progress' : /todo|to-do/.test(normalized) ? 'todo' : 'completed';
     return [make('update_task_status', { task_id: contextTaskId, status })];
+  }
+
+  if (/\b(mark|set|move|complete|finish|check off)\b/.test(normalized) && /\b(done|complete|completed|finished|in progress|todo|to-do)\b/.test(normalized)) {
+    const taskTarget = normalized.match(/\b(?:mark|set|move|complete|finish|check off)\s+(?:the\s+)?(.+?)\s+task\b/);
+    const target = taskTarget?.[1]?.replace(/^(?:can you|could you|please|help me)\s+/, '').trim();
+    const matchingTask = target && sources?.find((source) =>
+      source.type === 'task' &&
+      (!contextProjectId || source.projectId === contextProjectId) &&
+      source.title.toLowerCase().includes(target)
+    );
+    if (matchingTask) {
+      const taskId = matchingTask.resourceId ?? matchingTask.id;
+      if (taskId) {
+        const status = /in progress/.test(normalized) ? 'in_progress' : /todo|to-do/.test(normalized) ? 'todo' : 'completed';
+        return [make('update_task_status', { task_id: taskId, status })];
+      }
+    }
   }
 
   if (/\b(create|make|add|turn|convert)\b/.test(normalized) && /\b(note|notes)\b/.test(normalized)) {

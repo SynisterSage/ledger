@@ -167,6 +167,14 @@ test('anchors named project requests and expands linked work context', () => {
   assert.equal(plan.expandRelatedContext, true);
 });
 
+test('extracts a named task target from a completion request', () => {
+  const plan = buildRetrievalPlan('Can you mark the storyboard task as complete/done');
+  assert.deepEqual(plan.primaryResourceTypes, ['task']);
+  assert.equal(plan.entityQuery, 'storyboard');
+  assert.equal(plan.structuredConstraints.openOnly, true);
+  assert.equal(plan.structuredConstraints.statuses, undefined);
+});
+
 test('includes project and milestone deadlines in named-month calendar plans', () => {
   const plan = buildRetrievalPlan('what is my month of september like this year?', new Date('2026-08-27T12:00:00Z'));
   assert.deepEqual(plan.primaryResourceTypes, ['event', 'reminder', 'task', 'milestone', 'project']);

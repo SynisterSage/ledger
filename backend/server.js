@@ -6629,7 +6629,7 @@ app.post('/api/agent/actions', authMiddleware, rateLimit('write'), async (req, r
     if (idempotencyKey.length < 8 || idempotencyKey.length > 160) return res.status(400).json({ error: 'A valid idempotency key is required.' });
     const payload = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
     const title = String(payload.title ?? '').trim();
-    if (!title) return res.status(400).json({ error: 'A title is required.' });
+    if (actionType !== 'update_task_status' && !title) return res.status(400).json({ error: 'A title is required.' });
     const linkedProjectId = payload.project_id ? String(payload.project_id) : null;
     if (linkedProjectId && !(await ensureWorkspaceResource('projects', linkedProjectId, workspaceId))) return res.status(404).json({ error: 'Project not found.' });
     const requestedRemindAt = actionType === 'create_reminder' ? parseReminderTimestamp(payload.remind_at, 'remind_at') : null;
@@ -18511,6 +18511,41 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
 app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const starterProject = await supabase
+      .from('projects')
+      .select('id, starter_key')
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+    if (starterProject.error) throw starterProject.error;
+
+    // Tasks intentionally use ON DELETE SET NULL so deleting a normal project
+    // does not destroy shared work. Starter tasks are disposable tutorial
+    // records, however, and must be removed with their starter project or
+    // Overview will keep counting the orphaned rows as 0/5 progress.
+    if (starterProject.data?.starter_key?.startsWith(`workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:`)) {
+      const [tasks, events, notes] = await Promise.all([
+        supabase
+          .from('tasks')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('project_id', req.params.id)
+          .like('starter_key', `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:%`),
+        supabase
+          .from('events')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('project_id', req.params.id)
+          .eq('source', 'onboarding'),
+        supabase
+          .from('notes')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .like('starter_key', `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:%`),
+      ]);
+      if (tasks.error || events.error || notes.error) throw tasks.error || events.error || notes.error;
+    }
+
     const { error } = await supabase
       .from('projects')
       .delete()

@@ -67,6 +67,17 @@ test('proposes a task status update only with selected task context', () => {
   assert.deepEqual(actions[0].payload, { task_id: 'task-1', status: 'completed' });
 });
 
+test('resolves a named project task from grounded sources for a status update', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Can you mark the storyboard task as complete/done?',
+    answer: 'I found the storyboard task.',
+    initialContext: { resourceType: 'project', resourceId: 'project-1', title: 'Video project' },
+    sources: [{ id: 'task-storyboard', resourceId: 'task-storyboard', type: 'task', title: 'Start storyboard for short video', projectId: 'project-1' }],
+    sourceMessageId: 'assistant-status-project-1',
+  });
+  assert.deepEqual(actions[0]?.payload, { task_id: 'task-storyboard', status: 'completed' });
+});
+
 test('turns grounded bullets into bounded task proposals with explicit project context', () => {
   const actions = proposeAskLedgerActions({
     question: 'Turn these into tasks.',

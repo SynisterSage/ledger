@@ -188,6 +188,20 @@ const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerReso
 };
 
 const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
+  // Mutation requests name the target as natural language, e.g. "mark the
+  // storyboard task as complete". Treat that target as the entity query so
+  // project-scoped task retrieval does not return an arbitrary open task.
+  if (primaryResourceTypes.includes('task') && /\b(?:mark|set|move|complete|finish|check off)\b/i.test(question)) {
+    const taskTarget = question.match(
+      /\b(?:mark|set|move|complete|finish|check off)\s+(?:the\s+)?(.+?)\s+task\b[\s\S]*?\b(?:done|complete|completed|finished|in progress|todo|to-do)\b/i
+    );
+    if (taskTarget?.[1]) {
+      const candidate = taskTarget[1]
+        .replace(/^(?:can you|could you|please|help me)\s+/i, '')
+        .trim();
+      if (candidate && !/^(?:this|that|the|my|our)$/i.test(candidate)) return candidate;
+    }
+  }
   if (primaryResourceTypes.includes('team') || primaryResourceTypes.includes('person')) {
     const namedTeam = question.match(/\b(?:teamspace|team)\s+(?:named|called)\s+([A-Za-z][\w-]*)|\b(?:teamspace|team)\s+([A-Za-z][\w-]*)/i);
     const reversedTeam = question.match(/\b([A-Za-z][\w-]*)\s+(?:teamspace|team)\b/i);
@@ -246,6 +260,9 @@ export const buildRetrievalPlan = (question: string, now = new Date(), canonical
   const isLastWorkday = lastWorkdaySignals.test(question);
   const entityQuery = entityQueryFor(question, primaryResourceTypes);
   const normalizedQuestion = normalize(question);
+  const taskStatusMutation = primaryResourceTypes.includes('task')
+    && /\b(?:mark|set|move|complete|finish|check off)\b/.test(normalizedQuestion)
+    && /\b(?:done|complete|completed|finished|in progress|todo|to-do)\b/.test(normalizedQuestion);
   const integrationProviders = integrationProvidersFor(question);
   const taskQuery = primaryResourceTypes.includes('task') || /\btasks?\b/.test(normalizedQuestion);
   const structuredConstraints: RetrievalStructuredConstraints = {};
@@ -264,7 +281,8 @@ export const buildRetrievalPlan = (question: string, now = new Date(), canonical
     structuredConstraints.openOnly = true;
   }
   if (/\b(?:open|active|incomplete|unfinished|outstanding)\b/.test(normalizedQuestion)) structuredConstraints.openOnly = true;
-  if (/\b(?:completed|complete|done|finished)\b/.test(normalizedQuestion)) structuredConstraints.statuses = ['completed', 'complete', 'done', 'finished'];
+  if (!taskStatusMutation && /\b(?:completed|complete|done|finished)\b/.test(normalizedQuestion)) structuredConstraints.statuses = ['completed', 'complete', 'done', 'finished'];
+  if (taskStatusMutation) structuredConstraints.openOnly = true;
   if (/\btoday\b/.test(normalizedQuestion) && !taskQuery) {
     structuredConstraints.dueAfter = isoDate(startOfDay(now));
     structuredConstraints.dueBefore = isoDate(startOfDay(now));

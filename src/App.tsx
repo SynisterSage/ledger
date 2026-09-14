@@ -1614,6 +1614,7 @@ export function DashboardContent({
       end_date?: string | null;
       owner_team_id?: string | null;
       lead_id?: string | null;
+      starter_key?: string | null;
       created_at?: string | null;
       updated_at?: string | null;
     }>
@@ -6048,7 +6049,20 @@ export function DashboardContent({
     ).values()
   );
 
-  const onboardingTasks = starterTasks.filter((task) => Boolean(task.starter_key));
+  // A normal project delete historically left starter tasks orphaned because
+  // task.project_id uses ON DELETE SET NULL. Do not surface those stale
+  // tutorial rows in Overview; starter progress only exists while its project
+  // still exists in the active workspace.
+  const starterProjectIds = new Set(
+    projects.filter((project) => Boolean(project.starter_key)).map((project) => project.id)
+  );
+  const onboardingTasks = starterTasks.filter(
+    (task) => {
+      const projectId = task.project_id;
+      if (!task.starter_key || !projectId) return false;
+      return starterProjectIds.has(projectId);
+    }
+  );
   const completedStarterTasks = onboardingTasks.filter((task) =>
     ['completed', 'done'].includes(String(task.status ?? '').toLowerCase())
   );

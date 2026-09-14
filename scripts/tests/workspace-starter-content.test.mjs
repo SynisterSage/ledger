@@ -26,6 +26,8 @@ test('starter provisioning covers personal and team workspaces and keeps actions
   assert.match(server, /syncWorkspaceStarterProjectProgress/);
   assert.match(server, /app\.post\('\/api\/workspaces\/:workspaceId\/starter-content'/);
   assert.match(server, /app\.delete\('\/api\/workspaces\/:workspaceId\/starter-content'/);
+  assert.match(server, /orphaned rows as 0\/5 progress/);
+  assert.match(server, /\.eq\('project_id', req\.params\.id\)/);
 });
 
 test('starter project UI exposes guided links, progress, hide, restore, and removal', async () => {
@@ -57,6 +59,8 @@ test('starter project UI exposes guided links, progress, hide, restore, and remo
   assert.match(sidebar, /readStarterOnboardingReturn/);
   assert.match(sidebar, /routeForProject\(activeWorkspaceId, pending\.projectId\)/);
   assert.match(app, /showStarterGuideEntry/);
+  assert.match(app, /starterProjectIds/);
+  assert.match(app, /starter progress only exists while its project/);
   assert.match(app, /Open check-in/);
   assert.match(handoff, /createdAt/);
   assert.match(handoff, /2 \* 60 \* 60 \* 1000/);

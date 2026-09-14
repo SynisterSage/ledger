@@ -2160,6 +2160,7 @@ export const AskLedgerPanel = ({
                   answer,
                   previousAnswer: previousTurn?.answer,
                   initialContext: initialContextRef.current,
+                  sources: completedResponse.sources,
                   sourceMessageId: assistantMessage.id,
                 }));
           if (proposedActions.length) assistantMessage.actions = proposedActions;
@@ -3369,7 +3370,7 @@ export const AskLedgerPanel = ({
       create_task: 'Create task',
       create_note: 'Create note',
       create_reminder: 'Create reminder',
-      update_task_status: 'Update task',
+      update_task_status: 'Mark complete',
     }[type]);
 
   const updateMessageActions = (
@@ -3414,17 +3415,25 @@ export const AskLedgerPanel = ({
         payload,
       })) as Record<string, unknown>;
     } else if (action.type === 'update_task_status') {
-      created = (await api.executeAskLedgerAction({
-        action_type: action.type,
-        idempotency_key: action.idempotencyKey,
-        confirmed: true,
-        payload,
+      // Status updates already have a canonical workspace-scoped task
+      // mutation endpoint. Keep this action confirmation-gated in the UI,
+      // but do not send a title-less status payload through the older agent
+      // action endpoint, which incorrectly assumes every action creates a
+      // titled record.
+      created = (await api.updateTask(String(payload.task_id), {
+        status: String(payload.status),
       })) as Record<string, unknown>;
     }
     const nestedId = (key: string) => {
       const value = created?.[key];
       return value && typeof value === 'object' && 'id' in value
         ? String((value as { id?: unknown }).id ?? '')
+        : '';
+    };
+    const nestedTitle = (key: string) => {
+      const value = created?.[key];
+      return value && typeof value === 'object' && 'title' in value
+        ? String((value as { title?: unknown }).title ?? '')
         : '';
     };
     const id = String(
@@ -3434,7 +3443,10 @@ export const AskLedgerPanel = ({
     if (workspaceId) {
       emitAskLedgerActionCompleted({ workspaceId, actionType: action.type, resourceId: id || null });
     }
-    return { id, title: String(payload.title ?? created?.title ?? 'Task') };
+    return {
+      id,
+      title: String(payload.title || created?.title || nestedTitle('resource') || nestedTitle('task') || 'Task'),
+    };
   };
 
   const executeActionGroup = async (actions: AskLedgerActionProposal[]) => {
@@ -3820,6 +3832,10 @@ export const AskLedgerPanel = ({
                             const pending =
                               message.actions?.filter((action) => action.status === 'pending') ??
                               [];
+                            if (pending.length === 1 && pending[0].type === 'update_task_status') {
+                              void executeActionGroup(pending);
+                              return;
+                            }
                             setActionDraft(pending.length === 1 ? pending[0] : null);
                             setActionReview({
                               actions: pending,
@@ -3846,10 +3862,11 @@ export const AskLedgerPanel = ({
                       {message.actions.some((action) => action.status === 'created') && (
                         <p className="text-xs text-[var(--ledger-text-muted)]">
                           ✓ {message.actions.filter((action) => action.status === 'created').length}{' '}
-                          {message.actions.some((action) => action.type === 'create_task')
-                            ? 'tasks'
-                            : 'actions'}{' '}
-                          created
+                          {message.actions.length === 1 && message.actions[0].type === 'update_task_status'
+                            ? 'task updated'
+                            : message.actions.some((action) => action.type === 'create_task')
+                            ? 'tasks created'
+                            : 'actions completed'}
                         </p>
                       )}
                       {message.actions.some((action) => action.status === 'failed') && (
@@ -3864,6 +3881,10 @@ export const AskLedgerPanel = ({
                               const failed =
                                 message.actions?.filter((action) => action.status === 'failed') ??
                                 [];
+                              if (failed.length === 1 && failed[0].type === 'update_task_status') {
+                                void executeActionGroup(failed);
+                                return;
+                              }
                               setActionDraft(failed.length === 1 ? failed[0] : null);
                               setActionReview({
                                 actions: failed,
@@ -3893,12 +3914,12 @@ export const AskLedgerPanel = ({
                       {message.actions
                         .filter((action) => action.status === 'failed')
                         .map((action) => (
-                          <p
-                            key={`${action.id}-error`}
-                            className="text-xs text-[var(--ledger-text-muted)]"
-                          >
+                            <p
+                              key={`${action.id}-error`}
+                              className="text-xs text-[var(--ledger-text-muted)]"
+                            >
                             ! {String(action.payload.title ?? actionLabel(action.type))} could not
-                            be created: {action.error}
+                            be {action.type === 'update_task_status' ? 'updated' : 'created'}: {action.error}
                           </p>
                         ))}
                     </div>
@@ -4840,8 +4861,6 @@ export const AskLedgerPanel = ({
             setActionDraft(null);
           }
         }}
-        backdropBorderRadius="inherit"
-        disablePortal
         manageWindowChrome={false}
         classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
@@ -4865,19 +4884,21 @@ export const AskLedgerPanel = ({
           </div>
           {actionDraft ? (
             <div className="mt-5 space-y-3">
-              <label className="block text-xs text-[var(--ledger-text-muted)]">
-                Title
-                <input
-                  value={String(actionDraft.payload.title ?? '')}
-                  onChange={(event) =>
-                    setActionDraft({
-                      ...actionDraft,
-                      payload: { ...actionDraft.payload, title: event.target.value },
-                    })
-                  }
-                  className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
-                />
-              </label>
+              {actionDraft.type !== 'update_task_status' && (
+                <label className="block text-xs text-[var(--ledger-text-muted)]">
+                  Title
+                  <input
+                    value={String(actionDraft.payload.title ?? '')}
+                    onChange={(event) =>
+                      setActionDraft({
+                        ...actionDraft,
+                        payload: { ...actionDraft.payload, title: event.target.value },
+                      })
+                    }
+                    className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                  />
+                </label>
+              )}
               {actionDraft.type === 'create_task' && (
                 <>
                   <label className="block text-xs text-[var(--ledger-text-muted)]">
