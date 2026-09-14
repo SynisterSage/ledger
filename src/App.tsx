@@ -10178,7 +10178,12 @@ export function AppShell({
         case 'team-settings':
           return <TeamSettingsWindow focusContext={activeModuleFocusContext || undefined} />;
         case 'dashboard':
-          return <DashboardContent initialFocusTaskId={workspaceShellRoute.focusTaskId ?? null} />;
+          return (
+            <DashboardContent
+              key={activeWorkspaceId ?? 'workspace-none'}
+              initialFocusTaskId={workspaceShellRoute.focusTaskId ?? null}
+            />
+          );
         case 'notifications':
           return <NotificationCenterWindow />;
         case 'inbox':

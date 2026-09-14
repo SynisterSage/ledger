@@ -246,6 +246,8 @@ type EventMatchPreview = {
   can_bulk_delete: boolean;
 };
 
+type EventMatchAction = 'delete' | 'update';
+
 type CalendarPreferenceSnapshot = {
   weekStartsOn?: 'sunday' | 'monday';
   timeFormat?: '12h' | '24h';
@@ -1295,6 +1297,7 @@ export const CalendarWindow = ({
   const [eventMatchPreview, setEventMatchPreview] = useState<EventMatchPreview | null>(null);
   const [eventMatchScope, setEventMatchScope] = useState<'future' | 'all'>('future');
   const [selectedEventMatchIds, setSelectedEventMatchIds] = useState<Set<string>>(new Set());
+  const [eventMatchAction, setEventMatchAction] = useState<EventMatchAction>('delete');
   const [isLoadingEventMatches, setIsLoadingEventMatches] = useState(false);
   const [isBulkDeletingEvents, setIsBulkDeletingEvents] = useState(false);
   const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
@@ -4317,6 +4320,22 @@ export const CalendarWindow = ({
 
     const originalReminderDate = new Date(reminderEditorReminder.remind_at);
     const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`);
+    const reminderTimeShift = remindAt.getTime() - originalReminderDate.getTime();
+    const matchingReminderRows =
+      reminderEditorReminder.series_id
+        ? reminders.filter(
+            (item) =>
+              item.provider !== 'apple-reminders' &&
+              item.series_id === reminderEditorReminder.series_id &&
+              baseReminderId(item.id) !== baseReminderId(reminderEditorReminder.id)
+          )
+        : [];
+    let updateMatchingReminders = false;
+    if (reminderTimeShift !== 0 && matchingReminderRows.length > 0) {
+      updateMatchingReminders = window.confirm(
+        `Update the ${matchingReminderRows.length} other matching reminders by the same amount?`
+      );
+    }
     const resolvedReminderCalendarId =
       reminderEditCalendarId ||
       reminderEditorReminder.calendar_id ||
@@ -4345,6 +4364,29 @@ export const CalendarWindow = ({
         .map((item) => (baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item))
         .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
     );
+
+    if (updateMatchingReminders) {
+      try {
+        const shifted = await Promise.all(
+          matchingReminderRows.map(async (matchingReminder) => {
+            const shiftedAt = new Date(
+              new Date(matchingReminder.remind_at).getTime() + reminderTimeShift
+            ).toISOString();
+            return (await api.updateReminder(baseReminderId(matchingReminder.id), {
+              remind_at: shiftedAt,
+            })) as ReminderRow;
+          })
+        );
+        const shiftedById = new Map(shifted.map((item) => [baseReminderId(item.id), item]));
+        setReminders((prev) =>
+          prev
+            .map((item) => shiftedById.get(baseReminderId(item.id)) ?? item)
+            .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
+        );
+      } catch (error) {
+        setError('This reminder was saved, but some matching reminders could not be updated.');
+      }
+    }
 
     const updatedReminderDate = new Date(updated.remind_at);
     updatedReminderDate.setHours(0, 0, 0, 0);
@@ -4601,7 +4643,7 @@ export const CalendarWindow = ({
     }
   };
 
-  const saveEventEdits = async () => {
+  const saveEventEdits = async (selectedMatchingIds?: string[]) => {
     if (!eventEditorEvent || !editTitle.trim()) return;
 
     const start = new Date(`${editDate}T${editTime}:00`);
@@ -4615,6 +4657,21 @@ export const CalendarWindow = ({
 
     const resolvedEventCalendarId = editCalendarId || eventEditorEvent.calendar_id;
     const resolvedEventColor = calendarById.get(resolvedEventCalendarId)?.color ?? editColor;
+
+    const originalStart = new Date(eventEditorEvent.start_at);
+    const originalEnd = new Date(eventEditorEvent.end_at);
+    const moved = start.getTime() !== originalStart.getTime() || end.getTime() !== originalEnd.getTime();
+    const canReviewRelatedEvents =
+      eventEditorEvent.provider !== 'apple' &&
+      (eventEditorEvent.source_platform === 'ics' ||
+        Boolean(eventEditorEvent.series_id) ||
+        Boolean(eventEditorEvent.import_series_key) ||
+        Boolean(eventEditorEvent.import_batch_id));
+    if (selectedMatchingIds === undefined && moved && canReviewRelatedEvents) {
+      setEventMatchAction('update');
+      await loadEventMatchPreview(eventMatchScope, 'update');
+      return;
+    }
 
     let updated: EventRow;
     try {
@@ -4786,6 +4843,36 @@ export const CalendarWindow = ({
     );
     setSelectedEvent((current) => (current?.id === updated.id ? updated : current));
     setSelectedReminder(null);
+
+    if (selectedMatchingIds?.length) {
+      try {
+        const shiftMs = start.getTime() - originalStart.getTime();
+        const result = (await api.bulkShiftEvents(selectedMatchingIds, shiftMs)) as {
+          success?: boolean;
+          shifted_ids?: string[];
+        };
+        if (!result.success || !Array.isArray(result.shifted_ids) || result.shifted_ids.length !== selectedMatchingIds.length) {
+          throw new Error('The calendar changed before updating. Review the matches again.');
+        }
+        const shiftedIds = new Set(result.shifted_ids);
+        setEvents((prev) =>
+          prev.map((event) => {
+            if (!shiftedIds.has(baseEventId(event.id))) return event;
+            const eventStart = new Date(event.start_at);
+            const eventEnd = new Date(event.end_at);
+            return {
+              ...event,
+              start_at: new Date(eventStart.getTime() + shiftMs).toISOString(),
+              end_at: new Date(eventEnd.getTime() + shiftMs).toISOString(),
+            };
+          })
+        );
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update matching events.');
+        setIsSavingEdit(false);
+        return;
+      }
+    }
     const updatedDate = new Date(updated.start_at);
     updatedDate.setHours(0, 0, 0, 0);
     const updatedDateKey = formatDateKey(updatedDate);
@@ -4847,8 +4934,12 @@ export const CalendarWindow = ({
     }
   };
 
-  const loadEventMatchPreview = async (scope: 'future' | 'all' = eventMatchScope) => {
+  const loadEventMatchPreview = async (
+    scope: 'future' | 'all' = eventMatchScope,
+    action: EventMatchAction = 'delete'
+  ) => {
     if (!eventEditorEvent || eventEditorEvent.provider === 'apple') return;
+    setEventMatchAction(action);
     setIsLoadingEventMatches(true);
     setError(null);
     try {
@@ -4884,6 +4975,13 @@ export const CalendarWindow = ({
     } finally {
       setIsBulkDeletingEvents(false);
     }
+  };
+
+  const saveEventWithSelectedMatches = async (onlyThisEvent = false) => {
+    const selected = onlyThisEvent ? [] : [...selectedEventMatchIds];
+    setEventMatchPreview(null);
+    setSelectedEventMatchIds(new Set());
+    await saveEventEdits(selected);
   };
 
   const quickDeleteEvent = async (eventId: string) => {
@@ -8321,7 +8419,7 @@ export const CalendarWindow = ({
                     <button
                       onClick={() => {
                         const canReviewRelatedEvents = eventEditorEvent.provider !== 'apple'
-                          && (eventEditorEvent.source_platform === 'ics' || Boolean(eventEditorEvent.series_id) || Boolean(eventEditorEvent.import_series_key));
+                          && (eventEditorEvent.source_platform === 'ics' || Boolean(eventEditorEvent.series_id) || Boolean(eventEditorEvent.import_series_key) || Boolean(eventEditorEvent.import_batch_id));
                         if (canReviewRelatedEvents) void loadEventMatchPreview();
                         else setConfirmDelete(true);
                       }}
@@ -8330,7 +8428,7 @@ export const CalendarWindow = ({
                       Delete
                     </button>
                     {eventEditorEvent.provider !== 'apple' &&
-                      (eventEditorEvent.source_platform === 'ics' || eventEditorEvent.series_id) && (
+                      (eventEditorEvent.source_platform === 'ics' || eventEditorEvent.series_id || eventEditorEvent.import_series_key || eventEditorEvent.import_batch_id) && (
                         <button
                           type="button"
                           onClick={() => void loadEventMatchPreview()}
@@ -8410,9 +8508,13 @@ export const CalendarWindow = ({
           <div className="p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">Delete matching events</h3>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {eventMatchAction === 'update' ? 'Update matching events' : 'Delete matching events'}
+                </h3>
                 <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                  Review the events before removing them from Ledger.
+                  {eventMatchAction === 'update'
+                    ? 'Move the selected events by the same amount as this event.'
+                    : 'Review the events before removing them from Ledger.'}
                 </p>
               </div>
               <ModalCloseButton
@@ -8430,7 +8532,7 @@ export const CalendarWindow = ({
                 <button
                   key={scope}
                   type="button"
-                  onClick={() => void loadEventMatchPreview(scope)}
+                  onClick={() => void loadEventMatchPreview(scope, eventMatchAction)}
                   disabled={isLoadingEventMatches || isBulkDeletingEvents}
                   className={`flex-1 rounded px-2 py-1.5 ${eventMatchScope === scope ? 'bg-[#FFF1E3] font-medium text-gray-900' : 'text-[var(--ledger-text-muted)]'}`}
                 >
@@ -8492,13 +8594,37 @@ export const CalendarWindow = ({
                 >
                   Cancel
                 </button>
+                {eventMatchAction === 'update' && (
+                  <button
+                    type="button"
+                    onClick={() => void saveEventWithSelectedMatches(true)}
+                    disabled={isBulkDeletingEvents || isSavingEdit}
+                    className="rounded-md bg-white px-3 py-2 text-xs font-medium text-gray-700 ring-1 ring-inset ring-[#E2D4C4] hover:bg-[#FFF1E3] disabled:opacity-50"
+                  >
+                    Only this event
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void bulkDeleteSelectedEvents()}
+                  onClick={() =>
+                    eventMatchAction === 'update'
+                      ? void saveEventWithSelectedMatches()
+                      : void bulkDeleteSelectedEvents()
+                  }
                   disabled={!selectedEventMatchIds.size || isBulkDeletingEvents}
-                  className="rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  className={`rounded-md px-3 py-2 text-xs font-medium text-white disabled:opacity-50 ${
+                    eventMatchAction === 'update'
+                      ? 'bg-gray-900 hover:bg-gray-800'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
-                  {isBulkDeletingEvents ? 'Deleting…' : 'Delete selected'}
+                  {isBulkDeletingEvents
+                    ? eventMatchAction === 'update'
+                      ? 'Updating…'
+                      : 'Deleting…'
+                    : eventMatchAction === 'update'
+                      ? 'Update selected'
+                      : 'Delete selected'}
                 </button>
               </div>
             </div>
