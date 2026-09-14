@@ -41,6 +41,8 @@ export function IntegrationProviderMark({
   if (key === 'slack') {
     return <img src={`${import.meta.env.BASE_URL}slack.svg`} alt={label} title={label} className={className} style={{ width: size, height: size }} />;
   }
-  if (key === 'outlook') return <span role="img" aria-label={label} title={label} className={`text-[#0078d4] ${className}`} style={{ fontSize: size, lineHeight: 1 }}>✉</span>;
+  if (key === 'outlook') {
+    return <img src={`${import.meta.env.BASE_URL}outlook.svg`} alt={label} title={label} className={className} style={{ width: size, height: size }} />;
+  }
   return <Globe size={size} aria-label={label} className={className} />;
 }

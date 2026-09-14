@@ -73,6 +73,7 @@ import { buildInviteUrl } from '../../config/invite';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarEditorModal } from './AvatarEditorModal';
 import { userProfileService } from '../../services/userProfile';
@@ -5963,7 +5964,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           </div>
                         </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]"><span className="text-[18px] leading-none text-[#0078d4]">✉</span></span>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]"><IntegrationProviderMark provider="outlook" size={20} /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Outlook <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{outlookStatus?.connected ? `Connected as ${outlookStatus.account_email || 'your Microsoft account'}` : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Bring new Outlook messages into Intake.</p></div>
                           <button type="button" onClick={() => openOutlookManagement()} disabled={!activeWorkspaceId} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{outlookStatus?.connected ? 'Manage' : 'Connect'}</button>
                         </div>

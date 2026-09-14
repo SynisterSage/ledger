@@ -7337,6 +7337,13 @@ app.get('/api/integrations/outlook/oauth/callback', rateLimit('auth'), async (re
     const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim() || process.env.OUTLOOK_CLIENT_SECRET?.trim();
     const redirectUri = getOutlookRedirectUri();
     if (!clientId || !clientSecret || !redirectUri) return res.status(500).type('html').send(outlookCompleteHtml(false, 'Outlook is not configured for Ledger yet.'));
+    console.info('[outlook] OAuth runtime configuration', {
+      clientIdSource: process.env.MICROSOFT_CLIENT_ID?.trim() ? 'MICROSOFT_CLIENT_ID' : 'OUTLOOK_CLIENT_ID',
+      clientSecretSource: process.env.MICROSOFT_CLIENT_SECRET?.trim() ? 'MICROSOFT_CLIENT_SECRET' : 'OUTLOOK_CLIENT_SECRET',
+      clientSecretLength: clientSecret.length,
+      tenant: getOutlookTenant(),
+      redirectUri,
+    });
     const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(getOutlookTenant())}/oauth2/v2.0/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri, grant_type: 'authorization_code', scope: outlookOAuthScopes.join(' ') }) });
     const tokenPayload = await tokenResponse.json();
     if (!tokenResponse.ok || !tokenPayload.access_token) {
