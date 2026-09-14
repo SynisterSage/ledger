@@ -642,6 +642,7 @@ body.has-modal-open #root > * {
 }
 
 .ledger-modal-surface {
+  border-radius: var(--ledger-surface-radius, var(--ledger-window-radius, 18px)) !important;
   color: var(--ledger-text-primary, rgb(10 10 10));
   background-color: var(--ledger-surface-card, rgb(250 250 250));
   border-color: var(--ledger-border-subtle, rgba(229, 229, 229, 0.93));

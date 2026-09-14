@@ -852,8 +852,15 @@ export function GoogleDriveIntegrationPage({
         />
       )}
       {confirmDisconnect && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6">
-          <div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[var(--ledger-shadow)]">
+        <ModalOverlay
+          isOpen
+          onClose={() => setConfirmDisconnect(false)}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-sm overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[var(--ledger-shadow)]"
+        >
+          <div>
             <h3 className="text-base font-semibold">Disconnect Google Drive?</h3>
             <p className="mt-2 text-sm leading-5 text-[var(--ledger-text-secondary)]">
               This does not delete Google Drive files or Ledger resources. It stops metadata
@@ -878,7 +885,7 @@ export function GoogleDriveIntegrationPage({
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </section>
   );
@@ -897,6 +904,9 @@ function RuleHistoryModal({
     <ModalOverlay
       isOpen
       onClose={onClose}
+      backdropBorderRadius="inherit"
+      disablePortal
+      manageWindowChrome={false}
       classNameContainer="w-full max-w-lg overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
     >
       <div className="flex max-h-[min(620px,calc(100vh-32px))] flex-col">

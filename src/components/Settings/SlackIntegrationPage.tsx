@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { Capability, IntegrationPageHeader, IntegrationSection, LoadingRow, MetaRow, settingsIntegrationButton, settingsIntegrationPrimary } from './FigmaIntegrationPage';
+import { Capability, IntegrationConfirmModal, IntegrationPageHeader, IntegrationSection, LoadingRow, MetaRow, settingsIntegrationButton, settingsIntegrationPrimary } from './FigmaIntegrationPage';
 
 export type SlackIntegrationPageStatus = {
   connected: boolean;
@@ -115,4 +115,4 @@ export const SlackIntegrationPage = ({ workspaceId, canManage, onBack, onStatusC
   </section>;
 };
 
-const ConfirmDialog = ({ title, body, confirmLabel, busy, onCancel, onConfirm }: { title: string; body: string; confirmLabel: string; busy: boolean; onCancel: () => void; onConfirm: () => void }) => <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}><div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.18)]" role="dialog" aria-modal="true" aria-labelledby="slack-confirm-title"><h3 id="slack-confirm-title" className="text-base font-semibold">{title}</h3><p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">{body}</p><div className="mt-5 flex justify-end gap-2"><button type="button" className={settingsIntegrationButton} onClick={onCancel}>Cancel</button><button type="button" className="h-8 rounded-full bg-[var(--ledger-danger)] px-3 text-xs font-medium text-white disabled:opacity-50" onClick={onConfirm} disabled={busy}>{busy ? 'Disconnecting…' : confirmLabel}</button></div></div></div>;
+const ConfirmDialog = ({ title, body, confirmLabel, busy, onCancel, onConfirm }: { title: string; body: string; confirmLabel: string; busy: boolean; onCancel: () => void; onConfirm: () => void }) => <IntegrationConfirmModal title={title} body={body} confirmLabel={confirmLabel} busy={busy} onCancel={onCancel} onConfirm={onConfirm} />;

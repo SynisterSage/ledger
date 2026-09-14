@@ -782,7 +782,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                     }, 300);
                   }}
                 >
-                  <div className="p-1">
+                  <div className="space-y-0.5 p-1">
                     {workspaces.map((workspace) => {
                       const isActive = workspace.id === activeWorkspaceId;
                       return (
@@ -791,7 +791,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                           type="button"
                           data-switcher-subrow="true"
                           onClick={() => void selectWorkspace(workspace.id)}
-                        className={`flex min-h-7 w-full items-center gap-2 rounded-md px-2.5 py-1 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+                        className={`flex min-h-7 w-full items-center gap-2 rounded-md px-2.5 py-0.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
                             isActive
                               ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
                               : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
@@ -812,7 +812,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                                 />
                               )}
                             </span>
-                            <span className="block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">
+                            <span className="block truncate text-[10px] leading-3 text-[var(--ledger-text-muted)]">
                               {getWorkspaceLabel(workspace)}
                             </span>
                           </span>

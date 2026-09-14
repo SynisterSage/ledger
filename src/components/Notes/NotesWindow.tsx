@@ -5720,6 +5720,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   const installTranscriptionModel = useCallback(async () => {
     if (!window.meetingTranscription) return;
+    if (window.localModelStorage) {
+      try {
+        const choice = await window.localModelStorage.chooseForDownload();
+        if (choice.canceled) return;
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not choose a model storage folder.');
+        return;
+      }
+    }
     setTranscriptionBusy(true);
     try {
       const model = (await window.meetingTranscription.downloadModel()) as TranscriptionModelStatus;
@@ -7703,6 +7712,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   const installNoteOcrVision = useCallback(async () => {
     if (!window.noteOcr?.downloadVisionModel) return;
+    if (window.localModelStorage) {
+      try {
+        const choice = await window.localModelStorage.chooseForDownload();
+        if (choice.canceled) return;
+      } catch (error) {
+        setNoteOcrError(error instanceof Error ? error.message : 'Could not choose a model storage folder.');
+        return;
+      }
+    }
     setNoteOcrVisionDownloading(true);
     try {
       const result = await window.noteOcr.downloadVisionModel() as { available?: boolean; progressPercent?: number; totalBytes?: number };

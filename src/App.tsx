@@ -333,7 +333,7 @@ const SharedIpcShellBottomStrip = () => {
   if (!window.desktopWindow) return null;
 
   return (
-    <div className="pointer-events-none flex h-7 shrink-0 items-center justify-end rounded-b-[var(--ledger-window-radius)] border-x border-b border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3">
+    <div className="relative z-[10000] pointer-events-none flex h-7 shrink-0 items-center justify-end rounded-b-[var(--ledger-window-radius)] border-x border-b border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3">
       <div className="flex items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
         <button
           type="button"
@@ -4200,7 +4200,24 @@ export function DashboardContent({
 
   const addTaskToFocus = async (taskId: string) => {
     const target = findOverviewTaskTarget(taskId);
-    if (!target || focusTasks.length + daily.focusItems.length >= 3) return;
+    if (!target) {
+      setDashboardContextMenu(null);
+      toast.show('Could not add task to focus', {
+        detail: 'This task is no longer available in the active workspace.',
+        variant: 'error',
+      });
+      return;
+    }
+    if (focusTasks.length + daily.focusItems.length >= 3) {
+      setDashboardContextMenu(null);
+      toast.show('Focus is full', {
+        detail: 'Complete or remove a focus item before adding another.',
+        variant: 'info',
+      });
+      return;
+    }
+
+    setDashboardContextMenu(null);
 
     if (isOverviewReminderTask(target)) {
       const focusItemId = `reminder:${target.id}`;
@@ -4270,8 +4287,8 @@ export function DashboardContent({
           show_in_today: true,
           task_horizon: 'today',
         });
-      } else if (target.workspace_id) {
-        await api.updateTaskInWorkspace(taskId, target.workspace_id, {
+      } else if (target.workspace_id ?? activeWorkspaceId) {
+        await api.updateTaskInWorkspace(taskId, target.workspace_id ?? activeWorkspaceId ?? '', {
           is_today_focus: true,
           show_in_today: true,
           task_horizon: 'today',
@@ -4283,11 +4300,17 @@ export function DashboardContent({
           task_horizon: 'today',
         });
       }
+      handleDashboardWorkspaceRefresh();
       await refreshTodayTasks();
+      toast.show('Added to focus', { detail: target.title, variant: 'success' });
     } catch (error) {
       console.error('Failed to add overview task to focus:', error);
       setTodayTasks(previousTodayTasks);
       setWorkspaceTasks(previousWorkspaceTasks);
+      toast.show('Could not add task to focus', {
+        detail: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'error',
+      });
     } finally {
       setFocusActionId(null);
     }
@@ -8043,9 +8066,9 @@ export function DashboardContent({
                                 key={row.id}
                                 type="button"
                                 onClick={() => setSelectedOverviewRowId(row.id)}
-                                className="flex w-full items-start gap-2 py-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                                className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/25"
                               >
-                                <CircleAlert size={13} className="mt-0.5 shrink-0 text-[var(--ledger-accent)]" />
+                                <CircleAlert size={13} className="mt-1 shrink-0 text-[var(--ledger-accent)]" />
                                 <span className="min-w-0">
                                   <span className="block truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
                                     {row.title}
@@ -8081,9 +8104,9 @@ export function DashboardContent({
                                 key={row.id}
                                 type="button"
                                 onClick={() => setSelectedOverviewRowId(row.id)}
-                                className="flex w-full items-start gap-2 py-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                                className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/25"
                               >
-                                <CalendarDays size={13} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
+                                <CalendarDays size={13} className="mt-1 shrink-0 text-[var(--ledger-text-muted)]" />
                                 <span className="min-w-0">
                                   <span className="block truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
                                     {row.title}
@@ -8117,7 +8140,7 @@ export function DashboardContent({
                           type="button"
                           onClick={openOverviewRecentNote}
                           disabled={!recentNotes[0]}
-                          className="flex w-full items-center justify-between gap-2 text-left text-[12px] disabled:cursor-default disabled:opacity-60"
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] transition hover:bg-[var(--ledger-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/25 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
                         >
                           <span className="truncate text-[var(--ledger-text-muted)]">Recent note</span>
                           <span className="max-w-36 truncate font-medium text-[var(--ledger-text-primary)]">
@@ -8245,7 +8268,7 @@ export function DashboardContent({
                         <button
                           type="button"
                           onClick={askLedgerAboutToday}
-                          className="mt-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                          className="mt-3 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/25"
                         >
                           Ask Ledger about today →
                         </button>
@@ -8256,7 +8279,7 @@ export function DashboardContent({
                         <button
                           type="button"
                           onClick={overviewTryItem.action}
-                          className="block w-full pt-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                          className="block w-full rounded-lg px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/25"
                         >
                           <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
                             <overviewTryItem.icon
@@ -8642,6 +8665,9 @@ export function DashboardContent({
       <ModalOverlay
         isOpen={isFocusPickerOpen}
         onClose={() => setIsFocusPickerOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-xl rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
@@ -9686,11 +9712,18 @@ export function AppShell({
       if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
       applyWorkspaceRoute(route);
     };
-    const handleWorkspaceRouteRequested = (_event: unknown, route?: ModuleFocusPayload) => {
+    const handleWorkspaceRouteRequested = (
+      _event: unknown,
+      route?: ModuleFocusPayload & { intentional?: boolean }
+    ) => {
       const generation = route?.navigationGeneration;
       if (isStaleNavigationGeneration(generation, lastNavigationGeneration)) return;
       if (typeof generation === 'number') lastNavigationGeneration = generation;
-      if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
+      const key = workspaceShellRouteKey(route);
+      if (closedRouteKeys.has(key)) {
+        if (!route?.intentional) return;
+        closedRouteKeys.delete(key);
+      }
       applyWorkspaceRoute(route);
     };
     const handleWorkspaceRouteClosed = (event: Event) => {
@@ -9730,6 +9763,13 @@ export function AppShell({
       details: { active: activeKeepAliveModuleKey },
     });
   }, [activeKeepAliveModuleKey]);
+
+  useEffect(() => {
+    if (!window.desktopWindow?.setWorkspaceContext) return;
+    void window.desktopWindow.setWorkspaceContext(activeWorkspaceId).catch(() => {
+      // Workspace context will be retried when the active workspace changes.
+    });
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -11418,7 +11458,7 @@ function AgentMockupPopover() {
       aria-label="Agent preview"
       className={`${
         isOpen ? '' : 'hidden'
-      } agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_12px_32px_rgba(0,0,0,0.22)] ${
+      } agent-ask-ledger-popover fixed z-[10001] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_12px_32px_rgba(0,0,0,0.22)] ${
         isMinimized ? 'h-10' : 'h-[400px]'
       }`}
       style={{ left: position.left, top: position.top }}

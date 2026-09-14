@@ -96,7 +96,7 @@ export const ModalOverlay = ({
     <div
       className={`${
         useAbsolutePosition ? 'absolute' : 'fixed'
-      } inset-0 z-9999 isolate ${classNameBackdrop}`}
+      } inset-0 z-[9999] isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
       <div

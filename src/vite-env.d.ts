@@ -379,6 +379,11 @@ interface Window {
     onSegments: (listener: (event: unknown) => void) => () => void;
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
+  localModelStorage?: {
+    get: () => Promise<{ root: string; defaultRoot: string }>;
+    choose: () => Promise<{ canceled: boolean; root: string; defaultRoot: string }>;
+    chooseForDownload: (downloadCount?: number) => Promise<{ canceled: boolean; root: string; defaultRoot: string }>;
+  };
   askLedger?: {
     copyText: (text: string) => Promise<{ ok: boolean }>;
     generateOverviewFocus: (
@@ -623,6 +628,7 @@ interface Window {
     goBackWorkspaceWindow?: () => Promise<void>;
     goForwardWorkspaceWindow?: () => Promise<void>;
     getWorkspaceNavigationState?: () => Promise<{
+      workspaceId?: string | null;
       canGoBack: boolean;
       canGoForward: boolean;
       currentModule: ModuleWindowKind | null;
@@ -630,6 +636,7 @@ interface Window {
       recentRoutes?: ModuleFocusPayload[];
       windowId?: string;
     }>;
+    setWorkspaceContext?: (workspaceId: string | null) => Promise<boolean>;
     clearWorkspaceRecent?: () => Promise<boolean>;
     getWindowBounds?: () => Promise<{
       x: number;

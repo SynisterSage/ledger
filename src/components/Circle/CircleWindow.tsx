@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Activity,
   Bell,
   Copy,
   Check,
@@ -10,6 +11,8 @@ import {
   Folder,
   Inbox,
   LayoutList,
+  ListChecks,
+  FolderKanban,
   MoreHorizontal,
   Pin,
   Plus,
@@ -339,7 +342,7 @@ const SummaryCell = ({
   active?: boolean;
   onClick?: () => void;
 }) => {
-  const classes = `flex min-h-[42px] min-w-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition ${
+  const classes = `flex min-h-[42px] min-w-0 items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition ${
     active ? 'bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-muted)]'
   }`;
 
@@ -368,31 +371,6 @@ const SummaryCell = ({
 
   return <div className={classes}>{content}</div>;
 };
-
-const SummaryStrip = ({
-  items,
-}: {
-  items: Array<{
-    label: string;
-    value: string | number;
-    active?: boolean;
-    onClick?: () => void;
-  }>;
-}) => (
-  <div className="overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
-    <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] md:grid-cols-4">
-      {items.map((item) => (
-        <SummaryCell
-          key={item.label}
-          label={item.label}
-          value={item.value}
-          active={item.active}
-          onClick={item.onClick}
-        />
-      ))}
-    </div>
-  </div>
-);
 
 const WorkspaceSection = ({
   title,
@@ -547,6 +525,29 @@ const Row = ({
 
   return <div className={className}>{content}</div>;
 };
+
+const CircleEmptyState = ({
+  icon,
+  title,
+  description,
+  actions,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) => (
+  <div className="flex min-h-[260px] items-center justify-center px-6 py-12">
+    <div className="max-w-sm text-center">
+      <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]">
+        {icon}
+      </span>
+      <h3 className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">{title}</h3>
+      <p className="mt-1.5 text-xs leading-5 text-[var(--ledger-text-muted)]">{description}</p>
+      {actions ? <div className="mt-3 flex flex-wrap justify-center gap-2">{actions}</div> : null}
+    </div>
+  </div>
+);
 
 const buildPersonContext = (person: CirclePersonSummary) =>
   `ledger-person|${person.id}|${encodeURIComponent(person.name)}`;
@@ -1324,27 +1325,29 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     if (!selectedPersonDetails) return null;
 
     return (
-      <section className={circleTheme.panel}>
-        <div className="flex flex-wrap items-start justify-between gap-4 px-4 py-4">
-          <div className="flex min-w-0 items-start gap-3">
+      <section className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-4 px-1 pt-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              onClick={clearPersonWorkspace}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30"
+              aria-label="Back to Circle"
+              title="Back to Circle"
+            >
+              <ArrowLeft size={15} />
+            </button>
             <CircleAvatar person={selectedPersonDetails} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-[20px] font-medium text-[var(--ledger-text-primary)]">
+                <h2 className="break-words text-[18px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
                   {selectedPersonDetails.name}
                 </h2>
               </div>
-              <p className={circleTheme.headerMeta}>
+              <p className="mt-0.5 break-words text-[12px] leading-5 text-[var(--ledger-text-secondary)]">
                 {selectedPersonDisplayRole}
                 {selectedPersonPrimaryTeam ? ` · ${selectedPersonPrimaryTeam}` : ''}
                 {selectedPersonDetails.email ? ` · ${selectedPersonDetails.email}` : ''}
-              </p>
-              <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">
-                {selectedPersonDetails.teams.length > 0
-                  ? selectedPersonDetails.teams.map((team) => team.name).join(' · ')
-                  : 'No team membership'}
-                {' · '}
-                {currentWorkspaceName}
               </p>
             </div>
           </div>
@@ -1367,65 +1370,17 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-          <button
-            type="button"
-            onClick={() => openCircleComposer('task')}
-            className={circleTheme.primaryButton}
-          >
-            <Plus size={11} />
-            Assign task
-          </button>
-          <button
-            type="button"
-            onClick={() => openCircleComposer('follow-up')}
-            className={circleTheme.subtleButton}
-          >
-            <ArrowRight size={11} />
-            Assign follow-up task
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (sharedProjectFromWork) openSharedProject(sharedProjectFromWork.id);
-            }}
-            disabled={!sharedProjectFromWork}
-            className={`${circleTheme.subtleButton} ${
-              !sharedProjectFromWork ? 'cursor-not-allowed opacity-40' : ''
-            }`}
-          >
-            <Folder size={11} />
-            Open shared project
-          </button>
-        </div>
-
-        <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-          <SummaryStrip
-            items={[
-              {
-                label: 'Open tasks',
-                value:
-                  selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count,
-                active: activeTab === 'assigned',
-                onClick: () => setActiveTab('assigned'),
-              },
-              {
-                label: 'Shared projects',
-                value:
-                  selectedWork?.summary.shared_project_count ??
-                  selectedPersonDetails.shared_project_count,
-                active: activeTab === 'projects',
-                onClick: () => setActiveTab('projects'),
-              },
-              {
-                label: 'Waiting on',
-                value:
-                  selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count,
-                active: activeTab === 'overview',
-                onClick: () => setActiveTab('overview'),
-              },
-            ]}
-          />
+        <div className="mt-3 flex flex-wrap items-center gap-1 px-1">
+            {[
+              { label: 'Open tasks', value: selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count, tab: 'assigned' as const },
+              { label: 'Shared projects', value: selectedWork?.summary.shared_project_count ?? selectedPersonDetails.shared_project_count, tab: 'projects' as const },
+              { label: 'Waiting on', value: selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count, tab: 'overview' as const },
+            ].map((item) => (
+              <button key={item.label} type="button" onClick={() => setActiveTab(item.tab)} className="inline-flex min-h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30">
+                <span className="font-semibold tabular-nums text-[var(--ledger-text-primary)]">{item.value}</span>
+                {item.label}
+              </button>
+            ))}
         </div>
       </section>
     );
@@ -1633,35 +1588,59 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     );
   };
 
-  const renderAssignedWork = () => (
-    <div className="space-y-1">
-      {selectedPersonTasks.length > 0 ? (
-        selectedPersonTasks.map(renderTaskRow)
-      ) : (
-        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>
-      )}
-    </div>
-  );
+const renderAssignedWork = () => (
+  <div className="space-y-1">
+    {selectedPersonTasks.length > 0 ? (
+      selectedPersonTasks.map(renderTaskRow)
+    ) : (
+      <CircleEmptyState
+        icon={<ListChecks size={18} strokeWidth={1.8} />}
+        title="No open work yet"
+        description={`Assign ${selectedPersonDetails?.name ?? 'this person'} a task or follow-up to keep shared work moving.`}
+        actions={
+          <>
+            <button type="button" onClick={() => openCircleComposer('task')} className={circleTheme.primaryButton}>
+              <Plus size={11} />
+              Assign task
+            </button>
+            <button type="button" onClick={() => openCircleComposer('follow-up')} className={circleTheme.subtleButton}>
+              <ArrowRight size={11} />
+              Assign follow-up
+            </button>
+          </>
+        }
+      />
+    )}
+  </div>
+);
 
-  const renderProjects = () => (
-    <div className="space-y-1">
-      {selectedProjectsRows.length > 0 ? (
-        selectedProjectsRows.map(renderProjectRow)
-      ) : (
-        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>
-      )}
-    </div>
-  );
+const renderProjects = () => (
+  <div className="space-y-1">
+    {selectedProjectsRows.length > 0 ? (
+      selectedProjectsRows.map(renderProjectRow)
+    ) : (
+      <CircleEmptyState
+        icon={<FolderKanban size={18} strokeWidth={1.8} />}
+        title="No shared projects yet"
+        description={`Projects shared with ${selectedPersonDetails?.name ?? 'this person'} will appear here.`}
+      />
+    )}
+  </div>
+);
 
-  const renderActivity = () => (
-    <div className="space-y-1">
-      {selectedActivityRows.length > 0 ? (
-        selectedActivityRows.map(renderActivityRow)
-      ) : (
-        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
-      )}
-    </div>
-  );
+const renderActivity = () => (
+  <div className="space-y-1">
+    {selectedActivityRows.length > 0 ? (
+      selectedActivityRows.map(renderActivityRow)
+    ) : (
+      <CircleEmptyState
+        icon={<Activity size={18} strokeWidth={1.8} />}
+        title="No activity yet"
+        description="Assigned work and shared projects will show up here as they move forward."
+      />
+    )}
+  </div>
+);
 
   const teamOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1703,6 +1682,30 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         compact
         showBodyHeader={false}
         stripTitle="Circle"
+        stripLeadingActions={
+          selectedPersonDetails ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => openCircleComposer('task')}
+                className={circleTheme.primaryButton}
+                title="Assign task"
+              >
+                <Plus size={11} />
+                Assign task
+              </button>
+              <button
+                type="button"
+                onClick={() => openCircleComposer('follow-up')}
+                className={`${circleTheme.subtleButton} h-7 min-h-7`}
+                title="Assign follow-up task"
+              >
+                <ArrowRight size={11} />
+                Assign follow-up
+              </button>
+            </div>
+          ) : null
+        }
         onClose={() => window.desktopWindow?.closeModule('circle')}
         onMinimize={() => window.desktopWindow?.minimizeModule('circle')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('circle')}
@@ -1726,7 +1729,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             />
           </>
         }
-        primaryActions={
+        primaryActions={selectedPersonDetails ? null : (
           <div className="flex items-center gap-2">
             <div className="relative" ref={filterMenuRef}>
               <ModuleHeaderActionButton
@@ -1898,7 +1901,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               )}
             </div>
           </div>
-        }
+        )}
       />
 
       <div className={circleTheme.body}>
@@ -1929,22 +1932,27 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             </div>
           </div>
           <div className="border-b border-[color:var(--ledger-border-subtle)] px-2 py-2">
-            <div className="ledger-pane-scrollbar flex min-w-max flex-nowrap gap-1 overflow-x-auto pb-0.5" aria-label="People views">
-              {circleTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setListTab(tab.id)}
-                  aria-pressed={listTab === tab.id}
-                  className={`inline-flex min-h-7 items-center rounded-md px-2 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30 ${
-                    listTab === tab.id
-                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                      : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="relative" aria-label="People views">
+              <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex w-max items-center gap-1.5 pr-8">
+                  {circleTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setListTab(tab.id)}
+                      aria-pressed={listTab === tab.id}
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-medium whitespace-nowrap transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30 ${
+                        listTab === tab.id
+                          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="pointer-events-none absolute right-0 top-0 h-7 w-7 bg-linear-to-l from-[var(--ledger-surface-muted)] to-transparent" />
             </div>
           </div>
           <div className={circleTheme.leftList}>
@@ -2065,6 +2073,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       <ModalOverlay
         isOpen={Boolean(composerMode && selectedPersonDetails)}
         onClose={closeCircleComposer}
+        backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
         classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"

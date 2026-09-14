@@ -3,9 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import https from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
+import { localModelPath } from './localModelStorage.ts';
 import electron from 'electron';
 
-const app = (electron as unknown as { app?: { getPath(name: string): string } }).app;
+const electronApp = (electron as unknown as { app?: { getPath(name: string): string } }).app;
 
 export const RECOMMENDED_MODEL = {
   id: 'ggml-base.en',
@@ -35,7 +36,7 @@ export type ModelStatus = {
 };
 
 export class TranscriptionModelManager {
-  private readonly root = path.join(app?.getPath('userData') ?? path.join(process.cwd(), '.ledger-whisper-test-data'), 'models', 'whisper');
+  private get root() { return electronApp ? localModelPath('models', 'whisper') : path.join(process.cwd(), '.ledger-whisper-test-data', 'models', 'whisper'); }
   private downloadRequest: ClientRequest | null = null;
   private downloadPromise: Promise<ModelStatus> | null = null;
   private downloadStartedAt = 0;

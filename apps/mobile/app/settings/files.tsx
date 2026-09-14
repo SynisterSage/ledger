@@ -1,18 +1,25 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { AppText } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
+import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { useLedgerTheme } from '@/theme';
 import {
   importMobileLocalFile,
+  createMobileLocalFolder,
   listMobileLocalFiles,
+  listMobileLocalFolders,
+  moveMobileLocalFile,
+  removeMobileLocalFolder,
   removeMobileLocalFile,
+  renameMobileLocalFolder,
   type MobileLocalFile,
+  type MobileLocalFolder,
 } from '@/features/files/mobileLocalFiles';
 import { useAuthState } from '@/store/sessionStore';
 import { useWorkspaceState } from '@/store/workspaceStore';
@@ -30,6 +37,12 @@ export default function FilesScreen() {
   const userId = auth.user?.id ?? '';
   const workspaceId = workspaceState.selectedWorkspaceId ?? '';
   const [files, setFiles] = useState<MobileLocalFile[]>([]);
+  const [folders, setFolders] = useState<MobileLocalFolder[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folderAction, setFolderAction] = useState<MobileLocalFolder | null>(null);
+  const [fileAction, setFileAction] = useState<MobileLocalFile | null>(null);
+  const [folderEditor, setFolderEditor] = useState<'create' | 'rename' | null>(null);
+  const [folderName, setFolderName] = useState('');
   const [links, setLinks] = useState<MobileConnectedLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,16 +51,19 @@ export default function FilesScreen() {
     setLoading(true);
     if (!userId || !workspaceId) {
       setFiles([]);
+      setFolders([]);
       setLinks([]);
       setLoading(false);
       return;
     }
     try {
-      const [localFiles, connectedLinks] = await Promise.all([
+      const [localFiles, localFolders, connectedLinks] = await Promise.all([
         listMobileLocalFiles(userId, workspaceId),
+        listMobileLocalFolders(userId, workspaceId),
         getMobileConnectedLinks(workspaceId).catch(() => []),
       ]);
       setFiles(localFiles);
+      setFolders(localFolders);
       setLinks(connectedLinks);
     } finally {
       setLoading(false);
@@ -68,7 +84,7 @@ export default function FilesScreen() {
         multiple: false,
       });
       if (!result.canceled && result.assets[0] && userId && workspaceId)
-        await importMobileLocalFile(result.assets[0], userId, workspaceId);
+        await importMobileLocalFile(result.assets[0], userId, workspaceId, currentFolderId);
       await load();
     } catch {
       Alert.alert('Could not add file', 'Try selecting the file again.');
@@ -115,6 +131,62 @@ export default function FilesScreen() {
       },
     ]);
 
+  const saveFolder = async () => {
+    if (!userId || !workspaceId || !folderName.trim()) return;
+    setBusy(true);
+    try {
+      if (folderEditor === 'rename' && folderAction) {
+        await renameMobileLocalFolder(folderAction.id, folderName, userId, workspaceId);
+      } else {
+        await createMobileLocalFolder(folderName, userId, workspaceId);
+      }
+      setFolderEditor(null);
+      setFolderAction(null);
+      setFolderName('');
+      await load();
+    } catch (error) {
+      Alert.alert('Could not save folder', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteFolder = (folder: MobileLocalFolder) => {
+    setFolderAction(null);
+    Alert.alert('Delete folder?', 'Files in this folder will stay on this device and move to the top level.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          if (userId && workspaceId) await removeMobileLocalFolder(folder.id, userId, workspaceId);
+          if (currentFolderId === folder.id) setCurrentFolderId(null);
+          await load();
+        } catch { Alert.alert('Could not delete folder', 'Please try again.'); }
+      } },
+    ]);
+  };
+
+  const moveFile = (file: MobileLocalFile) => {
+    setFileAction(file);
+  };
+
+  const moveFileTo = async (folderId: string | null) => {
+    if (!fileAction || !userId || !workspaceId) return;
+    setBusy(true);
+    try {
+      await moveMobileLocalFile(fileAction.id, folderId, userId, workspaceId);
+      setFileAction(null);
+      await load();
+    } catch {
+      Alert.alert('Could not move file', 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const visibleFiles = files.filter((file) => (file.folderId ?? null) === currentFolderId);
+  const currentFolder = folders.find((folder) => folder.id === currentFolderId);
+  const visibleFolders = currentFolderId ? [] : folders;
+
   // This page has a static title at the top; the shared scroll fade would sit
   // above it and wash out “Files & links” before the user has scrolled.
   return (
@@ -158,17 +230,31 @@ export default function FilesScreen() {
       </View>
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <AppText variant="sectionTitle">On this device</AppText>
-          <Pressable onPress={() => void importFile()} disabled={busy} accessibilityRole="button">
+          <View style={styles.sectionTitleRow}>
+            {currentFolder ? <Pressable onPress={() => setCurrentFolderId(null)} hitSlop={8} accessibilityLabel="Back to all folders"><SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={18} tintColor={theme.colors.textSecondary} /></Pressable> : null}
+            <AppText variant="sectionTitle">{currentFolder?.name ?? 'On this device'}</AppText>
+          </View>
+          <View style={styles.headerActions}>
+            {!currentFolder ? <Pressable onPress={() => { setFolderName(''); setFolderEditor('create'); }} accessibilityRole="button"><AppText variant="button" style={{ color: theme.colors.textSecondary }}>New folder</AppText></Pressable> : null}
+            <Pressable onPress={() => void importFile()} disabled={busy} accessibilityRole="button">
             <AppText variant="button" style={{ color: theme.colors.accent }}>
               {busy ? 'Adding…' : 'Add file'}
             </AppText>
-          </Pressable>
+            </Pressable>
+          </View>
         </View>
         {loading ? (
           <FilesLinksSkeleton theme={theme} />
-        ) : files.length ? (
-          files.map((file) => (
+        ) : visibleFolders.length || visibleFiles.length ? (
+          <>
+          {visibleFolders.map((folder) => (
+            <Pressable key={folder.id} onPress={() => setCurrentFolderId(folder.id)} style={({ pressed }) => [styles.row, { borderBottomColor: theme.colors.borderSubtle, opacity: pressed ? 0.68 : 1 }]} accessibilityRole="button" accessibilityLabel={`Open folder ${folder.name}`}>
+              <SymbolView name={{ ios: 'folder', android: 'folder', web: 'folder' }} size={19} tintColor={theme.colors.accent} />
+              <View style={styles.rowCopy}><AppText variant="body" numberOfLines={1}>{folder.name}</AppText><AppText variant="meta" style={{ color: theme.colors.textMuted }}>{files.filter((file) => file.folderId === folder.id).length} files</AppText></View>
+              <Pressable style={styles.rowAction} onPress={(event) => { event.stopPropagation(); setFolderAction(folder); }} hitSlop={4} accessibilityRole="button" accessibilityLabel={`More actions for ${folder.name}`}><SymbolView name={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }} size={19} tintColor={theme.colors.textSecondary} /></Pressable>
+            </Pressable>
+          ))}
+          {visibleFiles.map((file) => (
             <View
               key={file.id}
               style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}
@@ -178,6 +264,7 @@ export default function FilesScreen() {
                   router.push({ pathname: '/settings/files/[id]', params: { id: file.id } })
                 }
                 style={styles.rowMain}
+                onLongPress={() => moveFile(file)}
               >
                 <SymbolView
                   name={{ ios: 'doc', android: 'description', web: 'description' }}
@@ -194,8 +281,22 @@ export default function FilesScreen() {
                 </View>
               </Pressable>
               <Pressable
+                onPress={() => moveFile(file)}
+                style={styles.rowAction}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel={`Move ${file.name}`}
+              >
+                <SymbolView
+                  name={{ ios: 'folder', android: 'folder', web: 'folder' }}
+                  size={17}
+                  tintColor={theme.colors.textSecondary}
+                />
+              </Pressable>
+              <Pressable
                 onPress={() => deleteFile(file)}
-                hitSlop={8}
+                style={styles.rowAction}
+                hitSlop={4}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${file.name}`}
               >
@@ -206,7 +307,8 @@ export default function FilesScreen() {
                 />
               </Pressable>
             </View>
-          ))
+          ))}
+          </>
         ) : (
           <View
             style={[
@@ -231,7 +333,7 @@ export default function FilesScreen() {
           </View>
         )}
       </View>
-      <View style={styles.section}>
+      {!currentFolder ? <View style={styles.section}>
         <AppText variant="sectionTitle">Connected links</AppText>
         {loading ? (
           <FilesLinksSkeleton theme={theme} />
@@ -291,7 +393,25 @@ export default function FilesScreen() {
             </View>
           </View>
         )}
-      </View>
+      </View> : null}
+      <AppBottomSheet visible={Boolean(folderEditor)} onClose={() => { setFolderEditor(null); setFolderAction(null); }} title={<AppText variant="sectionTitle">{folderEditor === 'rename' ? 'Rename folder' : 'New folder'}</AppText>} headerAccessory={<Pressable onPress={() => void saveFolder()} disabled={busy || !folderName.trim()} hitSlop={8} accessibilityLabel="Save folder"><SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={busy || !folderName.trim() ? theme.colors.textMuted : theme.colors.accent} /></Pressable>} snapPoints={['34%', '48%']} initialSnapPointIndex={0}>
+        <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}><TextInput autoFocus value={folderName} onChangeText={setFolderName} onSubmitEditing={() => void saveFolder()} placeholder="Folder name" placeholderTextColor={theme.colors.placeholder} style={[styles.folderInput, { color: theme.colors.textPrimary }]} /></View>
+      </AppBottomSheet>
+      <AppBottomSheet visible={Boolean(folderAction) && !folderEditor} onClose={() => setFolderAction(null)} title={<AppText variant="sectionTitle">{folderAction?.name ?? 'Folder'}</AppText>} snapPoints={['34%', '54%']} initialSnapPointIndex={0}>
+        <View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}>
+          {folderAction && folders.some((folder) => folder.id === folderAction.id) ? <>
+            <Pressable style={styles.actionRow} onPress={() => { setFolderName(folderAction.name); setFolderEditor('rename'); }}><AppText variant="body">Rename folder</AppText><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={16} tintColor={theme.colors.textMuted} /></Pressable>
+            <Pressable style={styles.actionRow} onPress={() => deleteFolder(folderAction)}><AppText variant="body" style={{ color: theme.colors.danger }}>Delete folder</AppText></Pressable>
+          </> : null}
+        </View>
+      </AppBottomSheet>
+      <AppBottomSheet visible={Boolean(fileAction)} onClose={() => setFileAction(null)} title={<AppText variant="sectionTitle">Move file</AppText>} snapPoints={['42%', '72%']} initialSnapPointIndex={0}>
+        <View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}>
+          <AppText variant="caption" style={styles.moveHint} numberOfLines={2}>{fileAction?.name ?? ''}</AppText>
+          <Pressable style={styles.actionRow} onPress={() => void moveFileTo(null)} disabled={busy}><AppText variant="body">On this device</AppText>{!fileAction?.folderId ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={18} tintColor={theme.colors.accent} /> : null}</Pressable>
+          {folders.filter((folder) => folder.id !== fileAction?.folderId).map((folder) => <Pressable key={folder.id} style={styles.actionRow} onPress={() => void moveFileTo(folder.id)} disabled={busy}><AppText variant="body" numberOfLines={1}>{folder.name}</AppText><SymbolView name={{ ios: 'folder', android: 'folder', web: 'folder' }} size={18} tintColor={theme.colors.accent} /></Pressable>)}
+        </View>
+      </AppBottomSheet>
     </Screen>
   );
 }
@@ -300,6 +420,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 24 },
   headerBack: { marginTop: 7 },
   headerCopy: { flex: 1, gap: 4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   notice: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -320,6 +442,12 @@ const styles = StyleSheet.create({
   },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowCopy: { flex: 1, gap: 2 },
+  rowAction: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  inputCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 4 },
+  folderInput: { minHeight: 48, paddingHorizontal: 12, fontSize: 17 },
+  sheetCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 14 },
+  actionRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
+  moveHint: { paddingVertical: 12 },
   emptyState: {
     flexDirection: 'row',
     alignItems: 'center',

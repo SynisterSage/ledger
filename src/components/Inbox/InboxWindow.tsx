@@ -3165,7 +3165,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
               </div>
             ) : (
               <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
-                <section className="min-h-0 overflow-hidden bg-[var(--ledger-surface-card)]">
+                <section className="flex min-h-0 flex-col overflow-hidden bg-[var(--ledger-surface-card)]">
                   <div className="flex h-12 items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -3177,7 +3177,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                     </div>
                     {intakeSearchControl}
                   </div>
-                  <div className="min-h-0 overflow-y-auto">
+                  <div className="min-h-0 flex-1 overflow-y-auto">
                     {filteredItems.length > 0 ? (
                       filteredItems.map(renderRow)
                     ) : (
@@ -3188,7 +3188,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                         icon={Inbox}
                         testId="intake-empty"
                         primaryAction={searchQuery.trim() ? { label: 'Clear search', onClick: () => setSearchQuery('') } : activeStatus === 'unprocessed' && activeWorkspaceId ? { label: 'Capture something', onClick: () => platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: 'note' }) } : undefined}
-                        className="min-h-[280px]"
+                        className="h-full min-h-[280px]"
                       />
                     )}
                   </div>

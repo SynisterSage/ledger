@@ -1772,13 +1772,15 @@ export function LinkedDesignsSection({
         </div>
       </ModalOverlay>
       {consentReference && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Share Figma previews"
+        <ModalOverlay
+          isOpen
+          onClose={() => setConsentReference(null)}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-sm overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]"
         >
-          <div className="w-full max-w-sm rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]">
+          <div>
             <h3 className="text-sm font-semibold">Share Figma previews in Ledger?</h3>
             <p className="mt-2 text-xs leading-5 text-[var(--ledger-text-secondary)]">
               People who can access a Ledger item will be able to view its saved Figma preview, even
@@ -1802,7 +1804,7 @@ export function LinkedDesignsSection({
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
       {driveAction && <GoogleDriveResourceActionModal action={driveAction.action} title={referenceTitle(driveAction.reference, fallbackNodeName)} currentParentId={String(((driveAction.reference.metadata?.parents as string[] | undefined) || [])[0] ?? '')} onClose={() => setDriveAction(null)} onSubmit={(payload) => runGoogleDriveAction(driveAction.action, driveAction.link, driveAction.reference, payload)} />}
     </section>

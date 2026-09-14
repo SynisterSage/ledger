@@ -7079,11 +7079,16 @@ export const ProjectsWindow = ({
             type="button"
             onClick={refreshProjectLens}
             disabled={projectLensState === 'loading' || !selectedProjectIntelligenceContext}
-            className="flex items-center gap-2 rounded-md text-left transition hover:bg-[var(--ledger-surface-muted)] disabled:cursor-wait disabled:opacity-60"
+            className="group flex items-center gap-2 rounded-md text-left transition hover:bg-[var(--ledger-surface-muted)] disabled:cursor-wait disabled:opacity-60"
             aria-label={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
             title={lensAutoRun ? 'Refresh Lens' : 'Run Lens'}
           >
-            <LedgerLensWheel size={18} state={projectLensState} label="Lens status" />
+            <LedgerLensWheel
+              size={18}
+              state={projectLensState}
+              label="Lens status"
+              className="transition-transform duration-200 group-hover:rotate-12"
+            />
             <p className="text-[13px] font-semibold text-[var(--ledger-text-primary)]">Lens</p>
           </button>
           <button
@@ -7125,11 +7130,6 @@ export const ProjectsWindow = ({
             </div>
           )}
         </div>
-        {projectLensState === 'idle' && !lensAutoRun && (
-          <p className="mt-1.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-            Click Lens to review this project.
-          </p>
-        )}
         {projectLensState === 'loading' ? (
           <LedgerAgentStatus
             phase={projectLensLoadingStage < 2 ? 'reading' : 'thinking'}
@@ -9757,6 +9757,9 @@ export const ProjectsWindow = ({
             setTaskNotesTaskId(null);
             setTaskNotesDraft('');
           }}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
           classNameContainer="w-full max-w-xl overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
         >
           <div>

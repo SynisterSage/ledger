@@ -932,14 +932,23 @@ export const LedgerTabStrip = () => {
   }, []);
 
   useEffect(() => {
-    const handleRouteRequested = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
+    const handleRouteRequested = (
+      _event: unknown,
+      nextRoute?: (ModuleFocusPayload & { intentional?: boolean }) | null
+    ) => {
       const route = normalizeRoute(nextRoute);
       if (!route) return;
       const key = routeKey(route);
       // IPC route requests can be late acknowledgements from a keep-alive
-      // module. A closed tab is reopened only by the explicit local tab
-      // selection path below, never by a delayed request from Electron.
-      if (closedTabKeysRef.current.has(key)) return;
+      // module. Only an explicitly initiated launcher/tab command may clear a
+      // close quarantine and reopen the destination.
+      if (closedTabKeysRef.current.has(key)) {
+        if (!nextRoute?.intentional) return;
+        const nextClosed = new Set(closedTabKeysRef.current);
+        nextClosed.delete(key);
+        closedTabKeysRef.current = nextClosed;
+        setClosedTabKeys(nextClosed);
+      }
       rememberRouteHint(route);
       setVisualRouteOverride(route);
     };
@@ -1324,6 +1333,25 @@ export const LedgerTabStrip = () => {
     window.addEventListener('ledger:workspace-route-closed', handleExternalRouteClosed);
     return () =>
       window.removeEventListener('ledger:workspace-route-closed', handleExternalRouteClosed);
+  }, [closeTab]);
+
+  useEffect(() => {
+    const handleCloseRequested = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        route?: ModuleFocusPayload;
+        handled?: boolean;
+      }>).detail;
+      const route = normalizeRoute(detail?.route);
+      if (!route || detail?.handled) return;
+      const tab = tabOrderRef.current.find((candidate) => sameRoute(candidate, route));
+      if (!tab) return;
+      if (detail) detail.handled = true;
+      closeTab(tab);
+    };
+
+    window.addEventListener('ledger:workspace-close-requested', handleCloseRequested);
+    return () =>
+      window.removeEventListener('ledger:workspace-close-requested', handleCloseRequested);
   }, [closeTab]);
 
   useEffect(() => {

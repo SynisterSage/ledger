@@ -1088,6 +1088,12 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
   },
 });
 
+contextBridge.exposeInMainWorld('localModelStorage', {
+  get() { return ipcRenderer.invoke('local-model-storage:get'); },
+  choose() { return ipcRenderer.invoke('local-model-storage:choose'); },
+  chooseForDownload(downloadCount?: number) { return ipcRenderer.invoke('local-model-storage:choose-for-download', { downloadCount }); },
+});
+
 contextBridge.exposeInMainWorld('askLedger', {
   copyText(text: string) {
     return ipcRenderer.invoke('ask-ledger:copy-text', { text }) as Promise<{ ok: boolean }>;
@@ -1626,6 +1632,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   getWorkspaceNavigationState() {
     return ipcRenderer.invoke('window:workspace-navigation-state');
+  },
+  setWorkspaceContext(workspaceId: string | null) {
+    return ipcRenderer.invoke('window:set-workspace-context', workspaceId);
   },
   clearWorkspaceRecent() {
     return ipcRenderer.invoke('window:workspace-clear-recent');

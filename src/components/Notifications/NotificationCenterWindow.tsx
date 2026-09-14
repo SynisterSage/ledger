@@ -693,6 +693,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
             description={filter === 'earlier' ? 'Completed, dismissed, and expired notifications stay here for reference.' : filter === 'unread' ? 'New notifications will appear here when something needs your attention.' : 'Read notifications stay here until you complete, snooze, or dismiss them.'}
             testId={`notifications-${filter}-empty`}
             className="min-h-[280px]"
+            primaryAction={isTray && onViewAll ? { label: 'Open notifications', onClick: onViewAll } : undefined}
           />
         ) : isTray ? (
           <CompactTrayList

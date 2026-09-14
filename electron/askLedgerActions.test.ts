@@ -33,6 +33,17 @@ test('uses the previous answer when a follow-up asks to note this content', () =
   assert.equal(actions[0].payload.content, 'Phase 1: audit the tools. Phase 2: fix deterministic failures.');
 });
 
+test('uses the previous answer when a follow-up asks to note this', () => {
+  const actions = proposeAskLedgerActions({
+    question: 'Ok can you make a note of this?',
+    answer: 'Yes, a note is ready for review.',
+    previousAnswer: 'The complete brainstorm plan belongs in the note.',
+    sourceMessageId: 'assistant-note-this-1',
+  });
+  assert.equal(actions[0].payload.title, 'Ask Ledger notes');
+  assert.equal(actions[0].payload.content, 'The complete brainstorm plan belongs in the note.');
+});
+
 test('proposes a dated reminder with a confirmation payload', () => {
   const actions = proposeAskLedgerActions({
     question: 'Remind me to send the draft on Friday.',

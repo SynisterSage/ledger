@@ -1,10 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const electronModule = createRequire(import.meta.url)('electron') as { app?: { getPath(name: string): string } };
-const root = () => path.join(electronModule.app?.getPath('userData') ?? path.join(process.cwd(), '.ledger-ai-test-data'), 'ai', 'models', 'vision', 'gemma-3-4b-it');
+import { localModelPath } from './localModelStorage.ts';
+const root = () => localModelPath('ai', 'models', 'vision', 'gemma-3-4b-it');
 
 export const LOCAL_VISION_ASSETS = {
   model: {

@@ -2,6 +2,7 @@ import { CircleAlert, Check, Loader2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { FigmaMark } from '../Common/FigmaMark';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 
 export type FigmaIntegrationStatus = {
@@ -20,6 +21,52 @@ type Props = { workspaceId: string | null; canManage: boolean; onBack: () => voi
 export const settingsIntegrationButton = 'h-8 shrink-0 whitespace-nowrap rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50';
 export const settingsIntegrationPrimary = 'h-9 shrink-0 whitespace-nowrap rounded-lg bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60';
 const button = settingsIntegrationButton;
+
+export const IntegrationConfirmModal = ({
+  title,
+  body,
+  confirmLabel,
+  busy,
+  onCancel,
+  onConfirm,
+  children,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  children?: ReactNode;
+}) => (
+  <ModalOverlay
+    isOpen
+    onClose={onCancel}
+    backdropBorderRadius="inherit"
+    disablePortal
+    manageWindowChrome={false}
+    classNameContainer="w-full max-w-sm overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[var(--ledger-shadow)]"
+  >
+    <div>
+      <h3 className="text-base font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
+      <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">{body}</p>
+      {children}
+      <div className="mt-5 flex justify-end gap-2">
+        <button type="button" className={button} onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="h-8 rounded-lg bg-[var(--ledger-danger)] px-3 text-xs font-medium text-white disabled:opacity-50"
+          onClick={onConfirm}
+          disabled={busy}
+        >
+          {busy ? `${confirmLabel}…` : confirmLabel}
+        </button>
+      </div>
+    </div>
+  </ModalOverlay>
+);
 
 export const IntegrationPageHeader = ({
   id,
@@ -88,8 +135,37 @@ export const FigmaIntegrationPage = ({ workspaceId, canManage, onBack, onStatusC
     <IntegrationSection title="Activity"><p className="text-xs text-[var(--ledger-text-muted)]">Connection activity will appear here as the integration is used.</p></IntegrationSection>
     <IntegrationSection title="Data and privacy"><MetaRow label="Saved previews" value="Visible to people who can access the Ledger item." /><MetaRow label="Stored Figma data" value="Metadata, links, and preview snapshots." />{!privacy.preview_sharing_accepted && canManage ? <div className="mt-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3"><p className="text-xs text-[var(--ledger-text-secondary)]">People who can access a Ledger item can view its saved Figma preview, even if they cannot open the original Figma file.</p><button type="button" className={`${settingsIntegrationButton} mt-3`} onClick={() => void acceptPrivacy()}>Allow previews</button></div> : null}<button type="button" className="mt-3 h-8 rounded-full border border-[color:rgba(217,45,32,0.18)] px-3 text-xs font-medium text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" disabled={!canManage} onClick={() => setConfirmDataRemoval(true)}>Remove stored Figma data</button></IntegrationSection>
     {error && <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{error}</p>}
-    {confirmDisconnect && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmDisconnect(false); }}><div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.18)]" role="dialog" aria-modal="true" aria-labelledby="disconnect-figma-title"><h3 id="disconnect-figma-title" className="text-base font-semibold">Disconnect Figma?</h3><p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">Ledger will stop accessing Figma and new design previews will no longer be available.</p><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Existing Ledger content will not be deleted.</p><div className="mt-5 flex justify-end gap-2"><button type="button" className={button} onClick={() => setConfirmDisconnect(false)}>Cancel</button><button type="button" className="h-8 rounded-full bg-[var(--ledger-danger)] px-3 text-xs font-medium text-white disabled:opacity-50" onClick={() => void disconnect()} disabled={!!busy}>{busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}</button></div></div></div>}
-    {confirmDataRemoval && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmDataRemoval(false); }}><div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.18)]" role="dialog" aria-modal="true" aria-labelledby="remove-figma-data-title"><h3 id="remove-figma-data-title" className="text-base font-semibold">Remove all stored Figma data?</h3><p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">Saved previews and Figma links will be removed from this workspace. Nothing in Figma will be deleted. This cannot be undone.</p><label className="mt-4 block text-xs text-[var(--ledger-text-muted)]" htmlFor="figma-workspace-confirmation">Type {activeWorkspace?.name || 'the workspace name'} to continue</label><input id="figma-workspace-confirmation" value={dataRemovalName} onChange={(event) => setDataRemovalName(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-xs outline-none focus:border-[color:var(--ledger-border-strong)]" autoFocus /><div className="mt-5 flex justify-end gap-2"><button type="button" className={button} onClick={() => setConfirmDataRemoval(false)}>Cancel</button><button type="button" className="h-8 rounded-full bg-[var(--ledger-danger)] px-3 text-xs font-medium text-white disabled:opacity-50" disabled={dataRemovalName !== activeWorkspace?.name || dataRemovalBusy} onClick={() => void removeStoredData()}>{dataRemovalBusy ? 'Removing…' : 'Remove Figma data'}</button></div></div></div>}
+    {confirmDisconnect && (
+      <IntegrationConfirmModal
+        title="Disconnect Figma?"
+        body="Ledger will stop accessing Figma and new design previews will no longer be available. Existing Ledger content will not be deleted."
+        confirmLabel="Disconnect"
+        busy={busy === 'disconnect'}
+        onCancel={() => setConfirmDisconnect(false)}
+        onConfirm={() => void disconnect()}
+      />
+    )}
+    {confirmDataRemoval && (
+      <IntegrationConfirmModal
+        title="Remove all stored Figma data?"
+        body="Saved previews and Figma links will be removed from this workspace. Nothing in Figma will be deleted. This cannot be undone."
+        confirmLabel="Remove Figma data"
+        busy={dataRemovalBusy}
+        onCancel={() => setConfirmDataRemoval(false)}
+        onConfirm={() => void removeStoredData()}
+      >
+        <label className="mt-4 block text-xs text-[var(--ledger-text-muted)]" htmlFor="figma-workspace-confirmation">
+          Type {activeWorkspace?.name || 'the workspace name'} to continue
+        </label>
+        <input
+          id="figma-workspace-confirmation"
+          value={dataRemovalName}
+          onChange={(event) => setDataRemovalName(event.target.value)}
+          className="mt-1 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-xs outline-none focus:border-[color:var(--ledger-border-strong)]"
+          autoFocus
+        />
+      </IntegrationConfirmModal>
+    )}
   </section>;
 };
 export const IntegrationSection = ({ title, children }: { title: string; children: ReactNode }) => <section className="mt-8" aria-labelledby={`integration-${title.toLowerCase().replace(/\s/g, '-')}`}><h3 id={`integration-${title.toLowerCase().replace(/\s/g, '-')}`} className="text-[13px] font-semibold text-[var(--ledger-text-primary)]">{title}</h3><div className="mt-3 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4">{children}</div></section>;

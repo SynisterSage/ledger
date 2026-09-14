@@ -783,9 +783,15 @@ export const ModuleWindowHeader = ({
       }
     }
     if (currentRoute) {
-      window.dispatchEvent(
-        new CustomEvent('ledger:workspace-route-closed', { detail: { ...currentRoute } })
-      );
+      const detail: { route: WorkspaceRoute; handled: boolean } = {
+        route: { ...currentRoute },
+        handled: false,
+      };
+      window.dispatchEvent(new CustomEvent('ledger:workspace-close-requested', { detail }));
+      // LedgerTabStrip owns the tab transaction, including dirty-state guards.
+      // Only legacy/overlay surfaces without a matching tab fall back to their
+      // original close callback.
+      if (detail.handled) return;
     }
     onClose();
   };

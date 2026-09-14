@@ -29,6 +29,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { AskLedgerExecutionMode } from '../src/types/askLedgerResponseMode.ts';
 import { workspaceTabRouteKey } from '../src/utils/workspaceTabIdentity.ts';
+import { TabSessionController } from '../src/utils/tabSessionController.ts';
 import {
   clampSidebarOpacity,
   defaultSidebarPreferences,
@@ -44,6 +45,7 @@ import { ZoomSpeakerAttribution } from './zoomSpeakerAttribution';
 import { resolveZoomAccessibilityBridgePath } from './speakerTagsRuntime';
 import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
+import { defaultLocalModelStorageRoot, getLocalModelStorageRoot, setLocalModelStorageRoot } from './localModelStorage.ts';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { AIProviderKeyStore, type AIProvider } from './aiProviderKeyStore';
 import { AIProviderService } from './aiProviderService';
@@ -467,6 +469,17 @@ localTranscriptionService.modelManager.onChange((status) => {
 });
 
 const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');
+
+const showLedgerOpenDialog = (
+  event: Electron.IpcMainInvokeEvent,
+  options: Electron.OpenDialogOptions
+) => {
+  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+  if (ownerWindow && !ownerWindow.isDestroyed()) {
+    return dialog.showOpenDialog(ownerWindow, options);
+  }
+  return dialog.showOpenDialog(options);
+};
 
 // Phase 1 diagnostics are opt-in. Renderer payloads are bounded here as well
 // as in preload because IPC callers should never be treated as trusted input.
@@ -892,7 +905,10 @@ ipcMain.handle(
 
 ipcMain.handle('note-ocr:status', () => localNoteOcrService.status());
 ipcMain.handle('note-ocr:vision-status', () => localVisionAssets.status());
-ipcMain.handle('note-ocr:vision-download', () => localVisionAssets.download());
+ipcMain.handle('note-ocr:vision-download', async (event) => {
+  if (!await ensureLocalModelStorageSelected(event)) return localVisionAssets.status();
+  return localVisionAssets.download();
+});
 ipcMain.handle('note-ocr:vision-cancel-download', () => localVisionAssets.cancel());
 ipcMain.handle('local-capture-privacy:get', () => localCapturePrivacy.preferences());
 ipcMain.handle('local-capture-privacy:set', (_event, payload: { scanImageRetention?: unknown }) => {
@@ -913,8 +929,8 @@ ipcMain.handle('local-capture-privacy:delete-all', async () => {
     deleted: removedRecordings ? [...result.deleted, 'meeting-recordings'] : result.deleted,
   };
 });
-ipcMain.handle('note-ocr:select-image', async () => {
-  const selection = await dialog.showOpenDialog({
+ipcMain.handle('note-ocr:select-image', async (event) => {
+  const selection = await showLedgerOpenDialog(event, {
     properties: ['openFile'],
     filters: [{ name: 'Note images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }],
   });
@@ -968,9 +984,43 @@ ipcMain.handle(
 );
 
 ipcMain.handle('meeting-transcription:model-status', () => localTranscriptionService.modelStatus());
-ipcMain.handle('meeting-transcription:download-model', () =>
-  localTranscriptionService.downloadModel()
-);
+const localModelDownloadPickerGrants = new Map<number, number>();
+const localModelStorageCanChange = () => {
+  const localAIStatus = localAIAssets.status();
+  return !Object.values(localAIStatus.generationModels).some((model) => model.installed || model.downloading) &&
+    !localAIStatus.embedding.installed && !localAIStatus.embedding.downloading &&
+    !localTranscriptionService.modelStatus().installed && !localTranscriptionService.modelStatus().downloading &&
+    !localVisionAssets.status().available && !localVisionAssets.status().downloading;
+};
+const selectLocalModelStorage = async (event: Electron.IpcMainInvokeEvent, forDownload = false, downloadCount = 1) => {
+  const options = { title: 'Choose where Ledger stores local models', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
+  const selection = await showLedgerOpenDialog(event, options);
+  if (selection.canceled || !selection.filePaths[0]) return { canceled: true, root: getLocalModelStorageRoot(), defaultRoot: defaultLocalModelStorageRoot() };
+  if (!localModelStorageCanChange()) throw new Error('Delete installed local models and stop active downloads before changing model storage. Existing models are not moved automatically.');
+  const result = await setLocalModelStorageRoot(selection.filePaths[0]);
+  if (forDownload) localModelDownloadPickerGrants.set(event.sender.id, Math.max(1, Math.floor(downloadCount)));
+  return { canceled: false, ...result, defaultRoot: defaultLocalModelStorageRoot() };
+};
+const ensureLocalModelStorageSelected = async (event: Electron.IpcMainInvokeEvent) => {
+  const remaining = localModelDownloadPickerGrants.get(event.sender.id) ?? 0;
+  if (remaining > 0) {
+    if (remaining === 1) localModelDownloadPickerGrants.delete(event.sender.id);
+    else localModelDownloadPickerGrants.set(event.sender.id, remaining - 1);
+    return true;
+  }
+  const result = await selectLocalModelStorage(event, true);
+  return !result.canceled;
+};
+ipcMain.handle('local-model-storage:get', () => ({ root: getLocalModelStorageRoot(), defaultRoot: defaultLocalModelStorageRoot() }));
+ipcMain.handle('local-model-storage:choose', (event) => selectLocalModelStorage(event, false));
+ipcMain.handle('local-model-storage:choose-for-download', (event, payload?: { downloadCount?: unknown }) => {
+  const downloadCount = typeof payload?.downloadCount === 'number' && Number.isFinite(payload.downloadCount) ? payload.downloadCount : 1;
+  return selectLocalModelStorage(event, true, downloadCount);
+});
+ipcMain.handle('meeting-transcription:download-model', async (event) => {
+  if (!await ensureLocalModelStorageSelected(event)) return localTranscriptionService.modelStatus();
+  return localTranscriptionService.downloadModel();
+});
 ipcMain.handle('meeting-transcription:cancel-model-download', () =>
   localTranscriptionService.cancelModelDownload()
 );
@@ -1073,7 +1123,7 @@ ipcMain.handle('ask-ledger:copy-text', (_event, payload: { text?: unknown }) => 
 ipcMain.handle(
   'ask-ledger:select-attachments',
   async (
-    _event,
+    event,
     payload: {
       workspaceId?: unknown;
       conversationId?: unknown;
@@ -1087,7 +1137,7 @@ ipcMain.handle(
       throw new Error('Ask Ledger workspace is required.');
     if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim())
       throw new Error('Ask Ledger conversation is required.');
-    const selection = await dialog.showOpenDialog({
+    const selection = await showLedgerOpenDialog(event, {
       properties: ['openFile', 'multiSelections'],
       filters: [
         { name: 'Ask Ledger attachments', extensions: ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx'] },
@@ -1293,10 +1343,10 @@ ipcMain.handle(
 
 ipcMain.handle(
   'local-context:import',
-  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+  async (event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
     if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string')
       throw new LocalContextLibraryError('Account and workspace are required.');
-    const selection = await dialog.showOpenDialog({
+    const selection = await showLedgerOpenDialog(event, {
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
@@ -2426,8 +2476,9 @@ ipcMain.handle('ask-ledger:generation-model-status', (_event, modelId: unknown) 
   if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
   return localAIAssets.getGenerationModelStatus(modelId);
 });
-ipcMain.handle('ask-ledger:generation-model-download', (_event, modelId: unknown) => {
+ipcMain.handle('ask-ledger:generation-model-download', async (event, modelId: unknown) => {
   if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
+  if (!await ensureLocalModelStorageSelected(event)) return { ok: false, state: 'cancelled', modelId };
   return localAIAssets.downloadGeneration(modelId);
 });
 ipcMain.handle('ask-ledger:generation-model-cancel-download', (_event, modelId: unknown) => {
@@ -2438,8 +2489,9 @@ ipcMain.handle('ask-ledger:generation-model-remove', async (_event, modelId: unk
   if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
   return localAIService.removeGenerationModel(modelId);
 });
-ipcMain.handle('ask-ledger:local-ai-download', (_event, role: unknown) => {
+ipcMain.handle('ask-ledger:local-ai-download', async (event, role: unknown) => {
   if (role !== 'generation' && role !== 'embedding') throw new Error('Invalid Local AI model.');
+  if (!await ensureLocalModelStorageSelected(event)) return localAIAssets.status();
   return localAIAssets.download(role);
 });
 ipcMain.handle('ask-ledger:local-ai-cancel-download', (_event, role: unknown) => {
@@ -3721,6 +3773,27 @@ const pendingTabDetaches = new Map<
 let workspaceModuleWin: BrowserWindow | null = null;
 let workspaceModuleKind: ModuleWindowKind | null = null;
 let workspaceModuleCurrentRoute: WorkspaceModuleRoute | null = null;
+let workspaceModuleWorkspaceId: string | null = null;
+let workspaceTabController: TabSessionController | null = null;
+
+function getWorkspaceTabController() {
+  const workspaceId = workspaceModuleWorkspaceId ?? '__unassigned__';
+  if (!workspaceTabController || workspaceTabController.getSnapshot().workspaceId !== workspaceId) {
+    workspaceTabController = new TabSessionController({
+      workspaceId,
+      revision: 0,
+      activeTabId: null,
+      tabs: [],
+    });
+  }
+  return workspaceTabController;
+}
+
+function syncLegacyWorkspaceRouteFromTabs() {
+  const snapshot = workspaceTabController?.getSnapshot();
+  const active = snapshot?.tabs.find((tab) => tab.id === snapshot.activeTabId);
+  workspaceModuleCurrentRoute = active ? { ...active.route, kind: active.route.kind as ModuleWindowKind } : null;
+}
 const workspaceModuleBackStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleForwardStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleRecentRoutes: WorkspaceModuleRoute[] = [];
@@ -9179,11 +9252,17 @@ function isWorkspaceModuleKind(kind: ModuleWindowKind) {
 }
 
 function getWorkspaceNavigationState() {
+  const tabSnapshot = workspaceTabController?.getSnapshot();
+  const activeTab = tabSnapshot?.tabs.find((tab) => tab.id === tabSnapshot.activeTabId);
   return {
-    canGoBack: workspaceModuleBackStack.length > 0,
-    canGoForward: workspaceModuleForwardStack.length > 0,
+    workspaceId: workspaceModuleWorkspaceId,
+    sessionRevision: tabSnapshot?.revision ?? 0,
+    tabs: tabSnapshot?.tabs ?? [],
+    activeTabId: tabSnapshot?.activeTabId ?? null,
+    canGoBack: (activeTab?.backStack.length ?? workspaceModuleBackStack.length) > 0,
+    canGoForward: (activeTab?.forwardStack.length ?? workspaceModuleForwardStack.length) > 0,
     currentModule: workspaceModuleKind,
-    currentRoute: getCurrentWorkspaceRoute(),
+    currentRoute: activeTab?.route ? { ...activeTab.route } : getCurrentWorkspaceRoute(),
     recentRoutes: workspaceModuleRecentRoutes.map((route) => ({ ...route })),
   };
 }
@@ -9192,6 +9271,7 @@ function getNavigationStateForWindow(win: BrowserWindow | null | undefined) {
   const detached = getDetachedWindowRecord(win);
   if (!detached) return getWorkspaceNavigationState();
   return {
+    workspaceId: workspaceModuleWorkspaceId,
     canGoBack: detached.backStack.length > 0,
     canGoForward: detached.forwardStack.length > 0,
     currentModule: detached.route.kind,
@@ -9232,7 +9312,8 @@ function broadcastWorkspaceNavigationState() {
 
 function broadcastWorkspaceRouteRequested(
   route: WorkspaceModuleRoute,
-  navigationGeneration?: number
+  navigationGeneration?: number,
+  options: { intentional?: boolean } = {}
 ) {
   const targets = new Set<BrowserWindow>();
   if (sidebarWin && !sidebarWin.isDestroyed()) targets.add(sidebarWin);
@@ -9244,6 +9325,7 @@ function broadcastWorkspaceRouteRequested(
     win.webContents.send('workspace:route-requested', {
       ...route,
       ...(navigationGeneration === undefined ? {} : { navigationGeneration }),
+      ...(options.intentional ? { intentional: true } : {}),
     });
   }
 }
@@ -9458,10 +9540,37 @@ function sendWorkspaceRouteChanged(
   });
 }
 
+function controllerDestinationKey(route: WorkspaceModuleRoute) {
+  return workspaceTabRouteKey(route);
+}
+
+function syncWorkspaceTabControllerRoute(route: WorkspaceModuleRoute, mode: 'open' | 'select' | 'navigate') {
+  const controller = getWorkspaceTabController();
+  const destinationKey = controllerDestinationKey(route);
+  const existing = controller.getSnapshot().tabs.find((tab) => tab.destinationKey === destinationKey);
+  if (!existing) {
+    controller.open({
+      // The destination key is the stable bridge between renderer drag
+      // payloads and Electron's controller session. Resource identity remains
+      // separate from view state, so this is safe to use as the tab id.
+      id: destinationKey,
+      destinationKey,
+      route: { ...route },
+      title: route.kind,
+    });
+  }
+  const tab = controller.getSnapshot().tabs.find((candidate) => candidate.destinationKey === destinationKey);
+  if (!tab) return;
+  if (mode === 'select') controller.select(tab.id);
+  if (mode === 'navigate') controller.navigate(tab.id, { ...route }, true);
+  syncLegacyWorkspaceRouteFromTabs();
+}
+
 function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory = true) {
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
 
+  syncWorkspaceTabControllerRoute(route, pushHistory ? 'navigate' : 'select');
   // Selecting a route intentionally reopens it, so it is safe to record again.
   workspaceModuleClosedRouteKeys.delete(workspaceTabRouteKey(route));
 
@@ -9532,6 +9641,13 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
 }
 
 function removeWorkspaceRouteFromHistory(route: WorkspaceModuleRoute) {
+  const controller = workspaceTabController;
+  const destinationKey = workspaceTabRouteKey(route);
+  const tab = controller?.getSnapshot().tabs.find((candidate) => candidate.destinationKey === destinationKey);
+  if (tab) {
+    controller?.close(tab.id);
+    syncLegacyWorkspaceRouteFromTabs();
+  }
   const removeMatching = (routes: WorkspaceModuleRoute[]) => {
     for (let index = routes.length - 1; index >= 0; index -= 1) {
       if (workspaceTabRouteKey(routes[index]) === workspaceTabRouteKey(route)) {
@@ -9550,6 +9666,7 @@ function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute, pushHistory = t
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
   if (workspaceModuleClosedRouteKeys.has(workspaceTabRouteKey(route))) return false;
+  syncWorkspaceTabControllerRoute(route, 'navigate');
   if (!pushHistory) {
     // Calendar date changes are view state, not separate workspace destinations.
     // Drop any legacy same-module entries so an existing process cannot replay
@@ -9589,6 +9706,23 @@ function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute, pushHistory = t
 }
 
 function navigateWorkspaceHistory(direction: 'back' | 'forward') {
+  const snapshot = workspaceTabController?.getSnapshot();
+  if (snapshot?.activeTabId) {
+    const result = direction === 'back'
+      ? workspaceTabController?.back(snapshot.activeTabId)
+      : workspaceTabController?.forward(snapshot.activeTabId);
+    if (result?.accepted) {
+      syncLegacyWorkspaceRouteFromTabs();
+      const route = getCurrentWorkspaceRoute();
+      if (route && workspaceModuleWin && !workspaceModuleWin.isDestroyed()) {
+        const generation = ++workspaceNavigationGeneration;
+        sendWorkspaceRouteChanged(workspaceModuleWin, route, generation);
+        sendModuleFocus(route.kind, route.focusDate, route.focusProjectId, route.focusNoteId, route.focusTaskId, route.focusContext, route.focusSection, undefined, route.focusInboxId);
+        broadcastWorkspaceNavigationState();
+      }
+      return;
+    }
+  }
   const target =
     direction === 'back' ? workspaceModuleBackStack.pop() : workspaceModuleForwardStack.pop();
   if (!target || !workspaceModuleWin || workspaceModuleWin.isDestroyed()) {
@@ -9809,6 +9943,7 @@ function openModuleWindow(
     });
   } else if (isWorkspaceModuleKind(kind)) {
     registerWorkspaceModuleKind(kind, moduleWin, notesHomeRoute ?? workspaceRoute);
+    syncWorkspaceTabControllerRoute(notesHomeRoute ?? workspaceRoute, 'open');
     recordWorkspaceRoute(notesHomeRoute ?? workspaceRoute);
     setWorkspaceWindowAsFloatingDockTarget(kind);
   } else {
@@ -10830,7 +10965,11 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
     senderWindow?.focus();
     return;
   }
-  broadcastWorkspaceRouteRequested(requestedRoute);
+  // This request originated from an explicit launcher/sidebar action. The
+  // renderer may have quarantined the same route after a prior close; mark it
+  // intentional so that quarantine can be cleared without accepting stale
+  // keep-alive broadcasts.
+  broadcastWorkspaceRouteRequested(requestedRoute, undefined, { intentional: true });
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -10978,6 +11117,28 @@ ipcMain.handle('window:workspace-navigation-state', (event) => {
   return getNavigationStateForWindow(BrowserWindow.fromWebContents(event.sender));
 });
 
+ipcMain.handle('window:set-workspace-context', (_event, rawWorkspaceId: unknown) => {
+  const workspaceId = typeof rawWorkspaceId === 'string' ? rawWorkspaceId.trim() : '';
+  const nextWorkspaceId = workspaceId || null;
+  if (nextWorkspaceId === workspaceModuleWorkspaceId) return true;
+
+  workspaceModuleWorkspaceId = nextWorkspaceId;
+  workspaceModuleBackStack.length = 0;
+  workspaceModuleForwardStack.length = 0;
+  workspaceModuleRecentRoutes.length = 0;
+  workspaceModuleClosedRouteKeys.clear();
+  workspaceModuleCurrentRoute = null;
+  workspaceModuleKind = null;
+  workspaceTabController = new TabSessionController({
+    workspaceId: nextWorkspaceId ?? '__unassigned__',
+    revision: 0,
+    activeTabId: null,
+    tabs: [],
+  });
+  broadcastWorkspaceNavigationState();
+  return true;
+});
+
 ipcMain.handle('window:workspace-clear-recent', (event) => {
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
   const detachedRecord = getDetachedWindowRecord(senderWindow);
@@ -11053,7 +11214,7 @@ ipcMain.handle('window:workspace-select-route', (event, rawPayload: unknown) => 
     return navigateDetachedWindow(detachedRecord, route, false);
   }
   const result = navigateWorkspaceModuleWindow(route, false);
-  broadcastWorkspaceRouteRequested(route, workspaceNavigationGeneration);
+  broadcastWorkspaceRouteRequested(route, workspaceNavigationGeneration, { intentional: true });
   return result;
 });
 
@@ -11116,10 +11277,31 @@ ipcMain.handle(
   'window:detach-tab',
   async (event, payload: { session?: unknown; screenPoint?: { x?: number; y?: number } }) => {
     const source = BrowserWindow.fromWebContents(event.sender);
-    const session = payload?.session;
-    if (!source || source.isDestroyed() || !isValidDetachedTabSession(session)) {
+    const requestedSession = payload?.session;
+    if (!source || source.isDestroyed() || !isValidDetachedTabSession(requestedSession)) {
       return { success: false };
     }
+
+    // The renderer may only know the current route. Enrich it from Electron's
+    // authoritative controller before transfer so detached tabs retain their
+    // complete per-tab history and title.
+    const controllerTab = workspaceTabController?.getSnapshot().tabs.find(
+      (tab) => tab.id === requestedSession.tabId || tab.destinationKey === workspaceTabRouteKey(requestedSession.route)
+    );
+    const session = controllerTab
+      ? {
+          ...requestedSession,
+          tabId: controllerTab.id,
+          route: { ...controllerTab.route, kind: controllerTab.route.kind as ModuleWindowKind },
+          title: controllerTab.title,
+          tabHistory: [
+            ...controllerTab.backStack,
+            controllerTab.route,
+            ...controllerTab.forwardStack.slice().reverse(),
+          ].map((route) => ({ ...route, kind: route.kind as ModuleWindowKind })),
+          historyIndex: controllerTab.backStack.length,
+        }
+      : requestedSession;
 
     const point = {
       x: Number(payload?.screenPoint?.x),

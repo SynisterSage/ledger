@@ -49,7 +49,7 @@ export const MinimizedSidebar = ({
   const platform = usePlatform();
   const toggleModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
     if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
-    return window.desktopWindow?.toggleModule(kind, focus as any);
+    return window.desktopWindow?.openModule(kind, focus as any);
   };
   const openModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
     if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);

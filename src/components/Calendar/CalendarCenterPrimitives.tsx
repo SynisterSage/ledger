@@ -71,6 +71,8 @@ type CenterItemRowProps = {
   completed?: boolean;
   selected?: boolean;
   compact?: boolean;
+  agenda?: boolean;
+  timeSecondary?: string | null;
   external?: boolean;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -151,9 +153,64 @@ export function CenterItemRow({
   completed = false,
   selected = false,
   compact = false,
+  agenda = false,
+  timeSecondary,
   onClick,
   onContextMenu,
 }: CenterItemRowProps) {
+  if (agenda) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        className={`group flex min-h-[58px] w-full items-center gap-2 border-b border-[color:var(--ledger-border-subtle)] px-2 py-2 text-left transition-colors hover:bg-[var(--ledger-surface-hover)] last:border-b-0 ${
+          muted ? 'opacity-60' : ''
+        }`}
+        style={{
+          backgroundColor: selected
+            ? `color-mix(in srgb, ${color} 8%, transparent)`
+            : 'transparent',
+        }}
+      >
+        <span
+          className="h-8 w-[3px] shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+          aria-hidden="true"
+        />
+        {icon ? (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center" style={{ color }}>
+            {icon}
+          </span>
+        ) : null}
+        <span className="min-w-0 flex-1">
+          <span
+            className={`block truncate text-[13px] leading-5 text-[var(--ledger-text-primary)] ${
+              completed ? 'line-through' : ''
+            }`}
+          >
+            {title}
+          </span>
+          {detail ? (
+            <span className="block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+              {detail}
+            </span>
+          ) : null}
+        </span>
+        {time ? (
+          <span className="flex w-[76px] shrink-0 flex-col items-end justify-center text-right text-[11px] leading-4 tabular-nums">
+            <span className={selected ? 'font-medium text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}>
+              {time}
+            </span>
+            {timeSecondary ? (
+              <span className="text-[var(--ledger-text-muted)]">{timeSecondary}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"

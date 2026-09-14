@@ -1055,6 +1055,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [localAISelectedTier, setLocalAISelectedTier] = useState<LocalAIModelSettingsRow['tier']>('fast');
   const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
   const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
+  const [localModelStorageRoot, setLocalModelStorageRoot] = useState<string | null>(null);
+  const [localModelStorageBusy, setLocalModelStorageBusy] = useState(false);
   const [aiProviderConnections, setAIProviderConnections] = useState<AIProviderConnectionSettings[]>([]);
   const [aiProviderKeys, setAIProviderKeys] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '', deepseek: '' });
   const [aiProviderAction, setAIProviderAction] = useState<string | null>(null);
@@ -1222,6 +1224,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   }, [activeSection]);
 
   useEffect(() => {
+    if (activeSection !== 'local_ai' || !window.localModelStorage) return;
+    void window.localModelStorage.get().then(({ root }) => setLocalModelStorageRoot(root)).catch(() => setLocalModelStorageRoot(null));
+  }, [activeSection]);
+
+  useEffect(() => {
     if (activeSection !== 'speaker_tags') return;
     let cancelled = false;
     const refresh = async () => {
@@ -1251,6 +1258,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
         return;
       }
       if (action === 'download') {
+        if (!await chooseLocalModelStorage(true)) return;
         const result = await window.askLedger.downloadGenerationModel(model.id) as {
           ok?: boolean;
           error?: string;
@@ -1278,6 +1286,23 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       setLocalAIModelError(error instanceof Error ? error.message : `Could not update ${localAISettingsTierLabels[model.tier]}.`);
     } finally {
       setLocalAIModelAction(null);
+    }
+  };
+
+  const chooseLocalModelStorage = async (forDownload = false) => {
+    if (!window.localModelStorage) return true;
+    if (localModelStorageBusy) return false;
+    setLocalModelStorageBusy(true);
+    setLocalAIModelError(null);
+    try {
+      const result = await (forDownload ? window.localModelStorage.chooseForDownload() : window.localModelStorage.choose());
+      if (!result.canceled) setLocalModelStorageRoot(result.root);
+      return !result.canceled;
+    } catch (error) {
+      setLocalAIModelError(error instanceof Error ? error.message : 'Could not choose a model storage folder.');
+      return false;
+    } finally {
+      setLocalModelStorageBusy(false);
     }
   };
 
@@ -1407,6 +1432,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   };
   const startMeetingModelDownload = async () => {
     if (!window.meetingTranscription) return;
+    if (!await chooseLocalModelStorage(true)) return;
     try {
       const status = await window.meetingTranscription.downloadModel();
       const next = status as typeof meetingModelStatus;
@@ -6094,21 +6120,16 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
               {activeSection === 'local_ai' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-local-ai">
                   <h2 id="settings-local-ai" className={settingsTheme.pageTitle}>AI &amp; models</h2>
-                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>Choose how Ledger generates text.</p>
-                  <p className={settingsTheme.pageStatus + ' mt-2'}>Local models stay on this device. Connected providers use your API key.</p>
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>Choose how Ledger uses AI across your workspace.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Local models stay on this device. Cloud providers use your API key.</p>
 
                   <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-byok">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 id="settings-byok" className={settingsTheme.sectionTitle}>Connected providers</h3>
-                        <p className={settingsTheme.sectionStatus + ' mt-1'}>Use your own API key for cloud text generation. Keys stay in this device’s secure storage.</p>
-                      </div>
-                      <Globe2 size={16} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true" />
-                    </div>
-                    <div className={settingsTheme.sectionRows + ' mt-4'}>
-                      <div className="flex items-center gap-3 px-4 py-3">
-                        <div className="min-w-0 flex-1"><p className={settingsTheme.rowLabel}>Default provider</p><p className={settingsTheme.rowMuted}>Used for Ask Ledger and text lenses when cloud access is allowed.</p></div>
-                        <select value={selectedAIProvider} onChange={(event) => void selectAIProvider(event.target.value as 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek')} className="h-8 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label="Default text generation provider">
+                    <h3 id="settings-byok" className={settingsTheme.sectionTitle}>Default provider</h3>
+                    <p className={settingsTheme.sectionStatus + ' mt-1'}>Used for Ask Ledger and text lenses when cloud access is allowed.</p>
+                    <div className={settingsTheme.sectionRows + ' mt-3'}>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3">
+                        <div className="min-w-0"><p className={settingsTheme.rowLabel}>Text generation</p><p className={settingsTheme.rowMuted}>Choose local or a connected cloud provider.</p></div>
+                        <select value={selectedAIProvider} onChange={(event) => void selectAIProvider(event.target.value as 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek')} className={compactSelectClassName + ' w-auto min-w-36'} aria-label="Default text generation provider">
                           <option value="local">Local Ledger AI</option>
                           {aiProviderConnections.some((item) => item.provider === 'openai' && item.connected) && <option value="openai">OpenAI</option>}
                           {aiProviderConnections.some((item) => item.provider === 'google' && item.connected) && <option value="google">Google Gemini</option>}
@@ -6118,17 +6139,24 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           {aiProviderConnections.some((item) => item.provider === 'anthropic' && item.connected) && <option value="anthropic">Anthropic</option>}
                         </select>
                       </div>
-                      <label className="flex items-start gap-3 border-t border-[var(--ledger-border-subtle)] px-4 py-3 text-xs text-[var(--ledger-text-secondary)]"><input type="checkbox" checked={aiProviderCloudConsent} onChange={(event) => void toggleAIProviderCloudConsent(event.target.checked)} className="mt-0.5 accent-[var(--ledger-accent)]" /><span><span className="block font-medium text-[var(--ledger-text-primary)]">Allow relevant context to leave this device</span><span className="block mt-0.5">Ledger sends only the context needed for the request. Automatic cloud generation remains off.</span></span></label>
+                      <label className="flex items-start gap-3 border-t border-[var(--ledger-border-subtle)] px-4 py-3 text-xs text-[var(--ledger-text-secondary)]"><input type="checkbox" checked={aiProviderCloudConsent} onChange={(event) => void toggleAIProviderCloudConsent(event.target.checked)} className="mt-0.5 accent-[var(--ledger-accent)]" /><span><span className="block font-medium text-[var(--ledger-text-primary)]">Allow relevant context to leave this device</span><span className="mt-0.5 block text-[var(--ledger-text-muted)]">Required only when a cloud provider is selected.</span></span></label>
+                    </div>
+                  </section>
+
+                  <section className={settingsTheme.sectionShell + ' mt-7'} aria-labelledby="settings-connected-providers">
+                    <h3 id="settings-connected-providers" className={settingsTheme.sectionTitle}>Connected providers</h3>
+                    <p className={settingsTheme.sectionStatus + ' mt-1'}>API keys stay in this device’s secure storage.</p>
+                    <div className={settingsTheme.sectionRows + ' mt-3'}>
                       {(['openai', 'anthropic', 'google', 'perplexity', 'kimi', 'deepseek'] as const).map((provider) => {
                         const connection = aiProviderConnections.find((item) => item.provider === provider);
                         const busy = aiProviderAction === `save:${provider}` || aiProviderAction === `remove:${provider}`;
                         const label = provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : provider === 'google' ? 'Google Gemini' : provider === 'perplexity' ? 'Perplexity' : provider === 'kimi' ? 'Kimi' : 'DeepSeek';
-                        return <div key={provider} className="flex flex-wrap items-center gap-3 px-4 py-4">
+                        return <div key={provider} className="flex flex-wrap items-center gap-3 px-4 py-3">
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.rowLabel}>{label}</p>
                             <p className={settingsTheme.rowMuted}>{connection?.connected ? `Connected · key ending in ${connection.keySuffix ?? '••••'}` : 'Not connected'}</p>
                           </div>
-                          {connection?.connected ? <div className="flex flex-wrap items-center justify-end gap-2">{aiProviderModels[provider].length > 0 && <select value={aiProviderSelectedModels[provider]} onChange={(event) => void selectAIProviderModel(provider, event.target.value)} className="h-8 max-w-[220px] rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label={`${label} model`}><option value="" disabled>Select model</option>{aiProviderModels[provider].map((model) => <option key={model} value={model}>{model}</option>)}</select>}<button type="button" onClick={() => void removeAIProviderKey(provider)} disabled={busy} className={settingsTheme.dangerButton}>{aiProviderAction === `remove:${provider}` ? 'Removing…' : 'Remove key'}</button></div> : <div className="flex min-w-[280px] flex-1 justify-end gap-2"><input type="password" value={aiProviderKeys[provider]} onChange={(event) => setAIProviderKeys((current) => ({ ...current, [provider]: event.target.value }))} placeholder={`${label} API key`} aria-label={`${label} API key`} className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]" autoComplete="off" /><button type="button" onClick={() => void saveAIProviderKey(provider)} disabled={busy || !aiProviderKeys[provider].trim()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{busy ? 'Saving…' : 'Connect'}</button></div>}
+                          {connection?.connected ? <div className="flex flex-wrap items-center justify-end gap-2">{aiProviderModels[provider].length > 0 && <select value={aiProviderSelectedModels[provider]} onChange={(event) => void selectAIProviderModel(provider, event.target.value)} className={compactSelectClassName + ' max-w-[220px]'} aria-label={`${label} model`}><option value="" disabled>Select model</option>{aiProviderModels[provider].map((model) => <option key={model} value={model}>{model}</option>)}</select>}<button type="button" onClick={() => void removeAIProviderKey(provider)} disabled={busy} className={settingsTheme.dangerButton}>{aiProviderAction === `remove:${provider}` ? 'Removing…' : 'Remove key'}</button></div> : <div className="flex min-w-[280px] flex-1 justify-end gap-2"><input type="password" value={aiProviderKeys[provider]} onChange={(event) => setAIProviderKeys((current) => ({ ...current, [provider]: event.target.value }))} placeholder={`${label} API key`} aria-label={`${label} API key`} className={settingsTheme.input + ' h-9 min-w-0 flex-1'} autoComplete="off" /><button type="button" onClick={() => void saveAIProviderKey(provider)} disabled={busy || !aiProviderKeys[provider].trim()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{busy ? 'Saving…' : 'Connect'}</button></div>}
                           {aiProviderTestStatus[provider] && <p className="basis-full text-[11px] text-[var(--ledger-text-secondary)]">{aiProviderTestStatus[provider]}</p>}
                         </div>;
                       })}
@@ -6189,16 +6217,28 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       })}
                     </div>
                   </section>
+                  <section className={settingsTheme.sectionShell + ' mt-7'} aria-labelledby="settings-model-storage">
+                    <h3 id="settings-model-storage" className={settingsTheme.sectionTitle}>Storage</h3>
+                    <p className={settingsTheme.sectionStatus + ' mt-1'}>Choose where Ledger downloads local AI and Whisper models.</p>
+                    <div className={settingsTheme.sectionRows + ' mt-3'}>
+                      <div className="flex items-center gap-4 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className={settingsTheme.rowLabel}>Model location</p>
+                          <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]" title={localModelStorageRoot || undefined}>{localModelStorageRoot || 'Using Ledger application data'}</p>
+                        </div>
+                        <button type="button" onClick={() => void chooseLocalModelStorage()} disabled={localModelStorageBusy || Boolean(localAIModelAction)} className={settingsTheme.controlButtonNeutral + ' shrink-0 rounded-lg'}>
+                          {localModelStorageBusy ? 'Choosing…' : 'Choose folder'}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
                   {localAIModelError && <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{localAIModelError}</p>}
                   <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="lens-behavior">
                     <h3 id="lens-behavior" className={settingsTheme.sectionTitle}>Lens</h3>
+                    <p className={settingsTheme.sectionStatus + ' mt-1'}>Choose when Ledger prepares a project or Overview summary.</p>
                     <div className={settingsTheme.sectionRows}>
-                      <div className="px-4 py-3">
-                        <p className={settingsTheme.label}>Run Lens</p>
-                        <p className={settingsTheme.help}>
-                          Choose whether Lens runs when you enter a project or Overview, or only when you click it.
-                        </p>
-                        <div className="mt-3 grid max-w-md grid-cols-2 gap-1.5 rounded-lg bg-[var(--ledger-surface-muted)] p-1">
+                      <SettingsRow label="Run Lens" help="Run automatically on entry, or only when you click Lens.">
+                        <div className="mt-0 grid max-w-md grid-cols-2 gap-1.5 rounded-lg bg-[var(--ledger-surface-muted)] p-1">
                           {([
                             ['on_entry', 'On entry'],
                             ['manual', 'When clicked'],
@@ -6218,7 +6258,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             </button>
                           ))}
                         </div>
-                      </div>
+                      </SettingsRow>
                     </div>
                   </section>
                 </section>

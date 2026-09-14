@@ -6136,9 +6136,9 @@ export const CalendarWindow = ({
                             >
                               {dayDate.toLocaleDateString([], {
                                 weekday: 'long',
-                                month: 'long',
+                                month: 'short',
                                 day: 'numeric',
-                              })}
+                              }).replace(',', ' ·')}
                             </h2>
                             <span className="text-[11px] text-[var(--ledger-text-muted)]">
                               {itemCount
@@ -6154,11 +6154,17 @@ export const CalendarWindow = ({
                                   <CenterItemRow
                                     key={`event:${event.id}`}
                                     compact
+                                    agenda
                                     title={event.title}
                                     time={
                                       isAllDayEvent(event)
                                         ? 'All day'
                                         : formatCompactCalendarTime(new Date(event.start_at))
+                                    }
+                                    timeSecondary={
+                                      isAllDayEvent(event) || !event.end_at
+                                        ? null
+                                        : formatCompactCalendarTime(new Date(event.end_at))
                                     }
                                     detail={
                                       event.project_id
@@ -6171,9 +6177,7 @@ export const CalendarWindow = ({
                                     icon={
                                       event.project_id ? (
                                         <Folder size={12} />
-                                      ) : (
-                                        <CalendarDays size={12} />
-                                      )
+                                      ) : null
                                     }
                                     muted={isPastEvent(event)}
                                     completed={event.status === 'done'}
@@ -6200,6 +6204,7 @@ export const CalendarWindow = ({
                                 <CenterItemRow
                                   key={`reminder:${reminder.id}`}
                                   compact
+                                  agenda
                                   title={reminder.title}
                                   time={
                                     reminder.all_day
@@ -6235,6 +6240,7 @@ export const CalendarWindow = ({
                                 <CenterItemRow
                                   key={`due:${item.id}`}
                                   compact
+                                  agenda
                                   title={item.title}
                                   time={item.time}
                                   detail={

@@ -6,6 +6,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import { usePlatform } from '../../platform';
+import { ModalOverlay } from '../Common/ModalOverlay';
 
 export type ExternalEmbedTargetType = 'note' | 'meetingNote' | 'task' | 'project' | 'intake';
 export type ExternalEmbedTarget = { targetType: ExternalEmbedTargetType; targetId: string | null };
@@ -144,7 +145,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
     {copyState && <span className="px-3 pb-2 text-[11px] text-[var(--ledger-text-muted)]">Link copied</span>}
     {!github && changeState === 'updated' && <div className="flex items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)]"><span>Design updated · saved preview unchanged</span><button type="button" className="font-medium hover:text-[var(--ledger-text-primary)]" onClick={() => void refresh()} disabled={refreshing || !canEdit}>{refreshing ? 'Refreshing…' : 'Refresh preview'}</button></div>}
     {menuOpen && <ExternalEmbedMenu onCheck={() => void checkForUpdates()} onRefresh={() => void refresh()} onCopy={() => void copyLink()} onConvert={() => void remove(true)} onRemove={() => void remove(false)} refreshing={refreshing} canEdit={canEdit} />}
-    {expanded && preview?.url && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" role="dialog" aria-label="Expanded Figma preview" onMouseDown={(event) => { if (event.target === event.currentTarget) setExpanded(false); }}><div className="relative max-h-full max-w-5xl overflow-hidden rounded-xl bg-[var(--ledger-surface-card)] p-2"><button type="button" aria-label="Close preview" onClick={() => setExpanded(false)} className="absolute right-3 top-3 z-10 rounded-full bg-black/60 p-1.5 text-white"><X size={15} /></button><img src={preview.url} alt={nodeName || fileName} className="max-h-[85vh] max-w-[90vw] object-contain" /></div></div>}
+    {expanded && preview?.url && <ModalOverlay isOpen onClose={() => setExpanded(false)} backdropBorderRadius="inherit" disablePortal manageWindowChrome={false} classNameBackdrop="!bg-black/60" classNameContainer="relative max-h-full max-w-5xl overflow-hidden rounded-[var(--ledger-surface-radius)] bg-[var(--ledger-surface-card)] p-2"><button type="button" aria-label="Close preview" onClick={() => setExpanded(false)} className="absolute right-3 top-3 z-10 rounded-full bg-black/60 p-1.5 text-white"><X size={15} /></button><img src={preview.url} alt={nodeName || fileName} className="max-h-[85vh] max-w-[90vw] object-contain" /></ModalOverlay>}
   </ExternalEmbedShell>;
 };
 

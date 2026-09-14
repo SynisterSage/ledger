@@ -4,12 +4,12 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { getLocalModelStorageRoot } from './localModelStorage.ts';
 
 // `electron` resolves to a harmless executable path when these model-layer
 // tests run under plain Node. Keep the asset contract testable without a
 // running Electron process while using app paths in the real main process.
 const electronModule = createRequire(import.meta.url)('electron') as { app?: { getPath(name: string): string; isPackaged?: boolean } };
-const appDataPath = () => electronModule.app?.getPath('userData') ?? path.join(process.cwd(), '.ledger-ai-test-data');
 const isPackaged = () => Boolean(electronModule.app?.isPackaged);
 const resourcesPath = () => process.resourcesPath;
 
@@ -128,7 +128,7 @@ export type LocalAIStatus = {
   runtimePath: string | null;
 };
 
-const assetRoot = () => path.join(appDataPath(), 'ai');
+const assetRoot = () => path.join(getLocalModelStorageRoot(), 'ai');
 const modelPath = (asset: LocalAIAssetManifest) => path.join(assetRoot(), 'models', asset.role, asset.role === 'generation' && asset.id !== DEFAULT_GENERATION_MODEL_ID ? asset.id : '', asset.fileName);
 const temporaryModelPath = (asset: LocalAIAssetManifest, target = modelPath(asset)) => `${target}.${process.pid}.part`;
 const selectionPath = () => path.join(assetRoot(), 'metadata', 'generation-selection.json');

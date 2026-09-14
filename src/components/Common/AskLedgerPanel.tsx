@@ -2968,7 +2968,16 @@ export const AskLedgerPanel = ({
     }
   };
 
-  const startLocalAISetup = () => {
+  const startLocalAISetup = async () => {
+    if (window.localModelStorage) {
+      try {
+        const choice = await window.localModelStorage.chooseForDownload(2);
+        if (choice.canceled) return;
+      } catch (error) {
+        setSetupError(localAISetupErrorMessage(error));
+        return;
+      }
+    }
     setupCancelRequestedRef.current = false;
     setSetupStarted(true);
     setSetupError(null);
@@ -3104,6 +3113,16 @@ export const AskLedgerPanel = ({
     const model = modelForTier(tier);
     if (!model) return;
     downloadDismissedRef.current = false;
+    if (!model.installed && window.localModelStorage) {
+      try {
+        const choice = await window.localModelStorage.chooseForDownload();
+        if (choice.canceled) return;
+      } catch (error) {
+        setDownloadError(error instanceof Error ? error.message : 'Could not choose a model storage folder.');
+        setDownloadPhase('error');
+        return;
+      }
+    }
     try {
       localStorage.setItem(optionalDownloadStorageKey, tier);
     } catch {
@@ -4821,6 +4840,9 @@ export const AskLedgerPanel = ({
             setActionDraft(null);
           }
         }}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="p-5">

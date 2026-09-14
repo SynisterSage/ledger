@@ -389,7 +389,10 @@ export const ExpandedSidebar = ({
       openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
       return;
     }
-    void window.desktopWindow?.toggleModule(kind, focus as any);
+    // Sidebar navigation selects a workspace destination. Window minimize is a
+    // separate chrome action; toggling here could hide the shared IPC window
+    // when the user is simply returning to an existing tab.
+    void window.desktopWindow?.openModule(kind, focus as any);
   };
   const openQuickCapture = (action: 'note' | 'task' | 'event' | 'reminder' | 'follow-up', projectId?: string, date?: string, entityId?: string) => {
     if (!activeWorkspaceId) return;

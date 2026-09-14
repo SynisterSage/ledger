@@ -21,6 +21,27 @@ export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onCl
   const { isVisible, position, state } = useSidebar();
   const { activeWorkspaceId } = useWorkspaceContext();
 
+  const openNotificationsPage = () => {
+    onClose();
+
+    if (platform.kind === 'web') {
+      const workspaceMatch = window.location.pathname.match(/^\/app\/w\/([^/]+)/);
+      const workspaceId = workspaceMatch
+        ? decodeURIComponent(workspaceMatch[1])
+        : activeWorkspaceId;
+      if (workspaceId) {
+        platform.navigation.openRoute({
+          kind: 'workspace',
+          workspaceId,
+          page: 'notifications',
+        });
+        return;
+      }
+    }
+
+    void window.desktopWindow?.openModule('notifications', { kind: 'notifications' });
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -76,18 +97,7 @@ export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onCl
       <NotificationCenterWindow
         mode="tray"
         onRequestClose={onClose}
-        onViewAll={() => {
-          onClose();
-          if (platform.kind === 'web' && activeWorkspaceId) {
-            platform.navigation.openRoute({
-              kind: 'workspace',
-              workspaceId: activeWorkspaceId,
-              page: 'notifications',
-            });
-            return;
-          }
-          void window.desktopWindow?.openModule('notifications', { kind: 'notifications' });
-        }}
+        onViewAll={openNotificationsPage}
       />
     </div>
   );
