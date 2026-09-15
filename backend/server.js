@@ -4002,7 +4002,6 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       .neq('status', 'completed')
       .gt('due_date', selectedDateKey)
       .lte('due_date', upcomingEndDateKey)
-      .not('due_time', 'is', null)
       .order('due_date', { ascending: true })
       .order('due_time', { ascending: true })
       .order('created_at', { ascending: false })
@@ -4280,6 +4279,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       status: isOverdue ? 'overdue' : 'active',
       sourceType,
       sourceId: task.id,
+      dueDate: dueDateKey || null,
       startsAt: dueAt?.toISOString() ?? null,
       timeLabel,
       dateLabel,
@@ -4361,6 +4361,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         status: 'upcoming',
         sourceType: 'task',
         sourceId: task.id,
+        dueDate: task.due_date ? String(task.due_date).slice(0, 10) : null,
         sortAt: dueAt?.toISOString() ?? null,
         priorityRank: getTaskPriorityRank(task.priority),
         assignedToUserId: task.assigned_to_user_id ?? task.assigned_to ?? null,

@@ -38,6 +38,7 @@ import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRef
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { routeForProject, routeForTask, usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 
 type CirclePersonTeam = {
   id: string;
@@ -569,6 +570,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
 
   const [people, setPeople] = useState<CirclePersonSummary[]>(() =>
     activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId)?.people ?? [] : []
@@ -1905,7 +1907,7 @@ const renderActivity = () => (
       />
 
       <div className={circleTheme.body}>
-        <aside className={circleTheme.leftPane}>
+        {workspacePanePreferences.left ? <aside className={circleTheme.leftPane}>
           <div className={`${circleTheme.leftPaneHeader} flex items-center justify-between gap-2`}>
             {selectedPersonId ? (
               <button
@@ -2015,7 +2017,7 @@ const renderActivity = () => (
               </div>
             )}
           </div>
-        </aside>
+        </aside> : null}
 
         <main className={circleTheme.content}>
           <div className={circleTheme.contentInner}>

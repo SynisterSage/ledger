@@ -27,6 +27,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { ContextMenu } from '../Common/ContextMenu';
 import {
@@ -301,6 +302,11 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   );
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
+  useEffect(() => {
+    setIsLeftPaneCollapsed(viewportWidth < 760 || !workspacePanePreferences.left);
+    setIsRightPaneCollapsed(!workspacePanePreferences.right);
+  }, [viewportWidth, workspacePanePreferences.left, workspacePanePreferences.right]);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [localFileContextMenu, setLocalFileContextMenu] = useState<LocalFileContextMenu | null>(null);

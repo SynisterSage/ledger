@@ -63,6 +63,15 @@ function getItemContext(item: MobileTodayInteractionItem) {
   return parts.filter(Boolean).join(' · ');
 }
 
+function dateKeyToLocalDate(dateKey: string | null | undefined) {
+  if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return new Date();
+  return new Date(`${dateKey}T00:00:00`);
+}
+
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSaved }: TodayItemEditSheetProps) {
   const theme = useLedgerTheme();
   const [isLoading, setIsLoading] = useState(false);
@@ -72,7 +81,14 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
   const [rescheduleDate, setRescheduleDate] = useState<Date | null>(null);
   const [reschedulePickerOpen, setReschedulePickerOpen] = useState(false);
   const editableItem = useMemo(() => (item && !('source' in item) ? item : null), [item]);
-  const isRescheduleMode = Boolean(editableItem && editableItem.type === 'event' && mode === 'reschedule');
+  const isRescheduleMode = Boolean(
+    editableItem &&
+      mode === 'reschedule' &&
+      (editableItem.type === 'event' ||
+        editableItem.type === 'task' ||
+        editableItem.type === 'focus' ||
+        (editableItem.type === 'project_action' && editableItem.sourceType === 'task')),
+  );
   const sheetTitle = useMemo(
     () =>
       editableItem
@@ -96,7 +112,15 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
       title: editableItem.title ?? '',
       notes: 'body' in editableItem && editableItem.body ? editableItem.body : '',
     });
-    setRescheduleDate(editableItem.type === 'event' && editableItem.startsAt ? new Date(editableItem.startsAt) : null);
+    setRescheduleDate(
+      editableItem.type === 'event'
+        ? editableItem.startsAt
+          ? new Date(editableItem.startsAt)
+          : null
+        : 'dueDate' in editableItem
+          ? dateKeyToLocalDate(editableItem.dueDate)
+          : null,
+    );
 
     const load = async () => {
       try {
@@ -203,6 +227,7 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
         await updateMobileTask(editableItem.workspaceId, editableItem.sourceId, {
           title,
           notes: draft.notes.trim() || null,
+          ...(isRescheduleMode && rescheduleDate ? { due_date: localDateKey(rescheduleDate) } : {}),
         });
       }
 
@@ -217,8 +242,9 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
 
   const notesLabel = editableItem.type === 'note' ? 'Body' : 'Notes';
   const notesPlaceholder = editableItem.type === 'note' ? 'Add details or context' : 'Add notes';
-  const rescheduleValue =
-    editableItem.type === 'event' && editableItem.startsAt ? new Date(editableItem.startsAt) : new Date();
+  const rescheduleValue = editableItem.type === 'event'
+    ? editableItem.startsAt ? new Date(editableItem.startsAt) : new Date()
+    : 'dueDate' in editableItem ? dateKeyToLocalDate(editableItem.dueDate) : new Date();
   const rescheduleLabel = rescheduleDate
     ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(rescheduleDate)
     : editableItem.type === 'event' && editableItem.startsAt

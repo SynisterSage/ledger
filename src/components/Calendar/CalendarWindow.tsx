@@ -52,6 +52,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import {
@@ -1301,6 +1302,10 @@ export const CalendarWindow = ({
   const [eventMatchAction, setEventMatchAction] = useState<EventMatchAction>('delete');
   const [isLoadingEventMatches, setIsLoadingEventMatches] = useState(false);
   const [isBulkDeletingEvents, setIsBulkDeletingEvents] = useState(false);
+  const [eventUpdateProgress, setEventUpdateProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
   const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null);
   const [isSpecificDatesModalOpen, setIsSpecificDatesModalOpen] = useState(false);
@@ -1360,6 +1365,11 @@ export const CalendarWindow = ({
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
+  useEffect(() => {
+    setIsLeftPaneCollapsed(!workspacePanePreferences.left);
+    setIsRightPaneCollapsed(!workspacePanePreferences.right);
+  }, [workspacePanePreferences.left, workspacePanePreferences.right]);
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
 
@@ -4813,12 +4823,16 @@ export const CalendarWindow = ({
           editedAnchorStartAt: start,
           durationMinutes,
         });
+        setEventUpdateProgress({ completed: 0, total: matchingUpdates.length + 1 });
         for (const matchingUpdate of matchingUpdates) {
           updatedMatchingEvents.push(
             (await api.updateEvent(matchingUpdate.id, {
               start_at: matchingUpdate.start_at,
               end_at: matchingUpdate.end_at,
             })) as EventRow
+          );
+          setEventUpdateProgress((current) =>
+            current ? { ...current, completed: current.completed + 1 } : current
           );
         }
       }
@@ -4836,6 +4850,11 @@ export const CalendarWindow = ({
         note_id: editNoteId || null,
         notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
       })) as EventRow;
+      if (selectedMatchingEvents?.length) {
+        setEventUpdateProgress((current) =>
+          current ? { ...current, completed: current.total } : current
+        );
+      }
     } catch (error) {
       console.error('Could not update event:', error);
       if ((error as { notFound?: boolean })?.notFound) {
@@ -4847,6 +4866,7 @@ export const CalendarWindow = ({
       }
       setError(error instanceof Error ? error.message : 'Could not update event.');
       setIsSavingEdit(false);
+      setEventUpdateProgress(null);
       return;
     }
 
@@ -4882,6 +4902,7 @@ export const CalendarWindow = ({
     }
     setEventEditorEvent(null);
     notifyCalendarItemsUpdated();
+    setEventUpdateProgress(null);
     return true;
   };
 
@@ -8530,6 +8551,34 @@ export const CalendarWindow = ({
                 disabled={isBulkDeletingEvents || isSavingEdit}
               />
             </div>
+
+            {eventUpdateProgress && eventMatchAction === 'update' && (
+              <div className="mb-3 rounded-md border border-[#E2D4C4] bg-white px-3 py-2.5">
+                <div className="mb-1.5 flex items-center justify-between text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>Updating calendar events</span>
+                  <span className="font-medium text-gray-700">
+                    {eventUpdateProgress.completed} of {eventUpdateProgress.total}
+                  </span>
+                </div>
+                <div
+                  className="h-1.5 overflow-hidden rounded-full bg-[#F1E5D9]"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={eventUpdateProgress.total}
+                  aria-valuenow={eventUpdateProgress.completed}
+                  aria-label="Updating calendar events"
+                >
+                  <div
+                    className="h-full rounded-full bg-[#FF5F40] transition-[width] duration-200"
+                    style={{
+                      width: `${Math.round(
+                        (eventUpdateProgress.completed / Math.max(1, eventUpdateProgress.total)) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="mb-3 flex rounded-md border border-[#E2D4C4] bg-white p-0.5 text-xs">
               {(['future', 'all'] as const).map((scope) => (

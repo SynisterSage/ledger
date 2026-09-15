@@ -4174,6 +4174,26 @@ function isLedgerWindowDockTarget(target: FloatingDockTarget | null = currentFlo
   return Boolean(target?.isLedgerWindow);
 }
 
+function isExternalFloatingDockTarget() {
+  return currentSidebarPosition === 'floating' && Boolean(currentFloatingDockTarget) && !isLedgerWindowDockTarget();
+}
+
+function syncSidebarDockFocusability() {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return;
+
+  // A sidebar attached to another app must not keep Ledger as the active app
+  // after the user clicks back into that app. Keep it non-activating once it
+  // has blurred, while allowing an intentional pointer-down in the sidebar to
+  // opt back into focus for keyboard interaction.
+  if (isExternalFloatingDockTarget()) {
+    sidebarWin.setFocusable(sidebarWin.isFocused());
+    return;
+  }
+
+  sidebarWin.setFocusable(true);
+}
+
 function isWorkspaceWindowAttachedToSidebar() {
   return shouldAttachWorkspaceWindowToSidebar() && isWorkspaceDockTarget();
 }
@@ -6149,6 +6169,7 @@ function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds:
   currentFloatingDockBounds = bounds;
   currentFloatingDockMisses = 0;
   currentFloatingDockDisplayId = bounds ? getDisplayForBounds(bounds).id : null;
+  syncSidebarDockFocusability();
   sendFloatingDockChanged(Boolean(target && bounds), target && bounds ? 'attached' : 'detached');
 }
 
@@ -6174,6 +6195,7 @@ function clearCurrentFloatingDockTarget(
   currentFloatingDockDisplayId = null;
   floatingDockHoldUntil = 0;
   windowsNativeDockRequeryAt = 0;
+  syncSidebarDockFocusability();
   sendFloatingDockChanged(false, attachmentStatus);
 }
 
@@ -9098,6 +9120,9 @@ function createSidebarWindow() {
     syncFloatingMeetingIndicator();
   });
 
+  sidebarWin.on('focus', syncSidebarDockFocusability);
+  sidebarWin.on('blur', syncSidebarDockFocusability);
+
   sidebarWin.on('close', (event) => {
     if (!isQuittingApp && trayState.runInBackground) {
       event.preventDefault();
@@ -10535,6 +10560,14 @@ ipcMain.handle('window:restart-app', () => {
 
 ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
   applySidebarAlwaysOnTop(alwaysOnTop);
+});
+
+ipcMain.on('window:allow-sidebar-focus', (event) => {
+  event.returnValue = false;
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!senderWindow || senderWindow !== sidebarWin || !isExternalFloatingDockTarget()) return;
+  senderWindow.setFocusable(true);
+  event.returnValue = true;
 });
 
 ipcMain.handle(

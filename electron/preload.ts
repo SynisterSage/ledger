@@ -1522,6 +1522,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setAlwaysOnTop(alwaysOnTop: boolean) {
     return ipcRenderer.invoke('window:set-always-on-top', alwaysOnTop);
   },
+  allowSidebarFocus() {
+    return ipcRenderer.sendSync('window:allow-sidebar-focus') === true;
+  },
   setFloatingPosition(position: { x: number; y: number }) {
     return ipcRenderer.invoke('window:set-floating-position', position);
   },

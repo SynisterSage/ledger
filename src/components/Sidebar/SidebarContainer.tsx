@@ -574,6 +574,7 @@ export const SidebarContainer = ({ browserMode = false, previewMode = false, hid
   return (
     <div
       style={shellStyle}
+      onPointerDownCapture={() => window.desktopWindow?.allowSidebarFocus?.()}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={`relative ${shellSizeClasses} ${browserMode ? 'web-sidebar-shell' : ''} ${

@@ -563,7 +563,12 @@ const getInviteTokenFromInput = (value: string) => {
   return raw;
 };
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const localDateKey = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+
+const todayKey = () => localDateKey();
 
 const DashboardSkeletonTaskItem = () => (
   <div
@@ -1666,6 +1671,7 @@ export function DashboardContent({
       status?: string | null;
       description?: string | null;
       notes?: string | null;
+      workspace_id?: string | null;
       updated_at?: string;
       eventId?: string | null;
       eventTitle?: string | null;
@@ -2068,6 +2074,9 @@ export function DashboardContent({
       return new Set();
     }
   });
+  const [expandedOverviewGroups, setExpandedOverviewGroups] = useState<Set<string>>(
+    () => new Set()
+  );
   const hasLoadedDashboardRef = useRef(false);
   const dashboardHydrationRef = useRef(false);
   const dashboardCacheWriteTokenRef = useRef(0);
@@ -3404,7 +3413,9 @@ export function DashboardContent({
   const focusTasks = sortedTodayTasks.filter(
     (task) => !isOverviewReminderTask(task) && task.is_today_focus
   );
-  const focusTasksForDisplay = focusTasks.slice(0, 1);
+  // Focus has a three-item capacity. Keep all allowed focus tasks visible so
+  // completing one does not appear to "reveal" a task that was already there.
+  const focusTasksForDisplay = focusTasks.slice(0, 3);
   const focusTaskIdsForDisplay = useMemo(
     () => new Set(focusTasksForDisplay.map((task) => task.id)),
     [focusTasksForDisplay]
@@ -4486,14 +4497,14 @@ export function DashboardContent({
         });
       } else if (target.workspace_id) {
         await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, {
-          status: 'todo',
+          status: target.status ?? 'todo',
           show_in_today: true,
           is_today_focus: false,
           task_horizon: 'today',
         });
       } else {
         await api.updateTask(row.sourceId, {
-          status: 'todo',
+          status: target.status ?? 'todo',
           show_in_today: true,
           is_today_focus: false,
           task_horizon: 'today',
@@ -4547,14 +4558,14 @@ export function DashboardContent({
         });
       } else if (target.workspace_id) {
         await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, {
-          status: 'todo',
+          status: target.status ?? 'todo',
           show_in_today: false,
           is_today_focus: false,
           task_horizon: 'long_term',
         });
       } else {
         await api.updateTask(row.sourceId, {
-          status: 'todo',
+          status: target.status ?? 'todo',
           show_in_today: false,
           is_today_focus: false,
           task_horizon: 'long_term',
@@ -4943,18 +4954,28 @@ export function DashboardContent({
     );
     setDashboardContextMenu(null);
     try {
-      await api.updateTask(taskId, { status: nextStatus });
+      if (target.workspace_id) {
+        await api.updateTaskInWorkspace(taskId, target.workspace_id, { status: nextStatus });
+      } else {
+        await api.updateTask(taskId, { status: nextStatus });
+      }
     } catch {
       setFollowUpTasks((prev) => prev.map((task) => (task.id === taskId ? target : task)));
     }
   };
 
   const deleteFollowUp = async (taskId: string) => {
+    const target = followUpTasks.find((task) => task.id === taskId);
+    if (!target) return;
     const previous = followUpTasks;
     setFollowUpTasks((prev) => prev.filter((task) => task.id !== taskId));
     setDashboardContextMenu(null);
     try {
-      await api.deleteTask(taskId);
+      if (target.workspace_id) {
+        await api.deleteTaskInWorkspace(taskId, target.workspace_id);
+      } else {
+        await api.deleteTask(taskId);
+      }
     } catch {
       setFollowUpTasks(previous);
     }
@@ -5180,7 +5201,6 @@ export function DashboardContent({
     }
   };
 
-  const attentionProjects = sortNewestFirst(projects).slice(0, 4);
   const noteProjectNamesById = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const link of noteProjectLinks) {
@@ -5386,7 +5406,9 @@ export function DashboardContent({
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const target = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+      ? new Date(`${String(value)}T00:00:00`)
+      : new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const diffDays = Math.floor((target.getTime() - startOfToday.getTime()) / 86_400_000);
 
     if (diffDays < 0) return 'overdue';
@@ -5397,6 +5419,41 @@ export function DashboardContent({
     }
     return 'later';
   };
+
+  const attentionProjects = useMemo(() => {
+    const projectAttentionScore = (project: (typeof projects)[number]) => {
+      const status = String(project.status ?? '').toLowerCase();
+      if (status.includes('complete') || status.includes('archive')) return 9;
+      if (isOverdueProject(project)) return 0;
+
+      const dateBucket = getOverviewDateBucket(project.end_date);
+      if (dateBucket === 'today' || dateBucket === 'overdue') return 0;
+      if (dateBucket === 'this_week') return 1;
+      if (status.includes('pause') || status.includes('hold')) return 2;
+      if (
+        (status.includes('progress') || status.includes('active')) &&
+        !projectOpenActionCountById.get(project.id)
+      ) {
+        return 3;
+      }
+
+      const updatedAt = project.updated_at ? new Date(project.updated_at).getTime() : 0;
+      const staleCutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      if (updatedAt > 0 && updatedAt < staleCutoff) return 4;
+      return 5;
+    };
+
+    return [...projects]
+      .sort((left, right) => {
+        const scoreDelta = projectAttentionScore(left) - projectAttentionScore(right);
+        if (scoreDelta !== 0) return scoreDelta;
+        return (
+          new Date(getSortTimestamp(right)).getTime() -
+          new Date(getSortTimestamp(left)).getTime()
+        );
+      })
+      .slice(0, 4);
+  }, [projectOpenActionCountById, projects]);
 
   const buildOverviewFilterValues = (
     values: Partial<OverviewFilterValues>
@@ -5599,7 +5656,9 @@ export function DashboardContent({
         ? 'Not set'
         : resolvedTask.task_horizon === 'long_term'
         ? dueLabel || 'Not set'
-        : 'Today',
+        : group === 'Today'
+        ? 'Today'
+        : dueLabel || timeLabel || 'Not set',
       linkedContext: [
         linkedProjectName ? ['Project', linkedProjectName] : null,
         linkedNoteName ? ['Note', linkedNoteName] : null,
@@ -5731,9 +5790,29 @@ export function DashboardContent({
   const activeTodayTaskIds = new Set(
     activeTodayTasks.filter((task) => !isOverviewReminderTask(task)).map((task) => task.id)
   );
+  const todayDateKey = todayKey();
+  const futureScheduledTaskRows = workspaceTasks
+    .filter((task) => {
+      const status = String(task.status ?? '').toLowerCase();
+      if (status === 'completed' || status === 'done' || status.includes('archiv')) return false;
+      if (!task.due_date || String(task.due_date).slice(0, 10) <= todayDateKey) return false;
+      if (task.task_horizon === 'long_term' || task.is_today_focus) return false;
+      return !activeTodayTaskIds.has(task.id);
+    })
+    .map<OverviewRow>((task) =>
+      buildTaskRow(task as (typeof todayTasks)[number], 'Upcoming', ['Scheduled'])
+    );
+  const overdueTaskRows = activeTodayTasks
+    .filter(
+      (task) =>
+        !isOverviewReminderTask(task) &&
+        !task.is_today_focus &&
+        isOverdueTask(task)
+    )
+    .map<OverviewRow>((task) => buildTaskRow(task, 'Needs attention', ['Overdue']));
+  const overdueTaskIds = new Set(overdueTaskRows.map((row) => row.sourceId));
   const longTermTaskRows = workspaceTasks
     .filter((task) => task.task_horizon === 'long_term' && !activeTodayTaskIds.has(task.id))
-    .slice(0, 8)
     .map<OverviewRow>((task) =>
       buildTaskRow(task as (typeof todayTasks)[number], 'Long-term tasks', ['Long-term'])
     );
@@ -5922,7 +6001,6 @@ export function DashboardContent({
 
   const followUpRows = followUpTasks
     .filter((task) => task.status !== 'done')
-    .slice(0, 4)
     .map<OverviewRow>((task) => ({
       id: `Needs attention:${task.id}`,
       sourceId: task.id,
@@ -5993,10 +6071,14 @@ export function DashboardContent({
 
   const overviewRows: OverviewRow[] = [
     ...githubAttentionRows,
+    ...overdueTaskRows,
     ...focusTasksForDisplay.map((task) => buildTaskRow(task, 'Needs attention', ['Focus'])),
     ...focusedContextRows,
     ...followUpRows,
-    ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today')),
+    ...activeTodayTasks
+      .filter((task) => !overdueTaskIds.has(task.id))
+      .map((task) => buildTaskRow(task, 'Today')),
+    ...futureScheduledTaskRows,
     ...longTermTaskRows,
     ...projectRows,
     ...noteRows,
@@ -7783,6 +7865,8 @@ export function DashboardContent({
                 <div className="space-y-1.5">
                   {overviewGroups.map((group) => {
                     const isCollapsed = collapsedOverviewGroups.has(group.id);
+                    const isExpanded = expandedOverviewGroups.has(group.id);
+                    const renderedRows = isExpanded ? group.rows : group.rows.slice(0, 8);
                     const canCreateInGroup = overviewLayoutPreferences.groupBy === 'none';
                     return (
                       <section key={group.id} className="overflow-hidden">
@@ -7842,7 +7926,7 @@ export function DashboardContent({
                         </div>
                         {!isCollapsed && (
                           <div className="space-y-1 pb-1 pt-1">
-                            {group.rows.map((row) => {
+                            {renderedRows.map((row) => {
                               const isSelected = selectedOverviewRow?.id === row.id;
                               const visibleMetadata = overviewLayoutPreferences.visibleProperties
                                 .map((property) => getOverviewPropertyValue(row, property))
@@ -8032,6 +8116,22 @@ export function DashboardContent({
                                 </div>
                               );
                             })}
+                            {group.rows.length > 8 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedOverviewGroups((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(group.id)) next.delete(group.id);
+                                    else next.add(group.id);
+                                    return next;
+                                  })
+                                }
+                                className="w-full rounded-lg px-3 py-2 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                              >
+                                {isExpanded ? 'Show less' : `Show ${group.rows.length - 8} more`}
+                              </button>
+                            )}
                           </div>
                         )}
                       </section>
@@ -9103,19 +9203,16 @@ export function DashboardContent({
                   ? hasFutureDueDate
                     ? 'Change due date'
                     : 'Reschedule'
-                  : row.group === 'Today'
-                  ? 'Move to Long-term'
-                  : row.group === 'Long-term tasks'
-                  ? 'Move to Today'
                   : null;
+                const horizonMoveLabel =
+                  row.kind === 'task'
+                    ? target?.task_horizon === 'long_term'
+                      ? 'Move to Today'
+                      : 'Move to Long-term'
+                    : null;
+                const horizonMoveIcon = horizonMoveLabel === 'Move to Today' ? <Zap size={14} /> : <MapIcon size={14} />;
                 const addToFocusIcon =
                   row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
-                const moveLabelIcon =
-                  row.group === 'Today' ? (
-                    <MapIcon size={14} />
-                  ) : row.group === 'Long-term tasks' ? (
-                    <Zap size={14} />
-                  ) : null;
                 const rescheduleRowClass =
                   'flex h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';
                 const canAssign =
@@ -9165,7 +9262,7 @@ export function DashboardContent({
                   const date = new Date();
                   date.setHours(0, 0, 0, 0);
                   date.setDate(date.getDate() + days);
-                  return date.toISOString().slice(0, 10);
+                  return localDateKey(date);
                 };
                 const openRow = () => {
                   row.open();
@@ -9296,13 +9393,13 @@ export function DashboardContent({
                             )}
                           </>
                         )}
-                        {moveLabel && !canReschedule && (
+                        {horizonMoveLabel && (
                           <button
-                            onClick={row.group === 'Today' ? moveToLongTerm : moveToToday}
+                            onClick={horizonMoveLabel === 'Move to Today' ? moveToToday : moveToLongTerm}
                             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                           >
-                            {moveLabelIcon}
-                            {moveLabel}
+                            {horizonMoveIcon}
+                            {horizonMoveLabel}
                           </button>
                         )}
                       </>

@@ -514,7 +514,11 @@ export default function TodayScreen() {
         return;
       }
 
-      if (actionId === 'reschedule' && !('source' in item) && item.type === 'event') {
+      if (
+        actionId === 'reschedule' &&
+        !('source' in item) &&
+        (item.type === 'event' || item.type === 'task' || item.type === 'focus' || item.type === 'project_action')
+      ) {
         setSheetMode('reschedule');
         return;
       }

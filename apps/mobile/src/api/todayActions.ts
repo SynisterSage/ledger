@@ -139,6 +139,17 @@ export async function performMobileTodayAction({
           }),
         });
         return { ok: true, refresh: true };
+      case 'move_long_term':
+        await mobileRequest(`/api/tasks/${item.sourceId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            show_in_today: false,
+            is_today_focus: false,
+            task_horizon: 'long_term',
+          }),
+        });
+        return { ok: true, refresh: true };
       case 'add_focus':
         await mobileRequest(`/api/tasks/${item.sourceId}`, {
           method: 'PATCH',
@@ -146,6 +157,7 @@ export async function performMobileTodayAction({
           body: JSON.stringify({
             show_in_today: true,
             is_today_focus: true,
+            task_horizon: 'today',
           }),
         });
         return { ok: true, refresh: true };

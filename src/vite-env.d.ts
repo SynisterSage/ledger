@@ -558,6 +558,7 @@ interface Window {
     hideTemporary: () => Promise<void>;
     quitApp: () => Promise<void>;
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>;
+    allowSidebarFocus: () => boolean;
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>;
     beginFloatingDrag: () => Promise<{ x: number; y: number }>;
     finishFloatingDrag: () => Promise<{

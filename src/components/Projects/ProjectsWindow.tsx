@@ -43,6 +43,7 @@ import {
   getPaneWidthForViewport,
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
@@ -1011,6 +1012,11 @@ export const ProjectsWindow = ({
 
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
+  useEffect(() => {
+    setIsLeftPaneCollapsed(viewportWidth < 760 || !workspacePanePreferences.left);
+    setIsRightPaneCollapsed(!workspacePanePreferences.right);
+  }, [viewportWidth, workspacePanePreferences.left, workspacePanePreferences.right]);
   const [starterGuideHidden, setStarterGuideHidden] = useState(false);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);

@@ -68,6 +68,7 @@ import {
 } from '../../theme/desktopTokens';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { applyCompactDensityPreference, applyHighContrastPreference } from '../../config/accessibility';
 import { buildInviteUrl } from '../../config/invite';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
@@ -1051,6 +1052,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     refreshWorkspaces,
     error: workspaceError,
   } = useWorkspaceContext();
+  const { preferences: workspacePanePreferences, updatePreferences: updateWorkspacePanePreferences } =
+    useWorkspacePanePreferences(activeWorkspaceId);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? getInitialSettingsSection());
   const [localAIModels, setLocalAIModels] = useState<LocalAIModelSettingsRow[]>([]);
   const [speakerTagsState, setSpeakerTagsState] = useState<'authorized' | 'not_authorized' | 'unsupported' | 'loading'>('loading');
@@ -2079,7 +2082,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     setDefaultState(defaultSidebarPreferences.defaultState);
     setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop);
     setAutoHide(defaultSidebarPreferences.autoHide);
-    setSaveStatus('Sidebar settings reset to defaults.');
+    updateWorkspacePanePreferences({ left: true, right: false });
+    setSaveStatus('Sidebar and module pane settings reset to defaults.');
   };
 
   const setTimedSaveStatus = (message: string, shouldClear = false) => {
@@ -6480,6 +6484,44 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </SettingsRow>
                     </div>
                   </section>
+                  <section aria-labelledby="sidebar-pane-defaults">
+                    <h3 id="sidebar-pane-defaults" className={settingsTheme.sectionTitle}>
+                      Module panes
+                    </h3>
+                    <p className={settingsTheme.help + ' mt-1'}>
+                      Choose which side panes open by default across Ledger modules.
+                    </p>
+                    <div className={settingsTheme.sectionRows + ' mt-3'}>
+                      <SettingsRow
+                        label="Left pane"
+                        help="Directories, navigation, and workspace context."
+                      >
+                        <InlineSwitch
+                          checked={workspacePanePreferences.left}
+                          onToggle={() =>
+                            updateWorkspacePanePreferences({
+                              left: !workspacePanePreferences.left,
+                            })
+                          }
+                          label="Show left pane by default"
+                        />
+                      </SettingsRow>
+                      <SettingsRow
+                        label="Right pane"
+                        help="Inspectors, details, and related context."
+                      >
+                        <InlineSwitch
+                          checked={workspacePanePreferences.right}
+                          onToggle={() =>
+                            updateWorkspacePanePreferences({
+                              right: !workspacePanePreferences.right,
+                            })
+                          }
+                          label="Show right pane by default"
+                        />
+                      </SettingsRow>
+                    </div>
+                  </section>
                   <section aria-labelledby="sidebar-reset">
                     <h3 id="sidebar-reset" className={settingsTheme.sectionTitle}>
                       Reset
@@ -6489,7 +6531,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         <div className="min-w-0">
                           <p className={settingsTheme.label}>Reset sidebar settings</p>
                           <p className={settingsTheme.help}>
-                            Restore Ledger&apos;s default sidebar position and behavior.
+                            Restore Ledger&apos;s default sidebar, pane, and behavior settings.
                           </p>
                         </div>
                         <button

@@ -58,6 +58,7 @@ import {
   getPaneWidthForViewport,
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
@@ -2808,6 +2809,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   );
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
+  useEffect(() => {
+    setIsLeftPaneCollapsed(!workspacePanePreferences.left);
+    setIsRightPaneCollapsed(!workspacePanePreferences.right);
+  }, [workspacePanePreferences.left, workspacePanePreferences.right]);
   const [rightPaneMode, setRightPaneMode] = useState<'inspector' | 'ask'>('inspector');
   const [meetingAskContext, setMeetingAskContext] = useState<AskLedgerInitialContext | null>(null);
   const [askPaneResetKey, setAskPaneResetKey] = useState(0);

@@ -34,6 +34,7 @@ export type MobileUpcomingItem = {
   status: 'upcoming';
   sourceType: 'calendar_event' | 'reminder' | 'task' | 'project';
   sourceId: string;
+  dueDate?: string | null;
   projectType?: string | null;
   projectColor?: string | null;
   assignedToUserId?: string | null;
@@ -52,6 +53,7 @@ export type MobileTodayItem = {
   status: 'active' | 'overdue';
   sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
+  dueDate?: string | null;
   projectType?: string | null;
   projectColor?: string | null;
   startsAt?: string | null;

@@ -47,6 +47,7 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 
 type TeamMember = {
   id: string;
@@ -508,6 +509,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const platform = usePlatform();
   const { workspaceShellLayout } = useSidebar();
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
   const workspaceName = activeWorkspace?.name?.trim() || 'Workspace';
   const focusTeamId = useMemo(() => {
     const raw = String(focusContext ?? '').trim();
@@ -3507,7 +3509,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   <p className="px-1 text-xs text-[color:#B42318]">{teamOverviewError}</p>
                 ) : null}
               </div>
-              <section className="grid min-h-0 overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)] lg:grid-cols-[minmax(0,1fr)_260px]">
+              <section className={`grid min-h-0 overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)] ${workspacePanePreferences.right ? 'lg:grid-cols-[minmax(0,1fr)_260px]' : 'grid-cols-1'}`}>
                 <div className="min-w-0 space-y-4 px-3 py-3">
                   {activeTab === 'Overview' ? (
                     <>
@@ -4150,7 +4152,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     </div>
                   ) : null}
                 </div>
-                {renderRightPanel()}
+                {workspacePanePreferences.right ? renderRightPanel() : null}
               </section>
             </section>
           )}

@@ -38,6 +38,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { UserAvatar } from '../Common/UserAvatar';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 
 type SlackWindowProps = { routeWorkspaceId?: string | null };
 type CaptureFilter = 'all' | 'in_intake' | 'converted' | 'failed';
@@ -182,6 +183,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
   const platform = usePlatform();
   const workspaceId = routeWorkspaceId || activeWorkspaceId;
   const routeMatchesActiveWorkspace = !routeWorkspaceId || routeWorkspaceId === activeWorkspaceId;
@@ -733,7 +735,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
                 </div>
                 <span className="hidden shrink-0 items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)] sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Connected</span>
               </header>
-              <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_320px]">
+              <div className={`grid min-h-0 flex-1 ${workspacePanePreferences.right ? 'md:grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'}`}>
                 <section className="slack-content min-h-0 min-w-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('article')) { event.preventDefault(); openActivityMenuFromPointer(event); } }} onClick={openActivityMenuFromClick}>
                   <div className="-mx-1 flex min-w-max items-center gap-5 overflow-x-auto border-b border-[var(--ledger-border-subtle)] px-1">
                     {([['activity', 'Activity'], ['watched', 'Watched'], ['captures', 'Sent to Intake']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setPageView(value)} className={`border-b-2 px-0.5 py-2 text-xs font-medium transition ${pageView === value ? 'border-[var(--ledger-text-primary)] text-[var(--ledger-text-primary)]' : 'border-transparent text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'}`}>{label}</button>)}
@@ -741,7 +743,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
                   </div>
                   {pageView === 'activity' ? <SlackActivitySection date={activityDate} onDateChange={setActivityDate} recap={recap} activities={activities} filter={activityFilter} onFilterChange={setActivityFilter} isLoading={isLoadingActivity} error={activityError} onRetry={() => void loadActivity()} onOpenSlack={openSlack} onRead={(activity) => void markActivityRead(activity)} onSendToIntake={(activity) => void sendActivityToIntake(activity)} onLinkContext={(activity) => void openActivityLinker(activity)} onOpenIntake={openIntake} busy={activityBusy} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(status?.needs_reauthorization)} onConnect={() => void connectIdentity()} onReauthorize={openSettings} /> : pageView === 'watched' ? <WatchedConversationsSection watches={watches} isLoading={isLoadingWatches} error={watchError} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(identity?.status === 'reauthorization_required' || identity?.status === 'error' || status?.needs_reauthorization)} canManageShared={canManage && !activeWorkspace?.is_personal} onWatch={openWatchPicker} onRemove={(watch) => void removeWatch(watch)} onToggleSettings={(watchId) => setSettingsWatchId((current) => current === watchId ? null : watchId)} settingsWatchId={settingsWatchId} busy={watchBusy} onUpdatePreference={(watch, field, value) => void updateWatchPreference(watch, field, value)} onOpenSlack={openSlack} onConnect={() => void connectIdentity()} onReauthorize={openSettings} canConnect={routeMatchesActiveWorkspace} /> : <CaptureView captures={visibleCaptures} filter={filter} onFilterChange={setFilter} search={search} onSearch={setSearch} error={captureError} loading={isLoadingCaptures} onRetry={() => void loadCaptures()} onOpenSlack={openSlack} onOpenIntake={openIntake} onOpenConverted={openConvertedItem} onRemoveCapture={(capture) => void removeCapture(capture)} identityConnected={identity?.status === 'connected'} needsReauthorization={Boolean(status?.needs_reauthorization)} onConnect={() => void connectIdentity()} onReauthorize={openSettings} canConnect={routeMatchesActiveWorkspace} />}
                 </section>
-                <SlackContextRail status={status} identity={identity} identityLoading={isLoadingIdentity} identityError={identityError} workspaceName={activeWorkspace?.name} onManage={openSettings} onOpenSlack={openSlack} onOpenIntake={() => openIntake()} onConnect={() => void connectIdentity()} onDisconnect={() => void disconnectIdentity()} identityBusy={identityBusy} canConnect={routeMatchesActiveWorkspace} recap={recap} />
+                {workspacePanePreferences.right ? <SlackContextRail status={status} identity={identity} identityLoading={isLoadingIdentity} identityError={identityError} workspaceName={activeWorkspace?.name} onManage={openSettings} onOpenSlack={openSlack} onOpenIntake={() => openIntake()} onConnect={() => void connectIdentity()} onDisconnect={() => void disconnectIdentity()} identityBusy={identityBusy} canConnect={routeMatchesActiveWorkspace} recap={recap} /> : null}
               </div>
             </>
           )}

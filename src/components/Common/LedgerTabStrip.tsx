@@ -64,7 +64,10 @@ const tabKinds = new Set<ModuleWindowKind>([
 
 const TAB_GAP = 4;
 const TAB_FALLBACK_WIDTH = 132;
+const TAB_MIN_WIDTH = 88;
 const OVERFLOW_CONTROL_WIDTH = 42;
+const NEW_TAB_CONTROL_WIDTH = 42;
+const TAB_STRIP_HORIZONTAL_PADDING = 24;
 const TAB_SESSION_STORAGE_KEY_PREFIX = 'ledger:window-tabs:v2';
 const TAB_TRANSFER_ID = new URLSearchParams(window.location.search).get('tabTransferId');
 
@@ -238,6 +241,7 @@ export const LedgerTab = ({
   active,
   isDragging = false,
   title,
+  width,
   onSelect,
   onClose,
   onPointerDown,
@@ -249,6 +253,7 @@ export const LedgerTab = ({
   active: boolean;
   isDragging?: boolean;
   title?: string;
+  width?: number;
   onSelect: () => void;
   onClose: () => void;
   onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -265,7 +270,8 @@ export const LedgerTab = ({
     onPointerMove={onPointerMove}
     onPointerUp={onPointerUp}
     onPointerCancel={onPointerCancel}
-    className={`group flex max-w-[190px] min-w-0 items-center gap-1 border border-b-0 px-1 transition ${
+    style={width ? { width: `${width}px` } : undefined}
+    className={`group flex max-w-[190px] min-w-0 shrink-0 items-center gap-1 border border-b-0 px-1 transition ${
       isDragging
         ? 'relative z-20 -translate-y-0.5 cursor-grabbing rounded-t-md border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)]'
         : active
@@ -892,7 +898,14 @@ export const LedgerTabStrip = () => {
     if (deduped.length === tabOrder.length) return;
     tabOrderRef.current = deduped;
     setTabOrder(deduped);
-  }, [tabOrder]);
+  }, [
+    askSessionTitles,
+    circlePersonTitles,
+    noteTitles,
+    projectTitles,
+    tabOrder,
+    teamTitles,
+  ]);
 
   useEffect(() => {
     let lastNavigationGeneration = 0;
@@ -1116,7 +1129,14 @@ export const LedgerTabStrip = () => {
       }
       return nextWidths;
     });
-  }, [tabOrder]);
+  }, [
+    askSessionTitles,
+    circlePersonTitles,
+    noteTitles,
+    projectTitles,
+    tabOrder,
+    teamTitles,
+  ]);
 
   useEffect(() => {
     if (!isOverflowOpen) return;
@@ -1136,24 +1156,49 @@ export const LedgerTabStrip = () => {
     };
   }, [isOverflowOpen]);
 
-  const { visibleTabs, overflowTabs } = useMemo(() => {
-    if (tabOrder.length === 0) return { visibleTabs: [], overflowTabs: [] };
-    if (stripWidth <= 0) return { visibleTabs: tabOrder, overflowTabs: [] };
+  const { visibleTabs, overflowTabs, compressedTabWidth } = useMemo(() => {
+    if (tabOrder.length === 0) {
+      return { visibleTabs: [], overflowTabs: [], compressedTabWidth: undefined };
+    }
+    if (stripWidth <= 0) {
+      return { visibleTabs: tabOrder, overflowTabs: [], compressedTabWidth: undefined };
+    }
 
     const widthFor = (route: LedgerRoute) => tabWidths[routeKey(route)] ?? TAB_FALLBACK_WIDTH;
     const totalWidth = tabOrder.reduce((total, route) => total + widthFor(route), 0);
     const totalGaps = Math.max(0, tabOrder.length - 1) * TAB_GAP;
-    const allFit = totalWidth + totalGaps <= stripWidth;
-    const availableWidth = allFit ? stripWidth : Math.max(0, stripWidth - OVERFLOW_CONTROL_WIDTH);
-    const visible: LedgerRoute[] = [];
-    let usedWidth = 0;
-
-    for (const route of tabOrder) {
-      const nextWidth = widthFor(route) + (visible.length > 0 ? TAB_GAP : 0);
-      if (usedWidth + nextWidth > availableWidth) break;
-      visible.push(route);
-      usedWidth += nextWidth;
+    const hasNewTabAction = !visualCurrentRoute || !isNewTabRoute(visualCurrentRoute);
+    const tabAreaWidth = Math.max(
+      0,
+      stripWidth -
+        TAB_STRIP_HORIZONTAL_PADDING -
+        (hasNewTabAction ? NEW_TAB_CONTROL_WIDTH : 0)
+    );
+    const allFit = totalWidth + totalGaps <= tabAreaWidth;
+    if (allFit) {
+      return { visibleTabs: tabOrder, overflowTabs: [], compressedTabWidth: undefined };
     }
+
+    // Keep every tab in the strip while there is enough room for compact tabs.
+    // This is the same useful behavior as Chrome's tab strip: labels truncate
+    // before tabs disappear into the overflow menu.
+    const allTabsFitAtMinimum =
+      tabOrder.length * TAB_MIN_WIDTH + totalGaps <= tabAreaWidth;
+    if (allTabsFitAtMinimum) {
+      const compressedTabWidth = Math.min(
+        190,
+        Math.max(TAB_MIN_WIDTH, Math.floor((tabAreaWidth - totalGaps) / tabOrder.length))
+      );
+      return { visibleTabs: tabOrder, overflowTabs: [], compressedTabWidth };
+    }
+
+    const availableWidth = Math.max(0, tabAreaWidth - OVERFLOW_CONTROL_WIDTH);
+    const maxVisibleTabs = Math.max(
+      1,
+      Math.floor((availableWidth + TAB_GAP) / (TAB_MIN_WIDTH + TAB_GAP))
+    );
+    const visible: LedgerRoute[] = [];
+    for (const route of tabOrder.slice(0, maxVisibleTabs)) visible.push(route);
 
     const activeIndex = visualCurrentRoute
       ? visible.findIndex((route) => sameRoute(route, visualCurrentRoute))
@@ -1163,15 +1208,6 @@ export const LedgerTabStrip = () => {
         visible.push(visualCurrentRoute);
       } else {
         visible[visible.length - 1] = visualCurrentRoute;
-        while (
-          visible.length > 1 &&
-          visible.reduce(
-            (total, route, index) => total + widthFor(route) + (index ? TAB_GAP : 0),
-            0
-          ) > availableWidth
-        ) {
-          visible.splice(visible.length - 2, 1);
-        }
       }
     }
 
@@ -1179,6 +1215,7 @@ export const LedgerTabStrip = () => {
     return {
       visibleTabs: visible,
       overflowTabs: tabOrder.filter((route) => !visibleKeys.has(routeKey(route))),
+      compressedTabWidth: TAB_MIN_WIDTH,
     };
   }, [stripWidth, tabOrder, tabWidths, visualCurrentRoute]);
 
@@ -1733,6 +1770,7 @@ export const LedgerTabStrip = () => {
             key={routeKey(route)}
             route={route}
             title={getTabTitle(route)}
+            width={compressedTabWidth}
             active={Boolean(visualCurrentRoute && sameRoute(visualCurrentRoute, route))}
             isDragging={draggingTabKey === routeKey(route)}
             onSelect={() => handleTabSelect(route)}

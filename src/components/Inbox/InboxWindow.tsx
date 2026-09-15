@@ -48,6 +48,7 @@ import { FigmaMark } from '../Common/FigmaMark';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -765,6 +766,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
   const platform = usePlatform();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const { workspaceShellLayout } = useSidebar();
+  const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
   const api = useApi();
   const toast = useToast();
 
@@ -3112,7 +3114,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
         <div className="flex h-full min-h-0 flex-col px-6 py-5">
           <div className="min-h-0 flex-1 overflow-hidden">
             {isLoading ? (
-              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] animate-pulse">
+              <div className={`grid h-full min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] animate-pulse ${workspacePanePreferences.right ? 'grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'}`}>
                 <section className="min-h-0 overflow-hidden bg-[var(--ledger-surface-card)]">
                   <div className="flex h-12 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4">
                     <div className="h-3.5 w-24 rounded bg-[var(--ledger-surface-hover)]" />
@@ -3135,7 +3137,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                     ))}
                   </div>
                 </section>
-                <aside className="min-h-0 border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                {workspacePanePreferences.right ? <aside className="min-h-0 border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
                   <div className="flex h-12 items-center border-b border-[color:var(--ledger-border-subtle)] px-4">
                     <div className="h-3.5 w-28 rounded bg-[var(--ledger-surface-hover)]" />
                   </div>
@@ -3148,7 +3150,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                       <div className="h-3 w-2/3 rounded bg-[var(--ledger-surface-muted)]" />
                     </div>
                   </div>
-                </aside>
+                </aside> : null}
               </div>
             ) : error ? (
               <div className="flex h-full items-center justify-center">
@@ -3164,7 +3166,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                 </div>
               </div>
             ) : (
-              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+              <div className={`grid h-full min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none ${workspacePanePreferences.right ? 'grid-cols-[minmax(0,1fr)_320px]' : 'grid-cols-1'}`}>
                 <section className="flex min-h-0 flex-col overflow-hidden bg-[var(--ledger-surface-card)]">
                   <div className="flex h-12 items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <div className="flex items-baseline gap-2">
@@ -3194,7 +3196,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                   </div>
                 </section>
 
-                <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+                {workspacePanePreferences.right ? <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
                   <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <span className="text-sm font-medium text-[var(--ledger-text-primary)]">
                       Selected item
@@ -3501,7 +3503,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                       </div>
                     )}
                   </div>
-                </aside>
+                </aside> : null}
               </div>
             )}
           </div>

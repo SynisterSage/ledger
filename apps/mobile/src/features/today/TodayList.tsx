@@ -222,7 +222,11 @@ function rowLeadingLabel(item: MobileTodayInteractionItem) {
 function nextUpMetadata(item: MobileUpcomingItem | MobileTodayItem, showWorkspaceNames: boolean) {
   const now = new Date();
   const date = item.startsAt ? new Date(item.startsAt) : null;
-  const dateLabel = date && !isSameLocalDay(date, now) ? formatShortDate(item.startsAt) : null;
+  const dateLabel = date
+    ? !isSameLocalDay(date, now)
+      ? formatShortDate(item.startsAt)
+      : null
+    : item.dateLabel ?? null;
   return compactMetadata([
     showWorkspaceNames ? item.workspaceName : null,
     dateLabel,
@@ -312,18 +316,26 @@ export function TodayList({
         (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex)
       );
     })
-    .slice(0, 5);
+    .slice(0, 3);
   const timedTodayItems = today.filter((item) => item.type !== 'focus' && Boolean(item.startsAt));
   const timedItems = [...upcoming, ...timedTodayItems].filter((item) => {
     if (!item.startsAt) return false;
     const date = new Date(item.startsAt);
     return isSameLocalDay(date, now) || isTomorrowLocalDay(date, now);
   });
+  const untimedUpcomingItems = upcoming
+    .filter((item) => !item.startsAt && item.type === 'task')
+    .sort((left, right) => String(left.dateLabel ?? '').localeCompare(String(right.dateLabel ?? '')));
   const remainingTodayItems = timedItems.filter((item) => {
     const date = new Date(item.startsAt ?? 0);
     return isSameLocalDay(date, now) && (date.getTime() >= now.getTime() || isCurrentEvent(item, now));
   });
-  const nextUpItems = (remainingTodayItems.length ? remainingTodayItems : timedItems.filter((item) => isTomorrowLocalDay(new Date(item.startsAt ?? 0), now)))
+  const nextUpItems = (remainingTodayItems.length
+    ? remainingTodayItems
+    : [
+        ...timedItems.filter((item) => isTomorrowLocalDay(new Date(item.startsAt ?? 0), now)),
+        ...untimedUpcomingItems,
+      ])
     .sort((left, right) => {
       const leftTime = new Date(left.startsAt ?? 0).getTime();
       const rightTime = new Date(right.startsAt ?? 0).getTime();
@@ -347,11 +359,7 @@ export function TodayList({
   const attentionItems = attentionExpanded ? allAttentionItems : allAttentionItems.slice(0, 5);
   const attentionIds = new Set(attentionItems.map((item) => item.id));
   const todayItems = today.filter(
-    (item) =>
-      item.type !== 'focus' &&
-      item.type !== 'project_action' &&
-      !attentionIds.has(item.id) &&
-      !nextUpIds.has(item.id),
+    (item) => item.type !== 'focus' && !attentionIds.has(item.id) && !nextUpIds.has(item.id),
   );
   const intakeItems = captures.items.slice(0, intakeExpanded ? captures.items.length : 3);
   const noteItems = notes.slice(0, 3);

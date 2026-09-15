@@ -56,6 +56,8 @@ export function getTodayItemActions(
         ...open,
         action('mark_done', 'Mark as done', item, context),
         action('move_tomorrow', 'Move to tomorrow', item, context),
+        action('reschedule', 'Reschedule', item, context),
+        action('move_long_term', 'Move to long-term', item, context),
         action('remove_focus', 'Remove from Focus', item, context),
         action('edit', 'Edit', item, context),
         ...(destructive ? [] : [action('delete', 'Delete', item, context, 'destructive')]),
@@ -95,6 +97,8 @@ export function getTodayItemActions(
         ...open,
         action('complete', 'Mark as done', item, context),
         action('move_tomorrow', 'Move to tomorrow', item, context),
+        action('reschedule', 'Reschedule', item, context),
+        action('move_long_term', 'Move to long-term', item, context),
         action('add_focus', 'Add to focus', item, context),
         action('edit', 'Edit', item, context),
         ...(destructive ? [] : [action('delete', 'Delete', item, context, 'destructive')]),
@@ -104,6 +108,10 @@ export function getTodayItemActions(
         ...open,
         action('complete', 'Mark as done', item, context),
         action('move_tomorrow', 'Move to tomorrow', item, context),
+        ...(item.sourceType === 'task' ? [action('reschedule', 'Reschedule', item, context)] : []),
+        ...(item.sourceType === 'task'
+          ? [action('move_long_term', 'Move to long-term', item, context)]
+          : []),
         action('open_project', 'Open project', item, context),
         action('edit', 'Edit', item, context),
         ...(destructive ? [] : [action('delete', 'Delete', item, context, 'destructive')]),
