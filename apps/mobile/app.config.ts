@@ -18,7 +18,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: 'automatic',
   ios: {
     bundleIdentifier: iosBundleIdentifier,
-    buildNumber: '14',
+    buildNumber: '15',
     supportsTablet: true,
     entitlements: {
       'com.apple.security.application-groups': ['group.com.ledger.mobile.shared'],
