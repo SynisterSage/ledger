@@ -588,8 +588,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           types.has('event') ? api.getEvents() : Promise.resolve([]),
           types.has('reminder') ? api.getReminders() : Promise.resolve([]),
         ]);
+        const noteRows = Array.isArray(notes)
+          ? notes
+          : Array.isArray((notes as { notes?: unknown[] } | null)?.notes)
+          ? (notes as { notes: unknown[] }).notes
+          : [];
         const records = {
-          note: Array.isArray(notes) ? notes : [],
+          note: noteRows,
           project: Array.isArray(projects) ? projects : [],
           event: Array.isArray(events) ? events : [],
           reminder: Array.isArray(reminders) ? reminders : [],
@@ -621,6 +626,33 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       canceled = true;
     };
   }, [activeSelected?.kind, activeSelected?.kind === 'local' ? activeSelected.file.id : null, api, activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!activeSelected || !activeWorkspaceId || loadedWorkspaceId !== activeWorkspaceId) return;
+    if (activeSelected.kind === 'local') {
+      const nextFile = files.find((file) => file.id === activeSelected.file.id);
+      if (!nextFile) {
+        setSelected(null);
+        setBulkSelectedIds(new Set());
+        localSelectionAnchorRef.current = null;
+        return;
+      }
+      if (nextFile !== activeSelected.file) {
+        setSelected({ kind: 'local', file: nextFile, workspaceId: activeWorkspaceId });
+      }
+      return;
+    }
+    const nextReference = references.find((reference) => reference.id === activeSelected.reference.id);
+    if (!nextReference) {
+      setSelected(null);
+      setBulkSelectedIds(new Set());
+      localSelectionAnchorRef.current = null;
+      return;
+    }
+    if (nextReference !== activeSelected.reference) {
+      setSelected({ kind: 'connected', reference: nextReference, workspaceId: activeWorkspaceId });
+    }
+  }, [activeSelected, activeWorkspaceId, files, loadedWorkspaceId, references]);
 
   const folderFilterMap = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders]);
   const visibleItems = useMemo(() => {
@@ -911,12 +943,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     return (
       <div key={folder.id} style={{ marginLeft: `${(folderDepthById.get(folder.id) ?? 0) * 12}px` }}>
         <div
-          className={`group flex items-center gap-1 text-left transition ${localFolderContextMenu?.folderId === folder.id ? 'bg-[var(--ledger-surface-hover)]' : ''}`}
+          className={`group flex items-center gap-1 rounded-lg text-left transition-colors ${localFolderContextMenu?.folderId === folder.id ? 'bg-[var(--ledger-surface-muted)]' : ''}`}
           onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; }}
           onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const fileId = event.dataTransfer.getData('application/x-ledger-local-file-id'); if (fileId) { const ids = bulkSelectedIds.has(fileId) ? [...bulkSelectedIds] : [fileId]; void Promise.all(ids.map((id) => moveFileToFolder(id, folder.id))); } }}
           onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setLocalFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: folder.id }); }}
         >
-          <button type="button" onClick={() => toggleFolder(folder.id)} className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-expanded={!isCollapsed}>
+          <button type="button" onClick={() => toggleFolder(folder.id)} className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]" aria-expanded={!isCollapsed}>
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${folderColorDotClass[normalizeFolderColor(folder.color)]}`} />
             <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="min-w-0 flex-1 truncate">{folder.name}</span>
@@ -936,7 +968,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     const item: LibraryItem = { kind: 'local', file };
     const isSelected = activeSelected?.kind === 'local' && activeSelected.file.id === file.id;
     return (
-      <button key={`local:${file.id}`} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-ledger-local-file-id', file.id); event.dataTransfer.effectAllowed = 'move'; }} onClick={(event) => selectLocalFile(file, event.shiftKey, event.metaKey || event.ctrlKey)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!bulkSelectedIds.has(file.id)) setBulkSelectedIds(new Set([file.id])); if (activeWorkspaceId) setSelected({ ...item, workspaceId: activeWorkspaceId }); setLocalFileContextMenu({ x: event.clientX, y: event.clientY }); }} className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${isSelected || bulkSelectedIds.has(file.id) ? 'bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-hover)]'}`}>
+      <button key={`local:${file.id}`} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-ledger-local-file-id', file.id); event.dataTransfer.effectAllowed = 'move'; }} onClick={(event) => selectLocalFile(file, event.shiftKey, event.metaKey || event.ctrlKey)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!bulkSelectedIds.has(file.id)) setBulkSelectedIds(new Set([file.id])); if (activeWorkspaceId) setSelected({ ...item, workspaceId: activeWorkspaceId }); setLocalFileContextMenu({ x: event.clientX, y: event.clientY }); }} className={`group flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] ${isSelected || bulkSelectedIds.has(file.id) ? 'bg-[var(--ledger-surface-muted)]' : 'hover:bg-[var(--ledger-surface-muted)]'}`}>
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]"><LocalFileIcon extension={file.extension} /></span>
         <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">{file.name}</span><span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">On this device · {formatBytes(file.sizeBytes)}</span></span>
       </button>
@@ -948,7 +980,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         <button
           type="button"
           onClick={() => { setFilter('local'); setFolderFilterId(folder.id); setShowLibraryActions(false); }}
-          className={`w-full rounded-md py-1.5 pr-2 text-left text-xs font-medium transition hover:bg-[var(--ledger-surface-hover)] ${folderFilterId === folder.id ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}
+          className={`w-full rounded-lg py-1.5 pr-2 text-left text-xs font-medium transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] ${folderFilterId === folder.id ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}
           style={{ paddingLeft: `${10 + (folderDepthById.get(folder.id) ?? 0) * 12}px` }}
         >
           {folder.name}
@@ -1195,7 +1227,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                   <div className="absolute right-0 top-8 z-40 min-w-48 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
                     <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-[var(--ledger-text-muted)]">Filter files & links</p>
                     {(['all', 'local', 'connected'] as const).map((value) => (
-                      <button key={value} type="button" onClick={() => { setFilter(value); setFolderFilterId(null); setShowLibraryActions(false); }} className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition hover:bg-[var(--ledger-surface-hover)] ${filter === value && !folderFilterId ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}>
+                      <button key={value} type="button" onClick={() => { setFilter(value); setFolderFilterId(null); setShowLibraryActions(false); }} className={`w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] ${filter === value && !folderFilterId ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}>
                         {value === 'all' ? 'All files & links' : value === 'local' ? 'On this device' : 'Connected links'}
                       </button>
                     ))}
@@ -1207,7 +1239,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       </>
                     ) : null}
                     <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                    <button type="button" onClick={() => startNewFolder()} className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">New folder</button>
+                    <button type="button" onClick={() => startNewFolder()} className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]">New folder</button>
                   </div>
                 ) : null}
               </div>
@@ -1303,12 +1335,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         }
                         setLocalFileContextMenu({ x: event.clientX, y: event.clientY });
                       }}
-                      className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${
+                      className={`group flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] ${
                         isSelected
-                          ? 'bg-[var(--ledger-surface-hover)]'
+                          ? 'bg-[var(--ledger-surface-muted)]'
                           : item.kind === 'local' && bulkSelectedIds.has(item.file.id)
-                          ? 'bg-[var(--ledger-surface-hover)]'
-                          : 'bg-transparent hover:bg-[var(--ledger-surface-hover)]'
+                          ? 'bg-[var(--ledger-surface-muted)]'
+                          : 'bg-transparent hover:bg-[var(--ledger-surface-muted)]'
                       }`}
                     >
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]">
@@ -1396,7 +1428,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         setBulkSelectedIds(new Set());
                         localSelectionAnchorRef.current = null;
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--ledger-text-muted)] transition-colors hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
                     >
                       <ChevronLeft size={13} />
                       Back to Files & links
@@ -1536,7 +1568,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                                 {sheet.rows.map((row, rowIndex) => (
                                   <tr
                                     key={rowIndex}
-                                    className="hover:bg-[var(--ledger-surface-hover)]"
+                                    className="hover:bg-[var(--ledger-surface-muted)]"
                                   >
                                     {sheet.headers.map((_, columnIndex) => (
                                       <td
@@ -1708,38 +1740,45 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               </div>
             </div>
           ) : (
-            <div className="flex min-h-full items-start justify-center overflow-y-auto px-8 py-14 lg:py-20">
-              <div className="w-full max-w-[760px]">
-                <div className="flex items-start gap-8 pb-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2.5">
-                      <Link2 size={17} className="shrink-0 text-[var(--ledger-accent)]" />
-                      <h1 className="text-lg font-semibold tracking-[-0.02em] text-[var(--ledger-text-primary)]">Files & links</h1>
+            <div className="flex min-h-full items-start overflow-y-auto px-8 py-12 lg:px-12 lg:py-16">
+              <div className="mx-auto w-full max-w-[760px]">
+                <div className="border-b border-[color:var(--ledger-border-subtle)] pb-7">
+                  <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Context</p>
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <Link2 size={17} className="shrink-0 text-[var(--ledger-accent)]" />
+                    <h1 className="text-xl font-semibold tracking-[-0.025em] text-[var(--ledger-text-primary)]">Files & links</h1>
+                  </div>
+                  <p className="mt-2 max-w-[560px] text-sm leading-6 text-[var(--ledger-text-muted)]">
+                    Keep the files and references that help you move work forward close at hand.
+                  </p>
+                </div>
+
+                <div className="mt-8">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">Library</h2>
+                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Private files stay on this computer. Connected links stay with their provider.</p>
                     </div>
-                    <p className="mt-2 max-w-[520px] text-sm leading-6 text-[var(--ledger-text-muted)]">
-                      Keep the files and references you use to move work forward in one place.
-                    </p>
+                    <span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{files.length + references.length} items</span>
+                  </div>
+                  <div className="space-y-1">
+                    <button type="button" onClick={() => { setFilter('local'); setFolderFilterId(null); setIsLeftPaneCollapsed(false); }} className="group flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><Folder size={15} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-[var(--ledger-text-primary)]">On this device</span><span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{files.length} local {files.length === 1 ? 'file' : 'files'} · {formatBytes(files.reduce((total, file) => total + file.sizeBytes, 0))}</span></span>
+                      <ChevronRight size={15} className="text-[var(--ledger-text-muted)]" />
+                    </button>
+                    <button type="button" onClick={() => { setFilter('connected'); setFolderFilterId(null); setIsLeftPaneCollapsed(false); }} className="group flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><Link2 size={15} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-[var(--ledger-text-primary)]">Connected links</span><span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{references.length} {references.length === 1 ? 'reference' : 'references'} from connected services</span></span>
+                      <ChevronRight size={15} className="text-[var(--ledger-text-muted)]" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] py-5 sm:grid-cols-4">
-                  <div className="px-4 first:pl-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{files.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Local files</p></div>
-                  <div className="px-4"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{folders.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Folders</p></div>
-                  <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 pt-4 sm:border-t-0 sm:pt-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{references.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Connected links</p></div>
-                  <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 pt-4 sm:border-t-0 sm:pt-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{formatBytes(files.reduce((total, file) => total + file.sizeBytes, 0))}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Stored locally</p></div>
-                </div>
-
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-[var(--ledger-text-muted)]">Add files or links when they become useful.</p>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => void importLocalFiles()} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"><Plus size={13} />Import local file</button>
-                    <button type="button" onClick={() => { setIsLeftPaneCollapsed(false); startNewFolder(); }} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"><FolderPlus size={13} />New folder</button>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-lg border border-dashed border-[color:var(--ledger-border-strong)] px-6 py-5 text-center">
-                  <p className="text-sm font-medium text-[var(--ledger-text-secondary)]">Drop a file here to add it</p>
-                  <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">It will be available from the tree on the left.</p>
+                <div className="mt-9 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--ledger-text-muted)]">
+                  <span>Add context when it becomes useful.</span>
+                  <button type="button" onClick={() => void importLocalFiles()} className="font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-text-primary)]"><Plus size={13} className="mr-1 inline" />Import local file</button>
+                  <button type="button" onClick={() => { setIsLeftPaneCollapsed(false); startNewFolder(); }} className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"><FolderPlus size={13} className="mr-1 inline" />New folder</button>
                 </div>
               </div>
             </div>
@@ -1855,7 +1894,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                             type="button"
                             onClick={() => openLinkedTarget(target)}
                             disabled={target.targetType === 'ask_session'}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--ledger-surface-hover)] disabled:cursor-default disabled:hover:bg-transparent"
+                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] disabled:cursor-default disabled:hover:bg-transparent"
                             title={target.targetType === 'ask_session' ? 'Ask Ledger session' : `Open ${target.title}`}
                           >
                             <span className="min-w-0 flex-1 truncate text-xs text-[var(--ledger-text-primary)]">
@@ -1902,7 +1941,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                           type="button"
                           onClick={() => void restoreRevision(revision.id)}
                           disabled={saving}
-                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                          className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
                         >
                           <span>
                             {new Date(revision.createdAt).toLocaleString([], {

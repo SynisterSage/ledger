@@ -38,6 +38,7 @@ import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { useToast } from '../Common/ToastProvider';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
@@ -55,6 +56,7 @@ import {
   readStarterOnboardingReturn,
   rememberStarterOnboardingReturn,
 } from '../../utils/starterOnboarding';
+import { preloadLedgerModule } from '../../utils/modulePreload';
 
 type FocusItem = {
   id: string;
@@ -363,6 +365,7 @@ export const ExpandedSidebar = ({
 }) => {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { unreadCount: sharedNotificationCount } = useNotificationCenter();
   const { collapseToRail, position } = useSidebar();
   const { openSearch } = useSearch();
   const api = useApi();
@@ -467,7 +470,7 @@ export const ExpandedSidebar = ({
   const [teamIntakeItems, setTeamIntakeItems] = useState<
     Array<{ id: string; teamId: string | null }>
   >([]);
-  const [notificationCount, setNotificationCount] = useState(0);
+  const notificationCount = sharedNotificationCount;
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -1213,57 +1216,6 @@ export const ExpandedSidebar = ({
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
   }, [api, activeWorkspaceId, user]);
-
-  useEffect(() => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadNotificationSummary = async () => {
-      try {
-        const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { unread?: number };
-        };
-        if (!cancelled) {
-          setNotificationCount(Math.max(0, Number(payload?.counts?.unread ?? 0)));
-        }
-      } catch (error) {
-        console.error('Failed to load notification count:', error);
-      }
-    };
-
-    void loadNotificationSummary();
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      const unreadCount = detail?.unreadCount;
-      if (typeof unreadCount === 'number' && Number.isFinite(unreadCount)) {
-        setNotificationCount(Math.max(0, unreadCount));
-        return;
-      }
-      void loadNotificationSummary();
-    };
-
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-    const refreshTimer = window.setInterval(() => {
-      void loadNotificationSummary();
-    }, 60_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-    };
-  }, [api, user]);
 
   useEffect(() => {
     if (!user) {
@@ -2917,6 +2869,7 @@ export const ExpandedSidebar = ({
           <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={() => openSidebarModule('notifications')}
+              onPointerEnter={() => preloadLedgerModule('notifications')}
               onMouseDown={(e) => e.stopPropagation()}
               className="relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Notifications"
@@ -2959,21 +2912,25 @@ export const ExpandedSidebar = ({
               {
                 label: 'Overview',
                 icon: BarChart3,
+                module: 'dashboard',
                 action: () => toggleSidebarModule('dashboard'),
               },
               {
                 label: 'Projects',
                 icon: Folder,
+                module: 'projects',
                 action: () => toggleSidebarModule('projects'),
               },
               {
                 label: 'Notes',
                 icon: StickyNote,
+                module: 'notes',
                 action: () => toggleSidebarModule('notes'),
               },
               {
                 label: 'Calendar',
                 icon: CalendarDays,
+                module: 'calendar',
                 action: () => openSidebarModule('calendar'),
               },
             ].map((item) => (
@@ -2981,6 +2938,7 @@ export const ExpandedSidebar = ({
                 key={item.label}
                 type="button"
                 onClick={item.action}
+                onPointerEnter={() => preloadLedgerModule(item.module ?? '')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
                 <item.icon size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
@@ -3016,6 +2974,7 @@ export const ExpandedSidebar = ({
               <button
                 type="button"
                 onClick={() => toggleSidebarModule('teams')}
+                onPointerEnter={() => preloadLedgerModule('teams')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
                 <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
@@ -3026,6 +2985,7 @@ export const ExpandedSidebar = ({
               <button
                 type="button"
                 onClick={() => void window.desktopWindow?.openModule('files', { kind: 'files' })}
+                onPointerEnter={() => preloadLedgerModule('files')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
                 <FileText size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />

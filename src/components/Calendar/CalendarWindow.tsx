@@ -54,6 +54,7 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import {
   decodeSmartDateComposerContext,
@@ -1093,6 +1094,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 export const CalendarWindow = ({
   webQuery,
   previewMode = false,
+  isActive = true,
 }: {
   webQuery?: {
     view?: 'month' | 'week' | 'day' | 'agenda';
@@ -1101,11 +1103,13 @@ export const CalendarWindow = ({
     reminder?: string;
   };
   previewMode?: boolean;
+  isActive?: boolean;
 } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
+  const { inboxCount, unreadCount: notificationCount } = useNotificationCenter();
   const platform = usePlatform();
   const toast = useToast();
   const viewportWidth = useViewportWidth();
@@ -1152,8 +1156,6 @@ export const CalendarWindow = ({
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
   const appliedCalendarDataFingerprintRef = useRef<string | null>(null);
 
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -1385,7 +1387,7 @@ export const CalendarWindow = ({
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
     tables: ['events', 'reminders', 'notes', 'tasks', 'projects'],
-    enabled: Boolean(user && activeWorkspaceId),
+    enabled: Boolean(isActive && user && activeWorkspaceId),
     onChange: handleCalendarWorkspaceRefresh,
   });
 
@@ -1416,102 +1418,6 @@ export const CalendarWindow = ({
     window.addEventListener('keydown', onHideSidePanelsShortcut);
     return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
   }, [areSidePanelsCollapsed]);
-
-  useEffect(() => {
-    if (!user) {
-      setInboxCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadInboxCount = async () => {
-      try {
-        const payload = (await api.getInboxCount()) as { count?: number };
-        if (!cancelled) {
-          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-        }
-      } catch {
-        if (!cancelled) setInboxCount(0);
-      }
-    };
-
-    void loadInboxCount();
-
-    const handleRefreshInboxCount = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      void loadInboxCount();
-    };
-
-    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
-      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
-        setInboxCount((current) => Math.max(0, current + payload.delta!));
-        return;
-      }
-
-      void loadInboxCount();
-    };
-
-    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
-    window.addEventListener('focus', handleRefreshInboxCount);
-    document.addEventListener('visibilitychange', handleRefreshInboxCount);
-
-    const timer = window.setInterval(() => {
-      void loadInboxCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
-      window.removeEventListener('focus', handleRefreshInboxCount);
-      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
-    };
-  }, [api, user]);
-
-  useEffect(() => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadNotificationCount = async () => {
-      try {
-        const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { unread?: number };
-        };
-        if (!cancelled) {
-          setNotificationCount(Number(payload?.counts?.unread ?? 0));
-        }
-      } catch {
-        if (!cancelled) setNotificationCount(0);
-      }
-    };
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? 0));
-    };
-
-    void loadNotificationCount();
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-
-    const timer = window.setInterval(() => {
-      void loadNotificationCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-    };
-  }, [api, user]);
 
   const monthPreview = useMemo(() => {
     const start = startOfMonthGrid(viewAnchor);
@@ -3259,6 +3165,12 @@ export const CalendarWindow = ({
       }
     };
 
+    if (!isActive) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     loadCalendarData();
 
     const handleCalendarItemsUpdated = () => {
@@ -3286,6 +3198,7 @@ export const CalendarWindow = ({
     effectiveCalendarScope,
     calendarRefreshToken,
     previewMode,
+    isActive,
   ]);
 
   useEffect(() => {
@@ -4120,13 +4033,28 @@ export const CalendarWindow = ({
       }
       return;
     }
+    const targetId = baseReminderId(reminder.id);
+    const nextDone = !reminder.is_done;
+    const previous = reminders.find((item) => baseReminderId(item.id) === targetId) ?? reminder;
+    const optimistic = { ...previous, is_done: nextDone };
+    setReminders((prev) =>
+      prev.map((item) => (baseReminderId(item.id) === targetId ? optimistic : item))
+    );
+    setSelectedReminder((current) =>
+      current && baseReminderId(current.id) === targetId ? optimistic : current
+    );
     try {
-      const targetId = baseReminderId(reminder.id);
       const updated = (await api.updateReminder(targetId, {
-        is_done: !reminder.is_done,
+        is_done: nextDone,
       })) as ReminderRow;
 
       if (!updated) {
+        setReminders((prev) =>
+          prev.map((item) => (baseReminderId(item.id) === targetId ? previous : item))
+        );
+        setSelectedReminder((current) =>
+          current && baseReminderId(current.id) === targetId ? previous : current
+        );
         setError('Could not update reminder.');
         return;
       }
@@ -4136,7 +4064,16 @@ export const CalendarWindow = ({
           baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
         )
       );
+      setSelectedReminder((current) =>
+        current && baseReminderId(current.id) === baseReminderId(updated.id) ? updated : current
+      );
     } catch (error) {
+      setReminders((prev) =>
+        prev.map((item) => (baseReminderId(item.id) === targetId ? previous : item))
+      );
+      setSelectedReminder((current) =>
+        current && baseReminderId(current.id) === targetId ? previous : current
+      );
       setError('Could not update reminder.');
       return;
     }

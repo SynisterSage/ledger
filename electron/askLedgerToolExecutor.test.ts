@@ -83,6 +83,27 @@ test('finds only evidence-backed project blockers and missing next actions', () 
   assert.equal(result.data.missingNextAction, false);
 });
 
+test('computes requested uninterrupted weekly availability around calendar events', () => {
+  const result = executeDeterministicAskLedgerTool(
+    { name: 'find_weekly_availability', arguments: { durationMinutes: 120, days: 3 } },
+    {
+      workspaceId: 'workspace-1',
+      now: new Date('2026-09-21T08:00:00.000Z'),
+      timeZone: 'America/New_York',
+      items: [
+        item({ resourceType: 'event', resourceId: 'event-1', title: 'Standup', timestamp: '2026-09-21T14:00:00.000Z', endAt: '2026-09-21T15:00:00.000Z' }),
+        item({ resourceType: 'event', resourceId: 'event-2', title: 'Review', timestamp: '2026-09-22T16:00:00.000Z', endAt: '2026-09-22T18:00:00.000Z' }),
+      ],
+    }
+  );
+  assert.deepEqual(result.data.slots, [
+    { date: '2026-09-21', day: 'Monday', start: '11:00 AM', end: '1:00 PM', durationMinutes: 120 },
+    { date: '2026-09-22', day: 'Tuesday', start: '9:00 AM', end: '11:00 AM', durationMinutes: 120 },
+    { date: '2026-09-23', day: 'Wednesday', start: '9:00 AM', end: '11:00 AM', durationMinutes: 120 },
+  ]);
+  assert.equal(result.data.foundRequestedDays, true);
+});
+
 test('does not execute read or write tools through the compute executor', () => {
   assert.throws(
     () =>
@@ -109,4 +130,8 @@ test('resolves only explicit daily-plan and project-blocker intents', () => {
     'find_project_blockers'
   );
   assert.equal(resolveDeterministicAskLedgerToolCall('Tell me something interesting'), undefined);
+  assert.deepEqual(resolveDeterministicAskLedgerToolCall('I need two hours of free time three days this week.'), {
+    name: 'find_weekly_availability',
+    arguments: { durationMinutes: 120, days: 3 },
+  });
 });

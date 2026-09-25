@@ -18,6 +18,9 @@ export async function getMobileNotifications(workspaceId?: string) {
 export const mobileNotificationsCacheKey = (workspaceId: string) =>
   `mobile:notifications:${workspaceId}`;
 
+export const mobileNotificationsCountCacheKey = (workspaceId: string) =>
+  `mobile:notifications-count:${workspaceId}`;
+
 export function getCachedMobileNotifications(workspaceId: string, options: { force?: boolean } = {}) {
   return getMobileResource(
     mobileNotificationsCacheKey(workspaceId),
@@ -28,6 +31,7 @@ export function getCachedMobileNotifications(workspaceId: string, options: { for
 
 export function invalidateCachedMobileNotifications(workspaceId: string) {
   invalidateMobileResource(mobileNotificationsCacheKey(workspaceId));
+  invalidateMobileResource(mobileNotificationsCountCacheKey(workspaceId));
 }
 
 export async function performMobileNotificationAction(

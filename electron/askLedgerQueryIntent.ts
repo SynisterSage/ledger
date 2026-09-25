@@ -21,6 +21,8 @@ export type AskLedgerQueryIntent = {
   window?: { start: string; end: string };
 };
 
+const availabilitySignals = /\b(?:free time|free slots?|open slots?|available time|availability|when can i fit|where can i fit|make room for|block out|time to work)\b/i;
+
 export type AskLedgerEntityResourceType =
   | 'project'
   | 'task'
@@ -94,7 +96,9 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   }
   const asksForCurrentWeekOverview = /\bmy week\b/.test(normalized)
     && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
-  if (asksForCurrentWeekOverview) {
+  const asksForCurrentWeekAvailability = availabilitySignals.test(normalized)
+    && /\b(?:this week|my week|the week|three days?|\d+\s+days?)\b/.test(normalized);
+  if (asksForCurrentWeekOverview || asksForCurrentWeekAvailability) {
     return { kind: 'weekly_overview' };
   }
   if (/\b(review|assess|check|audit)\b/.test(normalized) && /\bprojects?\b/.test(normalized)
@@ -112,6 +116,9 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   }
   if (/\b(follow[- ]?ups?|came from (a )?meeting|meeting actions?)\b/.test(normalized)) {
     return { kind: 'followups' };
+  }
+  if (availabilitySignals.test(normalized)) {
+    return { kind: 'time_window' };
   }
   const asksForScheduleOverview =
     /\b(?:weekly|workweek|work schedule|calendar schedule|days off|day off)\b/.test(normalized) ||

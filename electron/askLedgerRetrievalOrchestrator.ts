@@ -87,6 +87,43 @@ const planMyWeekQueries: PlanMyWeekQuery[] = [
   { id: 'week-reminders', label: 'Reminders this week', query: 'reminders this week', resourceTypes: ['reminder'] as AskLedgerResourceType[], constraints: {} },
 ];
 
+const isDayPlanningSkill = (value: string) => {
+  const normalized = normalize(value);
+  return /\bplan\s+my\s+day\b/.test(normalized) && /\b(today|tomorrow)\b/.test(normalized);
+};
+
+const localDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const dayPlanningObjectives = (resourceTypes: AskLedgerResourceType[]): RetrievalObjective[] => {
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = localDateKey(tomorrow);
+  const objectives: RetrievalObjective[] = [];
+  const has = (type: AskLedgerResourceType) => resourceTypes.includes(type);
+  const datedTypes = resourceTypes.filter((type) => ['milestone', 'event', 'reminder'].includes(type));
+
+  if (has('project')) objectives.push({ id: 'day-active-projects', purpose: 'Retrieve active projects that provide context for today', resourceTypes: ['project'], constraints: { openOnly: true }, expandRelationships: true, dependsOn: [], graphRelationshipTypes: ['has_task', 'has_milestone', 'has_event', 'has_reminder', 'has_note'] });
+  if (has('task')) {
+    objectives.push({ id: 'day-today-tasks', purpose: 'Retrieve open tasks due today', resourceTypes: ['task'], constraints: { openOnly: true, dueAfter: todayKey, dueBefore: todayKey }, expandRelationships: false, dependsOn: [] });
+    objectives.push({ id: 'day-today-focus', purpose: 'Retrieve open tasks explicitly planned for today', resourceTypes: ['task'], constraints: { openOnly: true, horizon: 'today' }, expandRelationships: false, dependsOn: [] });
+    objectives.push({ id: 'day-tomorrow-tasks', purpose: 'Retrieve open tasks due tomorrow', resourceTypes: ['task'], constraints: { openOnly: true, dueAfter: tomorrowKey, dueBefore: tomorrowKey }, expandRelationships: false, dependsOn: [] });
+  }
+  if (datedTypes.length) {
+    objectives.push({ id: 'day-today-schedule', purpose: 'Retrieve milestones, events, and reminders due today', resourceTypes: datedTypes, constraints: { openOnly: true, dueAfter: todayKey, dueBefore: todayKey }, expandRelationships: false, dependsOn: [] });
+    objectives.push({ id: 'day-tomorrow-schedule', purpose: 'Retrieve milestones, events, and reminders due tomorrow', resourceTypes: datedTypes, constraints: { openOnly: true, dueAfter: tomorrowKey, dueBefore: tomorrowKey }, expandRelationships: false, dependsOn: [] });
+  }
+  const supportingTypes = resourceTypes.filter((type) => !['project', 'task', 'milestone', 'event', 'reminder'].includes(type));
+  if (supportingTypes.length) objectives.push({ id: 'day-supporting-context', purpose: 'Retrieve connected Ledger context that helps explain today\'s work', resourceTypes: supportingTypes, constraints: {}, expandRelationships: true, dependsOn: [], graphRelationshipTypes: ['linked_project', 'linked_task', 'linked_note', 'linked_event', 'linked_resource'] });
+  return objectives;
+};
+
 export const decomposeRetrievalObjectives = (question: string): RetrievalObjective[] => {
   const normalized = normalize(question);
   const queryPlan = buildAskLedgerQueryPlan(question);
@@ -414,7 +451,7 @@ export class AskLedgerRetrievalOrchestrator {
     };
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; customSkillResourceTypes?: AskLedgerResourceType[]; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; customSkillResourceTypes?: AskLedgerResourceType[]; customSkillInstructions?: string; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
     if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
     // Use a balanced structured pass for informal weekly questions too, so a
     // recurring calendar summary cannot crowd out actual work context.
@@ -455,8 +492,11 @@ export class AskLedgerRetrievalOrchestrator {
 
     const limits = { ...DEFAULT_LIMITS, ...this.limits };
     const customSkillResourceTypes = options?.customSkillResourceTypes?.length ? [...new Set(options.customSkillResourceTypes)] : undefined;
+    const dayPlanningSkill = Boolean(customSkillResourceTypes && isDayPlanningSkill(options?.customSkillInstructions ?? question));
     let objectives = customSkillResourceTypes
-      ? [{ id: 'custom-skill-context', purpose: 'Retrieve the workspace context allowed by the custom skill', resourceTypes: customSkillResourceTypes, constraints: {}, expandRelationships: false, dependsOn: [] }]
+      ? dayPlanningSkill
+        ? dayPlanningObjectives(customSkillResourceTypes)
+        : [{ id: 'custom-skill-context', purpose: 'Retrieve the workspace context allowed by the custom skill', resourceTypes: customSkillResourceTypes, constraints: {}, expandRelationships: false, dependsOn: [] }]
       : decomposeRetrievalObjectives(orchestrationQuestion).slice(0, limits.maxObjectives);
     const explicitProjectIds = (options?.resolvedResourceKeys ?? [])
       .filter((key) => key.startsWith('project:'))

@@ -171,6 +171,23 @@ export const ASK_LEDGER_TOOL_DEFINITIONS: AskLedgerToolDefinition[] = [
     implementation: 'deterministic_planned',
   },
   {
+    name: 'find_weekly_availability',
+    kind: 'compute',
+    description: 'Find bounded uninterrupted availability across the current week from calendar commitments.',
+    inputSchema: schema(
+      {
+        durationMinutes: { type: 'number', description: 'Required uninterrupted block length in minutes.' },
+        days: { type: 'number', description: 'Number of different days to find.' },
+      },
+      ['durationMinutes', 'days']
+    ),
+    surfaces: ['ask_ledger', 'overview_lens'],
+    requiredScopes: ['calendar:read', 'tasks:read'],
+    requiresConfirmation: false,
+    idempotent: true,
+    implementation: 'deterministic_planned',
+  },
+  {
     name: 'find_project_blockers',
     kind: 'compute',
     description:

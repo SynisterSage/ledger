@@ -1,5 +1,5 @@
 import { CalendarDays, Check, ChevronDown, FolderKanban, Plus, StickyNote } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { useState } from 'react';
 import { WebShellLayout } from './WebSidebar';
 import { SearchProvider } from '../context/SearchContext';
@@ -7,8 +7,9 @@ import { useSidebar } from '../context/SidebarContext';
 import { ToastProvider } from '../components/Common/ToastProvider';
 import { NotificationCenterProvider } from '../components/Notifications/NotificationCenterContext';
 import { WebReliabilityProvider } from './WebReliabilityProvider';
-import ProjectsWindow from '../components/Projects/ProjectsWindow';
-import CalendarWindow from '../components/Calendar/CalendarWindow';
+
+const ProjectsWindow = lazy(() => import('../components/Projects/ProjectsWindow'));
+const CalendarWindow = lazy(() => import('../components/Calendar/CalendarWindow'));
 
 const previewItems = [
   { title: 'Homepage direction', detail: 'Note · Updated today', icon: StickyNote, color: 'var(--ledger-accent)' },
@@ -82,6 +83,7 @@ const PreviewShell = () => {
 
   return (
     <WebShellLayout previewMode>
+    <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--ledger-background)] text-sm text-[var(--ledger-text-muted)]">Loading preview…</div>}>
     {previewPage === 'projects' ? <ProjectsPreview /> : previewPage === 'calendar' ? <CalendarPreview /> : <section className="product-preview-content flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ledger-background)]">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-5">
         <div className="flex items-center gap-2">
@@ -118,6 +120,7 @@ const PreviewShell = () => {
         </div>
       </div>
     </section>}
+    </Suspense>
     </WebShellLayout>
   );
 };

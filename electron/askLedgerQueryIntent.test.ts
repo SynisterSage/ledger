@@ -69,6 +69,12 @@ test('routes broad work or imported calendar schedule questions to a whole-sched
   assert.deepEqual(detectAskLedgerQueryIntent('What events are on my weekly schedule?'), { kind: 'weekly_overview' });
 });
 
+test('detects free-time planning as a current-week workspace overview', () => {
+  const intent = detectAskLedgerQueryIntent('I need two hours of free time three days this week. What days and times work?');
+  assert.equal(intent.kind, 'weekly_overview');
+  assert.deepEqual(resourceTypesForAskLedgerIntent(intent), ['project', 'task', 'milestone', 'reminder', 'event', 'person', 'team', 'note', 'transcript', 'intake', 'external']);
+});
+
 test('treats a named month as the full Calendar dated-items scope', () => {
   const intent = detectAskLedgerQueryIntent('what is my month of september like this year?', new Date('2026-08-27T12:00:00Z'));
   assert.deepEqual(intent, { kind: 'time_window', window: { start: '2026-09-01', end: '2026-09-30' } });

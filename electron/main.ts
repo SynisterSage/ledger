@@ -100,6 +100,7 @@ import {
 } from './floatingMeetingIndicatorPosition';
 import { resolveFloatingMeetingIndicatorRenderer } from './floatingMeetingIndicatorAssets';
 import { getFloatingMeetingIndicatorPlatformOptions } from './floatingMeetingIndicatorPlatform';
+import { ModuleWindowBoundsStore } from './moduleWindowBoundsStore.ts';
 import {
   canExecuteLedgerAction,
   createLedgerActionDispatcher,
@@ -4124,6 +4125,8 @@ const moduleWindowBoundsMemory = new Map<
     sidebarPosition: SidebarPosition;
   }
 >();
+const moduleWindowBoundsStore = new ModuleWindowBoundsStore(app.getPath('userData'));
+let moduleWindowBoundsPersistTimer: NodeJS.Timeout | null = null;
 const moduleWindowFullscreenBoundsMemory = new Map<ModuleWindowKind, Electron.Rectangle>();
 let workspaceShellFullscreenRestoreBounds: Electron.Rectangle | null = null;
 
@@ -4319,6 +4322,10 @@ let notificationApiUrl = LEDGER_API_URL;
 let cachedNotificationPreferences: NotificationPreferencesPayload | null = null;
 let cachedNotificationPreferencesAt = 0;
 const notificationSeenIds = new Set<string>();
+// Electron notification objects are EventEmitters. Keep delivered objects
+// alive for their native lifetime so banner clicks and action buttons remain
+// routable after this scheduler function returns.
+const activeDesktopNotifications = new Map<string, Notification>();
 let notificationSeenNamespace: string | null = null;
 let notificationSessionUserId: string | null = null;
 const notificationDeliveryStatePath = path.join(
@@ -4432,16 +4439,16 @@ const getDesktopNotificationIconPath = () => {
   const publicRoot = process.env.VITE_PUBLIC ?? path.join(process.env.APP_ROOT ?? '', 'public');
   const preferred =
     process.platform === 'win32'
-      ? path.join(publicRoot, 'logo.ico')
+      ? path.join(publicRoot, 'app-icon.ico')
       : process.platform === 'darwin'
-      ? path.join(publicRoot, 'logo.icns')
+      ? path.join(publicRoot, 'app-icon.png')
       : path.join(publicRoot, 'icon.png');
 
   if (fs.existsSync(preferred)) {
     return preferred;
   }
 
-  const fallbacks = ['logo.ico', 'logo.icns', 'icon.png', 'logo-color.svg'].map((name) =>
+  const fallbacks = ['app-icon.ico', 'app-icon.png', 'logo.icns', 'logo.ico', 'icon.png', 'logo-color.svg'].map((name) =>
     path.join(publicRoot, name)
   );
   const firstExisting = fallbacks.find((iconPath) => fs.existsSync(iconPath));
@@ -4666,8 +4673,6 @@ const getNotificationDisplayTitle = (item: NotificationSchedulerItem) => {
 };
 
 const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
-  const body = item.body?.trim() || '';
-  const context = item.context?.trim() || '';
   const typeLabel =
     item.sourceType === 'reminder'
       ? 'Reminder'
@@ -4684,84 +4689,64 @@ const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
       : item.sourceType === 'workspace_invite'
       ? 'Workspace invite'
       : 'Ledger';
+  const title = getNotificationDisplayTitle(item);
+  const detailParts = [item.body?.trim(), item.context?.trim()].filter(
+    (part): part is string =>
+      typeof part === 'string' &&
+      part.toLocaleLowerCase() !== title.toLocaleLowerCase() &&
+      part.toLocaleLowerCase() !== typeLabel.toLocaleLowerCase()
+  );
+  const detail = detailParts.find((part, index, parts) =>
+    parts.findIndex((candidate) => candidate.toLocaleLowerCase() === part.toLocaleLowerCase()) === index
+  ) ?? null;
+  const meta = [typeLabel, item.workspaceName?.trim()].filter(Boolean).join(' · ');
 
-  const detailParts = [typeLabel, body, context, item.workspaceName?.trim()];
-  return detailParts.filter((part, index, parts) => {
-    if (!part) return false;
-    return parts.findIndex((candidate) => candidate === part) === index;
-  }).join(' · ') || null;
-};
-
-const getNotificationTypeBadge = (item: NotificationSchedulerItem) => {
-  const badgeByType: Record<string, { letter: string; color: string }> = {
-    reminder: { letter: 'R', color: '#FF5F40' },
-    event: { letter: 'E', color: '#5B7CFA' },
-    task: { letter: 'T', color: '#20A46B' },
-    project: { letter: 'P', color: '#8B5CF6' },
-    inbox: { letter: 'I', color: '#D97706' },
-    workspace_invite: { letter: 'W', color: '#0F766E' },
-  };
-  const badge = badgeByType[item.sourceType] ?? { letter: 'L', color: '#111827' };
-  const color = badge.color.slice(1);
-  const red = Number.parseInt(color.slice(0, 2), 16);
-  const green = Number.parseInt(color.slice(2, 4), 16);
-  const blue = Number.parseInt(color.slice(4, 6), 16);
-  const pixels = Buffer.alloc(64 * 64 * 4);
-  const glyphs: Record<string, string[]> = {
-    R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
-    E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
-    T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
-    P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
-    I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'],
-    W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'],
-    L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-  };
-  for (let y = 0; y < 64; y += 1) {
-    for (let x = 0; x < 64; x += 1) {
-      const distanceFromCenter = Math.hypot(x - 31.5, y - 31.5);
-      const offset = (y * 64 + x) * 4;
-      pixels[offset] = blue;
-      pixels[offset + 1] = green;
-      pixels[offset + 2] = red;
-      pixels[offset + 3] = distanceFromCenter <= 30 ? 255 : 0;
-    }
-  }
-  const glyph = glyphs[badge.letter] ?? glyphs.L;
-  glyph.forEach((row, rowIndex) => {
-    [...row].forEach((filled, columnIndex) => {
-      if (filled !== '1') return;
-      for (let y = 0; y < 5; y += 1) {
-        for (let x = 0; x < 5; x += 1) {
-          const pixelX = 19 + columnIndex * 5 + x;
-          const pixelY = 14 + rowIndex * 5 + y;
-          const offset = (pixelY * 64 + pixelX) * 4;
-          pixels[offset] = 255;
-          pixels[offset + 1] = 255;
-          pixels[offset + 2] = 255;
-          pixels[offset + 3] = 255;
-        }
-      }
-    });
-  });
-  try {
-    return nativeImage.createFromBitmap(pixels, { width: 64, height: 64 });
-  } catch {
-    return nativeImage.createFromPath(getDesktopNotificationIconPath());
-  }
+  // macOS renders subtitle as a distinct metadata line; Windows ignores it,
+  // so retain the same context in its body instead of losing the item type.
+  return process.platform === 'darwin'
+    ? ((detail ?? meta) || null)
+    : [meta, detail].filter(Boolean).join(' — ') || null;
 };
 
 const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
+    const typeLabel = item.sourceType === 'event' ? 'Calendar event' : item.sourceType === 'inbox' ? 'Intake' : item.sourceType === 'workspace_invite' ? 'Workspace invite' : item.notificationType === 'overdue_item' ? `Overdue ${item.sourceType}` : item.sourceType[0].toUpperCase() + item.sourceType.slice(1);
     const subtitle =
-      [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
+      process.platform === 'darwin'
+        ? [typeLabel, item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined
+        : undefined;
     const body = getNotificationDisplayBody(item);
+    const nativeActions = item.actions
+      .filter((action) => action === 'complete' || action === 'snooze')
+      .slice(0, 2);
     const notification = new Notification({
       title: getNotificationDisplayTitle(item),
       subtitle,
       body: body || undefined,
-      icon: getNotificationTypeBadge(item),
+      // Native banners already carry Ledger's app identity. The former
+      // letter-in-a-circle badge looked like an unrelated app, so use the
+      // shipped Ledger artwork consistently on Windows and as a fallback.
+      icon: getDesktopNotificationIconPath(),
       silent: false,
+      actions: nativeActions.map((action) => ({
+        type: 'button' as const,
+        text: action === 'complete' ? 'Complete' : 'Snooze',
+      })),
+    });
+    activeDesktopNotifications.set(item.id, notification);
+    notification.on('close', () => {
+      activeDesktopNotifications.delete(item.id);
+    });
+    notification.on('action', (_event, actionIndex) => {
+      const action = nativeActions[actionIndex];
+      if (!action || !notificationAccessToken) return;
+      void fetchLedgerApi(`/api/notifications/${encodeURIComponent(item.id)}/action`, notificationAccessToken, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      }).catch(() => {
+        // The native action is best effort; the notification remains available in Ledger.
+      });
     });
     notification.on('click', () => {
       if (notificationAccessToken) {
@@ -4895,7 +4880,7 @@ const runNotificationScheduler = async () => {
       return;
     }
 
-    const notificationBatches = await Promise.all([
+    const [inAppBatch, desktopBatch] = await Promise.all([
       shouldDeliverInApp
         ? fetchLedgerApi<NotificationSchedulerItem[]>(
             '/api/notifications/check?delivery=in_app',
@@ -4915,14 +4900,6 @@ const runNotificationScheduler = async () => {
       '/api/notifications/summary',
       notificationAccessToken
     );
-    const activeItems = Array.from(
-      new Map(
-        notificationBatches
-          .flat()
-          .filter((item) => item?.id)
-          .map((item) => [item.id, item])
-      ).values()
-    );
     if (shouldDeliverInApp || shouldDeliverDesktop) {
       const currentNamespace = getNotificationNamespace(
         notificationApiUrl,
@@ -4931,25 +4908,34 @@ const runNotificationScheduler = async () => {
       if (currentNamespace && notificationSeenIdsLoadedNamespace !== currentNamespace) {
         hydrateNotificationSeenIds(currentNamespace);
       }
-      const batchKeys = new Set<string>();
-      const unseenItems = activeItems.filter((item) => {
-        if (notificationSeenIds.has(item.id)) return false;
-        const batchKey = [item.sourceType, item.sourceId, item.notificationType].join(':');
-        if (batchKeys.has(batchKey)) return false;
-        batchKeys.add(batchKey);
-        return true;
-      });
-      unseenItems.forEach((item) => {
-        notificationSeenIds.add(item.id);
+      const getUnseenItems = (items: NotificationSchedulerItem[], channel: 'in_app' | 'desktop') => {
+        const batchKeys = new Set<string>();
+        return items.filter((item) => {
+          const seenKey = `${channel}:${item.id}`;
+          if (!item?.id || notificationSeenIds.has(seenKey)) return false;
+          const batchKey = `${channel}:${item.sourceType}:${item.sourceId}:${item.notificationType}`;
+          if (batchKeys.has(batchKey)) return false;
+          batchKeys.add(batchKey);
+          return true;
+        });
+      };
+      const unseenInAppItems = getUnseenItems(inAppBatch, 'in_app');
+      const unseenDesktopItems = getUnseenItems(desktopBatch, 'desktop');
+      const deliveredKeys = [
+        ...unseenInAppItems.map((item) => `in_app:${item.id}`),
+        ...unseenDesktopItems.map((item) => `desktop:${item.id}`),
+      ];
+      deliveredKeys.forEach((seenKey) => {
+        notificationSeenIds.add(seenKey);
         if (currentNamespace) {
-          rememberDeliveredNotification(currentNamespace, item.id);
+          rememberDeliveredNotification(currentNamespace, seenKey);
         }
       });
       if (shouldDeliverInApp) {
-        broadcastNotificationBatch(unseenItems);
+        broadcastNotificationBatch(unseenInAppItems);
       }
       if (shouldDeliverDesktop) {
-        unseenItems.forEach((item) => deliverDesktopNotification(item));
+        unseenDesktopItems.forEach((item) => deliverDesktopNotification(item));
       }
     }
     broadcastNotificationSummary(
@@ -8293,7 +8279,7 @@ function getSafeRememberedModuleBounds(
   minWidth: number,
   minHeight: number
 ) {
-  const remembered = moduleWindowBoundsMemory.get(kind);
+  const remembered = moduleWindowBoundsMemory.get(kind) ?? moduleWindowBoundsStore.get(kind);
   if (!remembered || remembered.sidebarPosition !== currentSidebarPosition) return null;
 
   // A saved window can outlive the display it was saved on. Keep its size
@@ -8315,6 +8301,14 @@ function getSafeRememberedModuleBounds(
   );
 
   return isRectInsideWorkArea(candidate, workArea) ? candidate : null;
+}
+
+function scheduleModuleWindowBoundsPersist() {
+  if (moduleWindowBoundsPersistTimer !== null) clearTimeout(moduleWindowBoundsPersistTimer);
+  moduleWindowBoundsPersistTimer = setTimeout(() => {
+    moduleWindowBoundsPersistTimer = null;
+    moduleWindowBoundsStore.flush();
+  }, 250);
 }
 
 function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
@@ -10241,10 +10235,13 @@ function openModuleWindow(
         return;
       }
       const bounds = moduleWin.getBounds();
-      moduleWindowBoundsMemory.set(kind, {
+      const remembered = {
         bounds,
         sidebarPosition: currentSidebarPosition,
-      });
+      };
+      moduleWindowBoundsMemory.set(kind, remembered);
+      moduleWindowBoundsStore.set(kind, remembered);
+      scheduleModuleWindowBoundsPersist();
     };
     moduleWin.on('moved', rememberBounds);
     moduleWin.on('resized', rememberBounds);
@@ -10323,6 +10320,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  if (moduleWindowBoundsPersistTimer !== null) {
+    clearTimeout(moduleWindowBoundsPersistTimer);
+    moduleWindowBoundsPersistTimer = null;
+  }
+  moduleWindowBoundsStore.flush();
   isQuittingApp = true;
   touchBarContextCoordinator?.reset();
   touchBarContextCoordinator = null;
@@ -11743,6 +11745,10 @@ function initializeTouchBarController() {
 }
 
 app.whenReady().then(() => {
+  // A stable AppUserModelID lets packaged Windows builds use Ledger's Start
+  // Menu identity and route toast activation back to this application.
+  if (process.platform === 'win32') app.setAppUserModelId('com.ledger.app');
+  moduleWindowBoundsStore.load();
   const defaultSession = session.defaultSession;
   defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     const owner = BrowserWindow.fromWebContents(webContents);

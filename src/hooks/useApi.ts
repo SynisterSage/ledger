@@ -4,6 +4,7 @@ import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { DEFAULT_API_URL } from '../config/runtime';
 import { getInviteBaseUrl } from '../config/invite';
 import { buildLedgerSessionHeaders } from '../utils/deviceSession';
+import { beginLedgerPerformance, endLedgerPerformance } from '../utils/performance';
 import type { PinFolder, PinObjectType, PinRecord } from '../utils/pins';
 import authService from '../services/auth';
 import type {
@@ -68,25 +69,46 @@ export const useApi = () => {
     };
 
     const executeRequest = async (token: string | null) => {
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        ...options,
-        headers: buildHeaders(token),
-      });
+      const performanceToken = beginLedgerPerformance('api.request');
+      const details = {
+        endpoint: endpoint.split('?')[0],
+        method: options.method ?? 'GET',
+      };
+      let performanceEnded = false;
+      const finishPerformance = (extra?: { status?: number; error?: boolean }) => {
+        if (performanceEnded) return;
+        performanceEnded = true;
+        endLedgerPerformance(performanceToken, 'api.request', { ...details, ...extra });
+      };
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        const requestError = new Error(error.error || `Request failed: ${response.status}`) as Error & {
-          status?: number;
-        };
-        requestError.status = response.status;
-        throw requestError;
+      try {
+        const response = await fetch(`${API_URL}${endpoint}`, {
+          ...options,
+          headers: buildHeaders(token),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          const requestError = new Error(error.error || `Request failed: ${response.status}`) as Error & {
+            status?: number;
+          };
+          requestError.status = response.status;
+          finishPerformance({ status: response.status });
+          throw requestError;
+        }
+
+        if (options.skipJson) {
+          finishPerformance({ status: response.status });
+          return null;
+        }
+
+        const result = await response.json();
+        finishPerformance({ status: response.status });
+        return result;
+      } catch (error) {
+        finishPerformance({ error: true });
+        throw error;
       }
-
-      if (options.skipJson) {
-        return null;
-      }
-
-      return response.json();
     };
 
     const currentToken = session?.access_token ?? null;

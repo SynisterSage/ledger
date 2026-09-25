@@ -1,18 +1,20 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
-import { getCachedMobileNotifications } from '@/api/notifications';
+import { getCachedMobileNotifications, mobileNotificationsCountCacheKey } from '@/api/notifications';
 import { getMobileResource } from '@/lib/mobileResourceCache';
-
-const notificationCountCacheKey = (workspaceId: string) => `mobile:notifications-count:${workspaceId}`;
 
 export function useMobileUnreadNotificationCount(workspaceId: string) {
   const [unreadCount, setUnreadCount] = useState(0);
 
+  useEffect(() => {
+    setUnreadCount(0);
+  }, [workspaceId]);
+
   const load = useCallback(async () => {
     try {
       const count = await getMobileResource(
-        notificationCountCacheKey(workspaceId),
+        mobileNotificationsCountCacheKey(workspaceId),
         async () => {
           const response = await getCachedMobileNotifications(workspaceId);
           return response.counts.unread ?? 0;

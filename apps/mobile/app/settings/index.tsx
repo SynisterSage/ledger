@@ -539,6 +539,16 @@ export default function SettingsScreen() {
             />
           </Section>
 
+          <Section title="Ask Ledger" card>
+            <SettingsRow
+              title="AI provider"
+              subtitle="Choose local models or manage your own cloud provider."
+              value="Manage"
+              chevron
+              onPress={() => router.push('/settings/ask-ledger' as never)}
+            />
+          </Section>
+
           {appleCalendarNative.supported ? (
             <Section title="Apple Calendar" card>
               <SettingsRow

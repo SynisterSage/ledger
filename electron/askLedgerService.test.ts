@@ -611,6 +611,70 @@ test('performs one targeted answer repair without repeating retrieval', async ()
   assert.ok(retrievalCalls > 0);
 });
 
+test('repairs a contradictory weekly overview instead of abstaining', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let starts = 0;
+  const project: AskLedgerContextItem = { ...resource, resourceId: 'project-week', title: 'Senior Thesis', content: 'Thesis work.', status: 'In Progress' };
+  const event: AskLedgerContextItem = { ...resource, resourceType: 'event', resourceId: 'event-week', title: 'Ind Study', content: 'Independent study block.', status: 'planned' };
+  const documents = [project, event];
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: documents, primaryItems: documents, relatedItems: [], relatedCandidateCount: 0, debug: documents.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 1, why: ['structured-match'] })) }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      starts += 1;
+      callbacks.onEvent({ type: 'delta', requestId, text: starts === 1 ? 'Senior Thesis is not started.\nInd Study is completed.' : 'Senior Thesis is in progress.\nInd Study is planned.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'hows my week lookin like', documents, lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(starts, 2);
+  assert.equal(events.filter((event) => event.type === 'done').length, 1);
+  const answer = events.reduce((current, event) => event.type === 'replace' ? event.text ?? '' : event.type === 'delta' ? `${current}${event.text ?? ''}` : current, '');
+  assert.match(answer, /Senior Thesis is in progress/);
+  assert.match(answer, /Ind Study is planned/);
+  assert.doesNotMatch(answer, /I don't have enough Ledger context/);
+});
+
+test('does not spend a repair pass on an ambiguous duplicate title', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let starts = 0;
+  const project: AskLedgerContextItem = { ...resource, resourceId: 'project-ind-study', title: 'Ind Study', status: 'InProgress' };
+  const event: AskLedgerContextItem = { ...resource, resourceType: 'event', resourceId: 'event-ind-study', title: 'Ind Study', status: 'planned' };
+  const documents = [project, event];
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: documents, primaryItems: documents, relatedItems: [], relatedCandidateCount: 0, debug: documents.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 1, why: ['structured-match'] })) }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      starts += 1;
+      callbacks.onEvent({ type: 'delta', requestId, text: 'Ind Study is planned this week.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'hows my week lookin like', documents, lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(starts, 1);
+  assert.equal(events.filter((event) => event.type === 'done').length, 1);
+});
+
 test('supersedes an older in-flight conversation request before starting the newer one', async () => {
   const cancelled: string[] = [];
   const retrieval = {

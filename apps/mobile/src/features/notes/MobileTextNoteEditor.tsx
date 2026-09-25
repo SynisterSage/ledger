@@ -244,11 +244,19 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       mapStructureRef.current = loadedMap;
       setSectionId(note.section_id ?? null);
       setParentId(note.parent_id ?? null);
-      const [pinResult, sectionResult] = await Promise.allSettled([getMobilePins(workspaceId), getMobileNoteSections(workspaceId)]);
-      if (pinResult.status === 'fulfilled') { const pin = pinResult.value.pins?.find((item) => item.object_id === note.id); setPinned(Boolean(pin)); setPinId(pin?.id ?? null); }
-      if (sectionResult.status === 'fulfilled') setSections(sectionResult.value);
+      // Inspector/action-sheet details are not prerequisites for opening the
+      // note. Resolve them in the background after the canonical content loads.
+      void Promise.allSettled([getMobilePins(workspaceId), getMobileNoteSections(workspaceId)]).then(([pinResult, sectionResult]) => {
+        if (!mountedRef.current || loadedIdRef.current !== noteId) return;
+        if (pinResult.status === 'fulfilled') { const pin = pinResult.value.pins?.find((item) => item.object_id === note.id); setPinned(Boolean(pin)); setPinId(pin?.id ?? null); }
+        if (sectionResult.status === 'fulfilled') setSections(sectionResult.value);
+      });
       if (note.mode === 'meeting_note') {
-        try { setMeetingMetadata(await getMobileMeetingMetadata(note.id)); } catch { setMeetingMetadata(null); }
+        void getMobileMeetingMetadata(note.id).then((metadata) => {
+          if (mountedRef.current && loadedIdRef.current === noteId) setMeetingMetadata(metadata);
+        }).catch(() => {
+          if (mountedRef.current && loadedIdRef.current === noteId) setMeetingMetadata(null);
+        });
       }
       setLoadedAt(note.updated_at ?? null);
       updateSaveLifecycle({ baseServerUpdatedAt: note.updated_at ?? null });

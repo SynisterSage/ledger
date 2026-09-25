@@ -15,7 +15,7 @@ import { AppLoadingScreen } from '@/components/AppLoadingScreen';
 import { bootstrapAppPreferencesState, resetAppPreferencesState } from '@/store/appPreferencesStore';
 import { clearMobileResourceCache } from '@/lib/mobileResourceCache';
 import { useAuthState } from '@/store/sessionStore';
-import { resetWorkspaceState } from '@/store/workspaceStore';
+import { resetWorkspaceState, selectWorkspace } from '@/store/workspaceStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
@@ -47,7 +47,7 @@ export default function RootLayout() {
   const [mobilePushHydrated, setMobilePushHydrated] = useState(false);
   const [mobilePushEnabled, setMobilePushEnabled] = useState<boolean | null>(null);
   const [showSplashOverlay, setShowSplashOverlay] = useState(true);
-  const handledNotificationResponseIdRef = useRef<string | null>(null);
+  const handledNotificationResponseRef = useRef<{ id: string; receivedAt: number } | null>(null);
   const nativeSplashHiddenRef = useRef(false);
 
   useEffect(() => {
@@ -257,11 +257,20 @@ export default function RootLayout() {
         | Record<string, unknown>
         | null;
 
-      if (notificationId && handledNotificationResponseIdRef.current === notificationId) {
+      const now = Date.now();
+      const previousResponse = handledNotificationResponseRef.current;
+      // Expo can surface the same tap through both the startup response and
+      // the response listener. Only suppress that immediate duplicate; a
+      // later tap on the same still-visible notification must still navigate.
+      if (
+        notificationId &&
+        previousResponse?.id === notificationId &&
+        now - previousResponse.receivedAt < 1_000
+      ) {
         return;
       }
       if (notificationId) {
-        handledNotificationResponseIdRef.current = notificationId;
+        handledNotificationResponseRef.current = { id: notificationId, receivedAt: now };
       }
 
       const notificationRouteParams = {
@@ -270,6 +279,12 @@ export default function RootLayout() {
         sourceType: typeof routeParams?.sourceType === 'string' ? routeParams.sourceType : null,
         sourceId: typeof routeParams?.sourceId === 'string' ? routeParams.sourceId : null,
       };
+
+      // A push can be opened from any workspace. Select its workspace before
+      // mounting Notifications so the requested event is present in the list.
+      if (notificationRouteParams.workspaceId) {
+        selectWorkspace(notificationRouteParams.workspaceId);
+      }
 
       router.replace({
         pathname: route,

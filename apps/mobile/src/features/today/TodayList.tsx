@@ -358,9 +358,14 @@ export function TodayList({
   ];
   const attentionItems = attentionExpanded ? allAttentionItems : allAttentionItems.slice(0, 5);
   const attentionIds = new Set(attentionItems.map((item) => item.id));
-  const todayItems = today.filter(
-    (item) => item.type !== 'focus' && !attentionIds.has(item.id) && !nextUpIds.has(item.id),
-  );
+  // When the Today summary is selected, show the complete Today population.
+  // The summary count is based on these same non-focus, non-overdue items;
+  // subtracting Next up/Needs attention here made a nonzero filter render empty.
+  const todayItems = surfaceSection === 'today'
+    ? today.filter((item) => item.type !== 'focus' && item.status !== 'overdue')
+    : today.filter(
+        (item) => item.type !== 'focus' && !attentionIds.has(item.id) && !nextUpIds.has(item.id),
+      );
   const intakeItems = captures.items.slice(0, intakeExpanded ? captures.items.length : 3);
   const noteItems = notes.slice(0, 3);
 

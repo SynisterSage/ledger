@@ -46,6 +46,7 @@ import { useApi } from '../../hooks/useApi';
 import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import { subscribeToAskLedgerActionCompleted } from '../../shared/askLedger/actionEvents.ts';
 import { useViewportHeight } from '../../hooks/useViewportHeight';
 import {
@@ -925,11 +926,13 @@ type ProjectDraft = {
 export const ProjectsWindow = ({
   webQuery,
   previewMode = false,
-}: { webQuery?: { projectId?: string; taskId?: string }; previewMode?: boolean } = {}) => {
+  isActive = true,
+}: { webQuery?: { projectId?: string; taskId?: string }; previewMode?: boolean; isActive?: boolean } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
+  const { inboxCount, unreadCount: notificationCount } = useNotificationCenter();
   const platform = usePlatform();
   const toast = useToast();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
@@ -986,8 +989,6 @@ export const ProjectsWindow = ({
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProjectStatusFilter>('all');
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
@@ -1289,7 +1290,7 @@ export const ProjectsWindow = ({
       'events',
       'reminders',
     ],
-    enabled: Boolean(user && activeWorkspaceId),
+    enabled: Boolean(isActive && user && activeWorkspaceId),
     onChange: handleWorkspaceRefresh,
   });
 
@@ -3164,6 +3165,21 @@ export const ProjectsWindow = ({
 
   const updateProjectStatus = useCallback(
     async (projectId: string, semantic: ProjectSemanticStatus) => {
+      const previous = projects.find((project) => project.id === projectId);
+      if (!previous) return;
+
+      const optimistic: ProjectRow = {
+        ...previous,
+        status: projectStatusCandidates[semantic][0],
+        ...(semantic === 'completed' ? { completeness: 100 } : {}),
+      };
+      setProjects((current) =>
+        current.map((project) => (project.id === projectId ? optimistic : project))
+      );
+      if (selectedProjectId === projectId) {
+        syncDraftFromProject(optimistic);
+      }
+
       try {
         const completeness = semantic === 'completed' ? 100 : undefined;
         const data = await api.updateProject(projectId, {
@@ -3179,12 +3195,18 @@ export const ProjectsWindow = ({
           syncDraftFromProject(updated);
         }
       } catch (updateError) {
+        setProjects((current) =>
+          current.map((project) => (project.id === projectId ? previous : project))
+        );
+        if (selectedProjectId === projectId) {
+          syncDraftFromProject(previous);
+        }
         setError(
           updateError instanceof Error ? updateError.message : 'Could not update project status.'
         );
       }
     },
-    [api, selectedProjectId, syncDraftFromProject]
+    [api, projects, selectedProjectId, syncDraftFromProject]
   );
 
   const updateProjectColor = useCallback(
@@ -3502,29 +3524,25 @@ export const ProjectsWindow = ({
     }
 
     try {
-      const [eventsPayload, remindersPayload, milestonesPayload, noteLinkPayloads] =
+      const [eventsPayload, remindersPayload, milestonesPayload, noteLinksPayload] =
         await Promise.all([
           api.getEvents(),
           api.getReminders(),
           api.getWorkspaceProjectMilestones(),
-          Promise.all(
-            projects.map(async (project) => {
-              try {
-                const payload = (await api.getProjectNoteLinks(project.id)) as {
-                  links?: ProjectNoteLink[];
-                };
-                return [
-                  project.id,
-                  Array.isArray(payload?.links) ? payload.links.length : 0,
-                ] as const;
-              } catch {
-                return [project.id, 0] as const;
-              }
-            })
-          ),
+          api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
         ]);
 
       const projectIds = new Set(projects.map((project) => project.id));
+      const noteLinks = Array.isArray(
+        (noteLinksPayload as { links?: ProjectNoteLink[] } | null)?.links
+      )
+        ? ((noteLinksPayload as { links: ProjectNoteLink[] }).links ?? [])
+        : [];
+      const noteLinkCounts = new Map<string, number>(projects.map((project) => [project.id, 0]));
+      for (const link of noteLinks) {
+        if (!link.project_id || !projectIds.has(link.project_id)) continue;
+        noteLinkCounts.set(link.project_id, (noteLinkCounts.get(link.project_id) ?? 0) + 1);
+      }
       setWorkspaceEvents(
         Array.isArray(eventsPayload)
           ? (eventsPayload as ProjectCalendarEvent[]).filter((event) =>
@@ -3546,7 +3564,7 @@ export const ProjectsWindow = ({
             )
           : []
       );
-      setOverviewNoteLinkCounts(Object.fromEntries(noteLinkPayloads));
+      setOverviewNoteLinkCounts(Object.fromEntries(noteLinkCounts));
     } catch (error) {
       console.error('Failed to load workspace project context:', error);
       setWorkspaceEvents([]);
@@ -4255,103 +4273,6 @@ export const ProjectsWindow = ({
   useEffect(() => {
     void loadWorkspaceProjectContext();
   }, [loadWorkspaceProjectContext, workspaceRefreshToken]);
-
-  useEffect(() => {
-    if (!user) {
-      setInboxCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadInboxCount = async () => {
-      try {
-        const payload = (await api.getInboxCount()) as { count?: number };
-        if (!cancelled) {
-          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-        }
-      } catch {
-        if (!cancelled) setInboxCount(0);
-      }
-    };
-
-    void loadInboxCount();
-
-    const handleRefreshInboxCount = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      void loadInboxCount();
-    };
-
-    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
-      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
-        setInboxCount((current) => Math.max(0, current + payload.delta!));
-        return;
-      }
-
-      void loadInboxCount();
-    };
-
-    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
-    window.addEventListener('focus', handleRefreshInboxCount);
-    document.addEventListener('visibilitychange', handleRefreshInboxCount);
-
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      void loadInboxCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
-      window.removeEventListener('focus', handleRefreshInboxCount);
-      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
-    };
-  }, [api, user]);
-
-  useEffect(() => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadNotificationCount = async () => {
-      try {
-        const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { unread?: number };
-        };
-        if (!cancelled) {
-          setNotificationCount(Number(payload?.counts?.unread ?? 0));
-        }
-      } catch {
-        if (!cancelled) setNotificationCount(0);
-      }
-    };
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? 0));
-    };
-
-    void loadNotificationCount();
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-
-    const timer = window.setInterval(() => {
-      void loadNotificationCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-    };
-  }, [api, user]);
 
   useEffect(() => {
     if (!selectedProjectId) {

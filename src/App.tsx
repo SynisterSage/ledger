@@ -89,22 +89,11 @@ import {
 } from './components/Common/IntegrationProviderMark';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
-import CalendarWindow from './components/Calendar/CalendarWindow';
-import CircleWindow from './components/Circle/CircleWindow';
-import NotesWindow from './components/Notes/NotesWindow';
-import ProjectsWindow from './components/Projects/ProjectsWindow';
-import TeamsWindow from './components/Teams/TeamsWindow';
-import TeamSettingsWindow from './components/Teams/TeamSettingsWindow';
-import IntakeWindow from './components/Inbox/InboxWindow';
-import SlackWindow from './components/Slack/SlackWindow';
-import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import {
   NotificationTray,
   NOTIFICATION_TRAY_TOGGLE_EVENT,
 } from './components/Notifications/NotificationTray';
-import { NotificationCenterProvider } from './components/Notifications/NotificationCenterContext';
-import SettingsWindow from './components/Settings/SettingsWindow';
-import FilesWindow from './components/Files/FilesWindow';
+import { NotificationCenterProvider, useNotificationCenter } from './components/Notifications/NotificationCenterContext';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
 import { useSearch } from './context/SearchContext';
@@ -202,6 +191,32 @@ const AgentAskLedgerLoading = () => (
     <div className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-xs text-[var(--ledger-text-muted)]">
       Ask Ledger…
     </div>
+  </div>
+);
+
+// Keep module code out of the initial renderer chunk. These components are
+// still mounted through the same keep-alive shell and retain their existing
+// routing/IPC behavior; only their JavaScript loading is deferred until the
+// module is first opened.
+const CalendarWindow = lazy(() => import('./components/Calendar/CalendarWindow'));
+const CircleWindow = lazy(() => import('./components/Circle/CircleWindow'));
+const NotesWindow = lazy(() => import('./components/Notes/NotesWindow'));
+const ProjectsWindow = lazy(() => import('./components/Projects/ProjectsWindow'));
+const TeamsWindow = lazy(() => import('./components/Teams/TeamsWindow'));
+const TeamSettingsWindow = lazy(() => import('./components/Teams/TeamSettingsWindow'));
+const IntakeWindow = lazy(() => import('./components/Inbox/InboxWindow'));
+const SlackWindow = lazy(() => import('./components/Slack/SlackWindow'));
+const NotificationCenterWindow = lazy(() =>
+  import('./components/Notifications/NotificationCenterWindow').then((module) => ({
+    default: module.NotificationCenterWindow,
+  }))
+);
+const SettingsWindow = lazy(() => import('./components/Settings/SettingsWindow'));
+const FilesWindow = lazy(() => import('./components/Files/FilesWindow'));
+
+const ModuleLoadingFallback = () => (
+  <div className="flex h-full min-h-0 items-center justify-center bg-[var(--ledger-background)] p-6">
+    <div className="h-2 w-20 animate-pulse rounded-full bg-[var(--ledger-border-subtle)]" aria-label="Loading module" />
   </div>
 );
 
@@ -1509,11 +1524,13 @@ const dashboardCache = new Map<
 // Dashboard content component
 export function DashboardContent({
   browserMode = false,
+  isActive = true,
   initialSection,
   initialFocusTaskId,
   onBrowserClose,
 }: {
   browserMode?: boolean;
+  isActive?: boolean;
   initialSection?: 'all' | 'assigned' | 'today' | 'projects' | 'notes';
   initialFocusTaskId?: string | null;
   onBrowserClose?: () => void;
@@ -1522,6 +1539,7 @@ export function DashboardContent({
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const platform = usePlatform();
   const api = useApi();
+  const { inboxCount, unreadCount: notificationCount } = useNotificationCenter();
   const { workspaceShellLayout } = useSidebar();
   const toast = useToast();
   const openQuickTask = () => {
@@ -1730,8 +1748,6 @@ export function DashboardContent({
     }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
   const [githubAttention, setGithubAttention] = useState<
     Array<{
       id: string;
@@ -1777,7 +1793,7 @@ export function DashboardContent({
     Array<{ id: string; name: string; identifier?: string | null }>
   >([]);
   useEffect(() => {
-    if (!user || !activeWorkspaceId) {
+    if (!isActive || !user || !activeWorkspaceId) {
       setGithubAttention([]);
       return;
     }
@@ -1936,6 +1952,38 @@ export function DashboardContent({
       cancelled = true;
     };
   }, [activeWorkspaceId, api]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !user) {
+      setWorkspaceTeams([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadWorkspaceTeams = async () => {
+      try {
+        const payload = (await api.getTeams()) as
+          | Array<{ id: string; name: string; identifier?: string | null }>
+          | { teams?: Array<{ id: string; name: string; identifier?: string | null }> }
+          | null;
+        if (cancelled) return;
+        const teams = Array.isArray(payload) ? payload : Array.isArray(payload?.teams) ? payload.teams : [];
+        setWorkspaceTeams(
+          teams
+            .map((team) => ({ id: team.id, name: team.name, identifier: team.identifier ?? null }))
+            .filter((team) => Boolean(team.id && team.name))
+        );
+      } catch {
+        if (!cancelled) setWorkspaceTeams([]);
+      }
+    };
+
+    void loadWorkspaceTeams();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, api, user]);
+
   const [dashboardContextMenu, setDashboardContextMenu] = useState<
     | { x: number; y: number; type: 'followup'; taskId: string }
     | { x: number; y: number; type: 'timeline'; eventId: string }
@@ -2238,9 +2286,15 @@ export function DashboardContent({
       }
     };
 
-    void generate();
+    // Let the dashboard paint and accept input before starting the optional
+    // local-AI pass. This keeps the first usable frame responsive without
+    // changing the generated result or its cache behavior.
+    const generationTimer = window.setTimeout(() => {
+      void generate();
+    }, 180);
     return () => {
       cancelled = true;
+      window.clearTimeout(generationTimer);
     };
   }, [
     activeWorkspaceId,
@@ -2522,7 +2576,7 @@ export function DashboardContent({
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
     tables: ['notes', 'projects', 'tasks', 'events', 'reminders', 'project_note_links'],
-    enabled: Boolean(user && activeWorkspaceId),
+    enabled: Boolean(isActive && user && activeWorkspaceId),
     onChange: handleDashboardWorkspaceRefresh,
   });
 
@@ -2578,47 +2632,6 @@ export function DashboardContent({
       cancelled = true;
     };
   }, [activeWorkspace?.is_personal, api, user]);
-
-  useEffect(() => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadNotificationSummary = async () => {
-      try {
-        const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { active?: number; unread?: number };
-        };
-        if (cancelled) return;
-        setNotificationCount(Number(payload?.counts?.unread ?? payload?.counts?.active ?? 0));
-      } catch {
-        if (!cancelled) {
-          setNotificationCount(0);
-        }
-      }
-    };
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? 0));
-    };
-
-    void loadNotificationSummary();
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-    };
-  }, [api, user]);
 
   useEffect(() => {
     window.ledgerIpc?.commands?.trayUpdateState({
@@ -2699,7 +2712,6 @@ export function DashboardContent({
           noteData,
           taskData,
           projectNoteLinksData,
-          teamsData,
         ] = await Promise.allSettled([
           api.getDailyAccountability(),
           api.getToday(),
@@ -2709,7 +2721,6 @@ export function DashboardContent({
           api.getNotes(),
           api.getTasks(),
           api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
-          api.getTeams(),
         ]);
 
         if (cancelled) return;
@@ -2822,42 +2833,6 @@ export function DashboardContent({
                 ).links
               : []
             : [];
-
-        const normalizedTeams =
-          teamsData.status === 'fulfilled'
-            ? Array.isArray(teamsData.value)
-              ? (teamsData.value as Array<{
-                  id: string;
-                  name: string;
-                  identifier?: string | null;
-                }>)
-              : Array.isArray(
-                  (
-                    teamsData.value as {
-                      teams?: Array<{
-                        id: string;
-                        name: string;
-                        identifier?: string | null;
-                      }> | null;
-                    } | null
-                  )?.teams
-                )
-              ? (
-                  teamsData.value as {
-                    teams: Array<{ id: string; name: string; identifier?: string | null }>;
-                  }
-                ).teams ?? []
-              : []
-            : [];
-        setWorkspaceTeams(
-          normalizedTeams
-            .map((team) => ({
-              id: team.id,
-              name: team.name,
-              identifier: team.identifier ?? null,
-            }))
-            .filter((team) => Boolean(team.id && team.name))
-        );
 
         setProjects(
           projectData.status === 'fulfilled'
@@ -3066,7 +3041,6 @@ export function DashboardContent({
           noteData.status === 'rejected' ? 'notes' : null,
           projectNoteLinksData.status === 'rejected' ? 'note links' : null,
           taskData.status === 'rejected' ? 'follow-ups' : null,
-          teamsData.status === 'rejected' ? 'teams' : null,
         ].filter(Boolean);
 
         if (failedSections.length > 0) {
@@ -3099,6 +3073,7 @@ export function DashboardContent({
       }
     };
 
+    if (!isActive) return;
     void loadDashboard();
     const timer = window.setInterval(() => {
       void loadDashboard();
@@ -3108,58 +3083,7 @@ export function DashboardContent({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeWorkspaceId, api, effectiveCalendarScope, dashboardRefreshToken, user]);
-
-  useEffect(() => {
-    if (!user || !activeWorkspaceId) {
-      setInboxCount(0);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadInboxCount = async () => {
-      try {
-        const payload = (await api.getInboxCount()) as { count?: number };
-        if (!cancelled) {
-          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-        }
-      } catch (error) {
-        console.error('Failed to load dashboard inbox count:', error);
-      }
-    };
-
-    void loadInboxCount();
-
-    const handleRefreshInboxCount = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      void loadInboxCount();
-    };
-
-    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
-      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
-        setInboxCount((current) => Math.max(0, current + payload.delta!));
-        return;
-      }
-      void loadInboxCount();
-    };
-
-    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
-    window.addEventListener('focus', handleRefreshInboxCount);
-    document.addEventListener('visibilitychange', handleRefreshInboxCount);
-
-    const timer = window.setInterval(() => {
-      void loadInboxCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
-      window.removeEventListener('focus', handleRefreshInboxCount);
-      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
-    };
-  }, [api, activeWorkspaceId, user]);
+  }, [activeWorkspaceId, api, effectiveCalendarScope, dashboardRefreshToken, isActive, user]);
 
   useEffect(() => {
     const handleCheckinUpdated = (
@@ -10263,13 +10187,13 @@ export function AppShell({
     const renderKeepAliveModule = (key: KeepAliveModuleKey) => {
       switch (key) {
         case 'calendar':
-          return <CalendarWindow />;
+          return <CalendarWindow isActive={key === activeKeepAliveModuleKey} />;
         case 'circle':
           return <CircleWindow focusContext={activeModuleFocusContext} />;
         case 'notes':
-          return <NotesWindow focusContext={activeModuleFocusContext || undefined} />;
+          return <NotesWindow isActive={key === activeKeepAliveModuleKey} focusContext={activeModuleFocusContext || undefined} />;
         case 'projects':
-          return <ProjectsWindow />;
+          return <ProjectsWindow isActive={key === activeKeepAliveModuleKey} />;
         case 'teams':
           return <TeamsWindow focusContext={activeModuleFocusContext || undefined} />;
         case 'team-settings':
@@ -10278,6 +10202,7 @@ export function AppShell({
           return (
             <DashboardContent
               key={activeWorkspaceId ?? 'workspace-none'}
+              isActive={key === activeKeepAliveModuleKey}
               initialFocusTaskId={workspaceShellRoute.focusTaskId ?? null}
             />
           );
@@ -10308,7 +10233,9 @@ export function AppShell({
               style={{ display: key === activeKeepAliveModuleKey ? 'block' : 'none' }}
               aria-hidden={key !== activeKeepAliveModuleKey}
             >
-              {renderKeepAliveModule(key)}
+              <Suspense fallback={<ModuleLoadingFallback />}>
+                {renderKeepAliveModule(key)}
+              </Suspense>
             </div>
           ))}
           <SharedIpcShellBottomStrip />

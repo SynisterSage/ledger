@@ -603,7 +603,7 @@ export class AskLedgerService {
       documents: request.documents,
       retrievalQuestion,
       skillId: skill?.id,
-      ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
+      ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources, customSkillInstructions: skill?.instructions } : {}),
       boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
       resolvedResourceKeys: [
         ...conversationResolution.resourceKeys,
@@ -1053,7 +1053,9 @@ export class AskLedgerService {
         ? buildCalendarScheduleOverview(request.documents, request.workspaceId, request.timeZone, request.timeFormat)
         : null;
       const weeklyWorkInstruction = intent.kind === 'weekly_overview' && !scheduleOverviewItem
-        ? 'This is a current-week workspace overview. Cover both the calendar schedule and the work around it: active projects, open tasks, milestones, reminders, and deadlines. Explain the main workload and next actions; do not answer with calendar events alone.'
+        ? /\b(?:free time|free slots?|open slots?|available time|availability|fit .* hours?|make room|block out)\b/i.test(normalizedQuestion)
+          ? 'This is a current-week time-availability planning request. Use the supplied dated calendar events and work context together. Identify candidate uninterrupted openings that satisfy the requested duration and number of days, state the date and start/end time for each, and explain what to plan in those blocks based on the open work. Do not invent availability outside the supplied schedule; if working hours or event end times are missing, state the assumption or limitation clearly.'
+          : 'This is a current-week workspace overview. Cover both the calendar schedule and the work around it: active projects, open tasks, milestones, reminders, and deadlines. Explain the main workload and next actions; do not answer with calendar events alone.'
         : '';
       const notesHomeInstruction = notesHomeScopeInstruction(explicitContext);
       const retrievalQuestion = [
@@ -1116,7 +1118,7 @@ export class AskLedgerService {
         documents: retrievalDocuments,
         retrievalQuestion,
         skillId: skill?.id,
-        ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
+        ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources, customSkillInstructions: skill?.instructions } : {}),
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(scheduleOverviewItem ? ['event:calendar-schedule-overview'] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
         attachmentFocus: attachmentAnchoredRequest,
         skipSemantic: attachmentAnchoredRequest || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
@@ -1210,10 +1212,11 @@ export class AskLedgerService {
       const evidenceStartedAt = Date.now();
       performanceTrace.mark('evidenceBuildStarted');
       const customSkill = Boolean(skill && !skill.outputSections);
+      const customDayPlanningSkill = customSkill && /\bplan\s+my\s+day\b/i.test(`${skill?.name ?? ''} ${skill?.instructions ?? ''}`);
       const evidenceBudget = {
-        maxResources: scheduleOverviewItem ? 1 : attachmentAnchoredRequest ? 12 : intent.kind === 'time_window' ? 32 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: scheduleOverviewItem ? 2600 : attachmentAnchoredRequest ? 4800 : intent.kind === 'time_window' ? 4200 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: scheduleOverviewItem ? 2400 : pastedTextItemTokens ?? (attachmentAnchoredRequest ? 420 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520),
+        maxResources: scheduleOverviewItem ? 1 : attachmentAnchoredRequest ? 12 : intent.kind === 'time_window' ? 32 : customDayPlanningSkill ? 14 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: scheduleOverviewItem ? 2600 : attachmentAnchoredRequest ? 4800 : intent.kind === 'time_window' ? 4200 : customDayPlanningSkill ? 3000 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxItemTokens: scheduleOverviewItem ? 2400 : pastedTextItemTokens ?? (attachmentAnchoredRequest ? 420 : customDayPlanningSkill ? 420 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520),
         maxAttachmentChunksPerFile: attachmentAnchoredRequest ? 12 : undefined,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
@@ -1238,7 +1241,7 @@ export class AskLedgerService {
         question: request.question,
         skillReasoningPolicy: skill?.reasoningPolicy,
       });
-      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: pastedTextAttachment ? 4800 : scheduleOverviewItem ? 3200 : customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: pastedTextItemTokens ?? (scheduleOverviewItem ? 2400 : customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700), sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: pastedTextAttachment ? 4800 : scheduleOverviewItem ? 3200 : customDayPlanningSkill ? 3000 : customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: pastedTextItemTokens ?? (scheduleOverviewItem ? 2400 : customDayPlanningSkill ? 420 : customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700), sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
@@ -1266,6 +1269,8 @@ export class AskLedgerService {
           computedResult = executeDeterministicAskLedgerTool(deterministicToolCall, {
             workspaceId: request.workspaceId,
             items: normalized.items,
+            now: new Date(),
+            timeZone: request.timeZone,
           });
           performanceTrace.set('computedTool', computedResult.toolName);
           performanceTrace.set('computedSourceCount', computedResult.sourceRefs.length);
@@ -1508,11 +1513,15 @@ export class AskLedgerService {
                     finish(generatedAnswer, validation, false);
                     return;
                   }
-                  // A contradictory answer should not trigger another long
-                  // model pass. Replace it with the safe grounded response;
-                  // coverage-only failures may still use the bounded repair.
-                  finish(ASK_LEDGER_ABSTENTION, validation, false, 0);
-                  return;
+                  // Bounded plans and weekly overviews can safely repair a
+                  // structured date/status slip against the same evidence.
+                  // Keep the conservative abstention for other ordinary
+                  // Ask Ledger answers, where a contradiction may indicate a
+                  // deeper grounding problem.
+                  if (!skill && intent.kind !== 'weekly_overview') {
+                    finish(ASK_LEDGER_ABSTENTION, validation, false, 0);
+                    return;
+                  }
                 }
                 const repairRequestId = `${requestId}:repair`;
                 const repairStartedAt = Date.now();

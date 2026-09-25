@@ -70,6 +70,24 @@ test('treats compact database statuses as their human-readable aliases', () => {
   assert.equal(result.contradictionIssues.length, 0);
 });
 
+test('does not classify an ambiguous duplicate title as a status contradiction', () => {
+  const packageValue = evidence({ requested: ['projects', 'meetings'], found: ['projects', 'meetings'] });
+  const project = { resourceType: 'project' as const, resourceId: 'project-ind-study', title: 'Ind Study', content: 'Independent study project.', status: 'InProgress' };
+  const event = { resourceType: 'event' as const, resourceId: 'event-ind-study', title: 'Ind Study', content: 'Independent study event.', status: 'planned' };
+  const source = (resource: typeof project | typeof event) => ({ resource, source: { resourceType: resource.resourceType, resourceId: resource.resourceId, title: resource.title, relationshipPath: [], score: { retrievalRelevance: 1, structuralRelevance: 1, temporalRelevance: 1, objectiveRelevance: 1, authority: 1, finalScore: 1, reasons: [] } } });
+  packageValue.sections = [{ category: 'projects', title: 'Projects', items: [source(project)] }, { category: 'meetings', title: 'Meetings', items: [source(event)] }];
+
+  const result = new AskLedgerAnswerValidator().validate({
+    question: 'What is my week looking like?',
+    answer: 'Ind Study is planned this week.',
+    evidencePackage: packageValue,
+    depth: 'deep',
+  });
+
+  assert.equal(result.contradictionIssues.length, 0);
+  assert.equal(result.repairRecommended, false);
+});
+
 test('rejects a valid but wrong attachment for an explicitly named syllabus request', () => {
   const packageValue = evidence();
   const wrongAttachment = {

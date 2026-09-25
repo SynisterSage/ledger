@@ -1,10 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { NotificationCenterWindow } from './NotificationCenterWindow';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePlatform } from '../../platform';
 import { useSidebar } from '../../context/SidebarContext';
 
 export const NOTIFICATION_TRAY_TOGGLE_EVENT = 'ledger:toggle-notification-tray';
+
+const NotificationCenterWindow = lazy(() =>
+  import('./NotificationCenterWindow').then(({ NotificationCenterWindow: Window }) => ({ default: Window }))
+);
 
 export const requestNotificationTrayToggle = () => {
   window.dispatchEvent(new CustomEvent(NOTIFICATION_TRAY_TOGGLE_EVENT));
@@ -94,11 +97,13 @@ export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onCl
       role="dialog"
       aria-label="Notifications"
     >
-      <NotificationCenterWindow
-        mode="tray"
-        onRequestClose={onClose}
-        onViewAll={openNotificationsPage}
-      />
+      <Suspense fallback={<div className="h-32 rounded-2xl border border-black/5 bg-white/80" aria-busy="true" />}>
+        <NotificationCenterWindow
+          mode="tray"
+          onRequestClose={onClose}
+          onViewAll={openNotificationsPage}
+        />
+      </Suspense>
     </div>
   );
 };

@@ -48,6 +48,7 @@ const normalize = (value: string) => value.toLowerCase().replace(/[’']/g, '').
 const countWords = /\b(?:last|latest|newest|recent|first|oldest|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)\b/i;
 const countWordValues: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const lastWorkdaySignals = /\b(?:last|final)\s+(?:day|workday)\b|\blast\s+day\s+(?:working|at work)\b/i;
+const availabilitySignals = /\b(?:free time|free slots?|open slots?|available time|availability|when can i fit|where can i fit|make room for|block out|time to work)\b/i;
 
 const startOfDay = (date: Date) => {
   const result = new Date(date);
@@ -121,6 +122,7 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const asksForWeekOverview = /\bmy week\b/.test(normalized)
     && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalized);
   if (asksForWeekOverview) return ['event', 'reminder', 'task', 'milestone', 'project'];
+  if (availabilitySignals.test(normalized)) return ['event', 'reminder', 'task', 'milestone', 'project'];
   const asksAboutFiles = /\b(?:files?|pdfs?|documents?|attachments?|folders?|links?)\b/.test(normalized)
     && !/\bnotes?\b/.test(normalized);
   // File names, folder paths, and connected links are inventory questions.
@@ -257,6 +259,8 @@ export const buildRetrievalPlan = (question: string, now = new Date(), canonical
   const primaryResourceTypes = resourceTypesFor(question);
   const personalWeekOverview = /\bmy week\b/.test(normalize(question))
     && /\b(?:what|whats|how|show|give|look|schedule|overview|like)\b/.test(normalize(question));
+  const personalAvailability = availabilitySignals.test(normalize(question))
+    && /\b(?:this week|my week|the week|three days?|\d+\s+days?)\b/.test(normalize(question));
   const isLastWorkday = lastWorkdaySignals.test(question);
   const entityQuery = entityQueryFor(question, primaryResourceTypes);
   const normalizedQuestion = normalize(question);
@@ -296,7 +300,7 @@ export const buildRetrievalPlan = (question: string, now = new Date(), canonical
     const thisWeek = addDays(start, -day);
     structuredConstraints.dueAfter = isoDate(addDays(thisWeek, -7));
     structuredConstraints.dueBefore = isoDate(addDays(thisWeek, -1));
-  } else if (!personalWeekOverview && /\b(?:this|my) week\b/.test(normalizedQuestion)) {
+  } else if (!personalWeekOverview && !personalAvailability && /\b(?:this|my) week\b/.test(normalizedQuestion)) {
     const start = startOfDay(now);
     const thisWeek = addDays(start, -start.getDay());
     structuredConstraints.dueAfter = isoDate(thisWeek);

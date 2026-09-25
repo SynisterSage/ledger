@@ -48,6 +48,15 @@ const statusAliases: Record<string, string[]> = {
   inprogress: ['in progress', 'in-progress', 'inprogress'],
 };
 const answerContainsStatus = (answer: string, status: string) => (statusAliases[status.replace(/\s+/g, '_')] ?? [status]).some((value) => new RegExp(`\\b${value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/_/g, '[ _-]')}\\b`, 'i').test(answer));
+const resourceTypeAliases: Record<AskLedgerContextItem['resourceType'], string[]> = {
+  project: ['project', 'projects'], event: ['event', 'events', 'meeting', 'meetings', 'calendar'],
+  task: ['task', 'tasks', 'action', 'actions'], milestone: ['milestone', 'milestones'], reminder: ['reminder', 'reminders'],
+  note: ['note', 'notes'], transcript: ['transcript', 'transcripts'], attachment: ['attachment', 'document', 'file'],
+  activity: ['activity', 'update', 'updates'], linked_resource: ['resource', 'link', 'links'], person: ['person', 'people'],
+  team: ['team', 'teams'], intake: ['intake'], notification: ['notification', 'notifications'], external: ['external'],
+};
+const hasResourceTypeContext = (line: string, resourceType: AskLedgerContextItem['resourceType']) =>
+  (resourceTypeAliases[resourceType] ?? [resourceType]).some((alias) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i').test(line));
 const providerPattern = (provider: string) => provider.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
 const explicitNegativeProviderClaim = (answer: string, provider: string) => new RegExp(`(?:no|none|nothing|did not find|there (?:was|were) no)\\s+(?:any\\s+)?${providerPattern(provider)}\\s+(?:updates?|activity|messages?|results?|work)`, 'i').test(answer);
 const availabilityAcknowledged = (answer: string, provider: string) => {
@@ -85,14 +94,20 @@ export class AskLedgerAnswerValidator {
       });
     }
     for (const provider of [...(input.evidencePackage.coverage.unavailable ?? []), ...(input.evidencePackage.coverage.notConnected ?? [])]) if (explicitNegativeProviderClaim(input.answer, provider) && !availabilityAcknowledged(input.answer, provider)) missingEvidenceIssues.push({ kind: 'missing_evidence', code: 'unavailable_claimed_empty', message: `${provider} was unavailable or not connected, so the answer must not claim that it had no results.`, category: provider });
+    const titleCounts = new Map<string, number>();
+    for (const { resource } of items) {
+      const title = normalize(resource.title);
+      if (title) titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+    }
     for (const { resource } of items) {
       if (resource.dueAt && !isCompleted(resource) && answer.includes(normalize(resource.title)) && (answer.includes('due') || answer.includes('deadline'))) {
         const expectedDates = dateVariants(resource.dueAt);
         if (expectedDates.length && !expectedDates.some((date) => answer.includes(date))) groundednessIssues.push({ kind: 'groundedness', code: 'structured_due_date_mismatch', message: `${resource.title} has due date ${resource.dueAt}, but the answer states a different date.`, claim: resource.title, sourceKeys: [keyFor(resource)] });
       }
       if (resource.status && answer.includes(normalize(resource.title))) {
-        const knownStatuses = ['completed', 'complete', 'done', 'blocked', 'in progress', 'not started', 'not completed', 'todo', 'to do', 'paused', 'open'];
+        const knownStatuses = ['completed', 'complete', 'done', 'blocked', 'in progress', 'planned', 'not started', 'not completed', 'todo', 'to do', 'paused', 'open'];
         const resourceLine = input.answer.split(/\r?\n/).find((line) => normalize(line).includes(normalize(resource.title))) ?? '';
+        if ((titleCounts.get(normalize(resource.title)) ?? 0) > 1 && !hasResourceTypeContext(resourceLine, resource.resourceType)) continue;
         const mentionedStatus = knownStatuses.find((status) => answerContainsStatus(resourceLine, status)); const expected = normalize(resource.status).replace(/\s+/g, '_');
         const matches = mentionedStatus && answerContainsStatus(mentionedStatus, expected);
         if (mentionedStatus && !matches && !answer.includes('appears') && !answer.includes('evidence suggests')) contradictionIssues.push({ kind: 'contradiction', code: 'structured_status_mismatch', message: `${resource.title} has current status ${resource.status}, which conflicts with the answer.`, claim: resource.title, sourceKeys: [keyFor(resource)] });

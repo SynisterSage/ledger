@@ -30,6 +30,7 @@ import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderSegmentedGroup,
@@ -763,6 +764,7 @@ const intakeItemsCache = new Map<string, { updatedAt: number; items: InboxItem[]
 export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string; section?: InboxStatus } } = {}) {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const { unreadCount: notificationCount } = useNotificationCenter();
   const platform = usePlatform();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const { workspaceShellLayout } = useSidebar();
@@ -817,7 +819,6 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
   const [noteSections, setNoteSections] = useState<NoteSectionOption[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
   const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeamOption[]>([]);
-  const [notificationCount, setNotificationCount] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -826,7 +827,6 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
   const intakePreferencesHydratedRef = useRef(false);
   const loadInboxInFlightRef = useRef(false);
   const loadInboxAtRef = useRef(0);
-  const loadNotificationAtRef = useRef(0);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -981,73 +981,10 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
     }
   };
 
-  const loadNotificationSummary = async (opts?: { force?: boolean }) => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    const now = Date.now();
-    const notificationCooldownMs = 60_000;
-    if (!opts?.force && now - loadNotificationAtRef.current < notificationCooldownMs) {
-      return;
-    }
-    loadNotificationAtRef.current = now;
-
-    try {
-      const payload = (await api.getNotificationCenterSummary()) as {
-        counts?: { unread?: number };
-      };
-      setNotificationCount(Number(payload?.counts?.unread ?? 0));
-    } catch {
-      setNotificationCount(0);
-    }
-  };
-
   useEffect(() => {
     if (!user) return;
     void loadInbox(false, { force: true });
   }, [activeWorkspaceId, user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    void loadNotificationSummary({ force: true });
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? 0));
-    };
-
-    const handleNotificationsUpdated = () => {
-      if (!cancelled) void loadNotificationSummary();
-    };
-
-    const refreshNotifications = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (cancelled) return;
-      void loadNotificationSummary({ force: true });
-    };
-
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-    window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-    window.addEventListener('focus', refreshNotifications);
-    document.addEventListener('visibilitychange', refreshNotifications);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-      window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-      window.removeEventListener('focus', refreshNotifications);
-      document.removeEventListener('visibilitychange', refreshNotifications);
-    };
-  }, [api, user]);
 
   useEffect(() => {
     if (!activeWorkspaceId || !user) return;

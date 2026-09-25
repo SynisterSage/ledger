@@ -2048,14 +2048,15 @@ const mapNotificationEventRow = (row, extras = {}) => ({
   actions: extras.actions ?? [],
 });
 
-const getMobilePushTokensForUser = async (userId, platform = 'ios') => {
-  const { data, error } = await supabase
+const getMobilePushTokensForUser = async (userId, platform = null) => {
+  let query = supabase
     .from('mobile_push_tokens')
     .select(mobilePushTokenSelectColumns)
     .eq('user_id', userId)
-    .eq('platform', normalizeMobilePushPlatform(platform))
     .eq('enabled', true)
     .is('revoked_at', null);
+  if (platform) query = query.eq('platform', normalizeMobilePushPlatform(platform));
+  const { data, error } = await query;
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
@@ -2070,7 +2071,7 @@ const sendExpoPushMessages = async (messages) => {
     chunks.push(payload.slice(index, index + 100));
   }
 
-  const results = [];
+  const tickets = [];
   for (const chunk of chunks) {
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
@@ -2087,19 +2088,18 @@ const sendExpoPushMessages = async (messages) => {
       throw new Error(text || `Expo push request failed with status ${response.status}`);
     }
 
-    if (!text) {
-      results.push(null);
-      continue;
-    }
-
     try {
-      results.push(JSON.parse(text));
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed?.data)) {
+        throw new Error('Expo push response did not include delivery tickets.');
+      }
+      tickets.push(...parsed.data);
     } catch {
-      results.push(text);
+      throw new Error(`Expo push response was not valid JSON: ${text.slice(0, 240)}`);
     }
   }
 
-  return results;
+  return tickets;
 };
 
 const notificationTypeFallbackLabel = (notificationType, sourceType) => {
@@ -2972,7 +2972,9 @@ const processNotificationEventsForUser = async (userId) => {
     workspaceIds.length
       ? supabase.from('workspaces').select('id, name, color').in('id', workspaceIds)
       : Promise.resolve({ data: [], error: null }),
-    getMobilePushTokensForUser(userId, 'ios'),
+    // Expo messages are platform-neutral. Restricting this to iOS meant a
+    // valid Android token was never eligible for Ledger notifications.
+    getMobilePushTokensForUser(userId),
   ]);
 
   if (workspaceResult.error) throw workspaceResult.error;
@@ -3002,7 +3004,7 @@ const processNotificationEventsForUser = async (userId) => {
     return eventRows;
   }
 
-  const pushMessages = eventRows
+  const pushDeliveries = eventRows
     .filter((row) => !row.delivered_mobile_at && !row.dismissed_at)
     .flatMap((row) => {
       const candidate = candidateByEventKey.get(
@@ -3010,24 +3012,51 @@ const processNotificationEventsForUser = async (userId) => {
       );
       const workspace = workspaceById.get(row.workspace_id ?? '') ?? null;
       return mobileTokens.map((token) => ({
-        ...buildMobilePushMessage({ row, candidate, workspace }),
-        to: token,
+        eventId: row.id,
+        token,
+        message: {
+          ...buildMobilePushMessage({ row, candidate, workspace }),
+          to: token,
+        },
       }));
     });
 
-  if (!pushMessages.length) {
+  if (!pushDeliveries.length) {
     return eventRows;
   }
 
   try {
-    await sendExpoPushMessages(pushMessages);
+    const tickets = await sendExpoPushMessages(pushDeliveries.map((delivery) => delivery.message));
+    const deliveredEventIds = new Set();
+    const invalidTokens = new Set();
+
+    pushDeliveries.forEach((delivery, index) => {
+      const ticket = tickets[index];
+      if (ticket?.status === 'ok') {
+        deliveredEventIds.add(delivery.eventId);
+        return;
+      }
+      if (ticket?.details?.error === 'DeviceNotRegistered') {
+        invalidTokens.add(delivery.token);
+      }
+      console.warn('[notifications] Expo push ticket rejected:', ticket?.message ?? ticket?.details?.error ?? 'Unknown error');
+    });
+
     const nowIso = new Date().toISOString();
-    await supabase
-      .from('notification_events')
-      .update({ delivered_mobile_at: nowIso, updated_at: nowIso })
-      .in('id', eventIds)
-      .is('delivered_mobile_at', null)
-      .is('dismissed_at', null);
+    if (invalidTokens.size) {
+      await supabase
+        .from('mobile_push_tokens')
+        .update({ enabled: false, revoked_at: nowIso, updated_at: nowIso })
+        .in('push_token', Array.from(invalidTokens));
+    }
+    if (deliveredEventIds.size) {
+      await supabase
+        .from('notification_events')
+        .update({ delivered_mobile_at: nowIso, updated_at: nowIso })
+        .in('id', Array.from(deliveredEventIds))
+        .is('delivered_mobile_at', null)
+        .is('dismissed_at', null);
+    }
   } catch (error) {
     console.error('[notifications] Mobile push delivery failed:', error?.message ?? error);
   }

@@ -19,7 +19,7 @@ import { NotificationDetailSheet } from '@/features/notifications/NotificationDe
 import { NotificationFilterSheet } from '@/features/notifications/NotificationFilterSheet';
 import { NotificationList } from '@/features/notifications/NotificationList';
 import { NotificationSkeleton } from '@/features/notifications/NotificationSkeleton';
-import { getCachedMobileNotifications, markAllMobileNotificationsRead, performMobileNotificationAction } from '@/api/notifications';
+import { getCachedMobileNotifications, invalidateCachedMobileNotifications, markAllMobileNotificationsRead, performMobileNotificationAction } from '@/api/notifications';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
 import { mobileRequest } from '@/api/client';
@@ -196,10 +196,11 @@ function NotificationsScreen() {
     setIsRefreshing(true);
     try {
       await loadNotifications({ silent: false, force: true });
+      invalidateCachedMobileNotifications(workspaceState.selectedWorkspaceId);
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadNotifications]);
+  }, [loadNotifications, workspaceState.selectedWorkspaceId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -237,25 +238,27 @@ function NotificationsScreen() {
     setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: false, readAt })));
     try {
       await performMobileNotificationAction(item.id, 'read');
+      invalidateCachedMobileNotifications(workspaceState.selectedWorkspaceId);
     } catch {
       setNotifications(previous);
       showActionMessage('Couldn’t mark notification as read');
     } finally {
       mutationIdsRef.current.delete(item.id);
     }
-  }, [notifications, showActionMessage, updateNotification]);
+  }, [notifications, showActionMessage, updateNotification, workspaceState.selectedWorkspaceId]);
 
   const commitDismissal = useCallback(async (item: MobileNotificationCenterItem) => {
     mutationIdsRef.current.add(item.id);
     try {
       await performMobileNotificationAction(item.id, 'dismiss');
+      invalidateCachedMobileNotifications(workspaceState.selectedWorkspaceId);
     } catch {
       setNotifications((current) => ({ ...current, active: [...current.active, item], earlier: current.earlier.filter((candidate) => candidate.id !== item.id) }));
       showActionMessage('Couldn’t dismiss notification');
     } finally {
       mutationIdsRef.current.delete(item.id);
     }
-  }, [showActionMessage]);
+  }, [showActionMessage, workspaceState.selectedWorkspaceId]);
 
   const dismissNotification = useCallback((item: MobileNotificationCenterItem) => {
     if (mutationIdsRef.current.has(item.id)) return;
@@ -299,6 +302,7 @@ function NotificationsScreen() {
     }));
     try {
       await markAllMobileNotificationsRead(workspaceState.selectedWorkspaceId);
+      invalidateCachedMobileNotifications(workspaceState.selectedWorkspaceId);
     } catch {
       setNotifications(previous);
       showActionMessage('Couldn’t mark notifications as read');
@@ -493,6 +497,7 @@ function NotificationsScreen() {
 
       if (actionId === 'mark_unread') {
         await performMobileNotificationAction(item.id, 'unread');
+        invalidateCachedMobileNotifications(workspaceState.selectedWorkspaceId);
         setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: true, readAt: null })));
         closeNotificationSheet();
         return;
@@ -695,6 +700,7 @@ function NotificationsScreen() {
       router,
       scheduleFollowUpSheet,
       scheduleQuickNoteSheet,
+      workspaceState.selectedWorkspaceId,
     ],
   );
 

@@ -64,6 +64,7 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
 import { usePins } from '../../context/PinsContext';
 import { supabase } from '../../services/supabase';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import { createSignedStorageUrl } from '../../services/privateStorage';
 import {
   ModuleHeaderActionButton,
@@ -2525,12 +2526,13 @@ const MeetingRecapReviewBar = ({
   </div>
 );
 
-export const NotesWindow = ({ focusContext, initialView }: { focusContext?: string; initialView?: 'write' | 'outline' | 'map' | 'transcribe' } = {}) => {
+export const NotesWindow = ({ focusContext, initialView, isActive = true }: { focusContext?: string; initialView?: 'write' | 'outline' | 'map' | 'transcribe'; isActive?: boolean } = {}) => {
   const platform = usePlatform();
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
+  const { inboxCount, unreadCount: notificationCount } = useNotificationCenter();
   const viewportWidth = useViewportWidth();
   const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId');
   const initialFocusContext =
@@ -2761,8 +2763,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [isHydratingNote, setIsHydratingNote] = useState(false);
   const [hasHydratedNote, setHasHydratedNote] = useState(false);
   const [hasUserEdited, setHasUserEdited] = useState(false);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [saveStatusTick, setSaveStatusTick] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
@@ -3400,12 +3400,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   useEffect(() => {
     const audio = window.meetingAudio;
+    let cancelled = false;
     if (!audio) {
       setAudioPermissions(null);
       setAudioCaptureStatus(null);
       return;
     }
-    let cancelled = false;
     void Promise.all([audio.permissions(), audio.status(), audio.recoveries()])
       .then(([permissions, status, recoveries]) => {
         if (cancelled) return;
@@ -3447,11 +3447,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   useEffect(() => {
     const audio = window.meetingAudio;
     const sessionId = meetingAudioSessionId;
+    let cancelled = false;
     if (!audio || !isMeetingNote || !sessionId) {
       setAudioSessionInspection(null);
       return;
     }
-    let cancelled = false;
     void audio
       .inspect(sessionId)
       .then((value) => {
@@ -4239,102 +4239,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     selectedNoteIdsRef.current = selectedNoteIds;
     bulkSidebarSelectionRef.current = selectedNoteIds.length > 1;
   }, [selectedNoteIds]);
-
-  useEffect(() => {
-    if (!user) {
-      setInboxCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadInboxCount = async () => {
-      try {
-        const payload = (await api.getInboxCount()) as { count?: number };
-        if (!cancelled) {
-          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-        }
-      } catch {
-        if (!cancelled) setInboxCount(0);
-      }
-    };
-
-    void loadInboxCount();
-
-    const handleRefreshInboxCount = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      void loadInboxCount();
-    };
-
-    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
-      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
-        setInboxCount((current) => Math.max(0, current + payload.delta!));
-        return;
-      }
-
-      void loadInboxCount();
-    };
-
-    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
-    window.addEventListener('focus', handleRefreshInboxCount);
-    document.addEventListener('visibilitychange', handleRefreshInboxCount);
-
-    const timer = window.setInterval(() => {
-      void loadInboxCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
-      window.removeEventListener('focus', handleRefreshInboxCount);
-      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
-    };
-  }, [api, user]);
-
-  useEffect(() => {
-    if (!user) {
-      setNotificationCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    const loadNotificationCount = async () => {
-      try {
-        const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { unread?: number };
-        };
-        if (!cancelled) {
-          setNotificationCount(Number(payload?.counts?.unread ?? 0));
-        }
-      } catch {
-        if (!cancelled) setNotificationCount(0);
-      }
-    };
-
-    const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? 0));
-    };
-
-    void loadNotificationCount();
-    window.addEventListener(
-      'ledger:notifications-summary',
-      handleNotificationsSummary as EventListener
-    );
-
-    const timer = window.setInterval(() => {
-      void loadNotificationCount();
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.removeEventListener(
-        'ledger:notifications-summary',
-        handleNotificationsSummary as EventListener
-      );
-    };
-  }, [api, user]);
 
   const notesRef = useRef<NoteRow[]>(notes);
   useEffect(() => {
@@ -7046,7 +6950,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   }, [dismissRemoteNoteUpdateToast, selectedNoteId]);
 
   useEffect(() => {
-    if (!user?.id || !activeWorkspaceId) return;
+    if (!isActive || !user?.id || !activeWorkspaceId) return;
 
     const channel = supabase
       .channel(`notes-realtime-${activeWorkspaceId}`)
@@ -7104,7 +7008,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeWorkspaceId, getNoteUpdatedByLabel, showRemoteNoteUpdateToast, user?.id]);
+  }, [activeWorkspaceId, getNoteUpdatedByLabel, isActive, showRemoteNoteUpdateToast, user?.id]);
 
   useEffect(() => {
     if (!selectedNoteId || !selectedNote) return;
@@ -7872,24 +7776,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       }
       if (navigationRequest !== noteNavigationRequestRef.current) return;
       let noteToOpen = note;
-      // The notes list is intentionally summary-only and some callers can
-      // provide a legacy row with plain-text `content`. Custom Lexical nodes
-      // (including callouts) only survive in `content_html`, so opening a row
-      // without that canonical field must always hydrate by id first.
-      if (typeof note.content_html !== 'string') {
-        setIsHydratingNote(true);
-        setHasHydratedNote(false);
-        try {
-          noteToOpen = (await api.getNoteById(note.id)) as NoteRow;
-          if (navigationRequest !== noteNavigationRequestRef.current) return;
-          setNotes((prev) => prev.map((row) => (row.id === noteToOpen.id ? noteToOpen : row)));
-        } catch (error) {
-          setIsHydratingNote(false);
-          setError(error instanceof Error ? error.message : 'Could not load note.');
-          return;
-        }
-      }
+      const needsDetailHydration = typeof note.content_html !== 'string';
+
+      // Mark the route as owned by this open before broadcasting it. The route
+      // listener receives that broadcast synchronously and must not start a
+      // second detail request for the same note.
+      hydrationNoteIdRef.current = note.id;
+      setError(null);
+
+      // Select immediately, but keep the canvas covered until canonical HTML
+      // arrives so stale or empty editor content cannot flash or autosave.
       setSelectedNoteId(note.id);
+      setIsHydratingNote(needsDetailHydration);
+      setHasHydratedNote(!needsDetailHydration);
       window.dispatchEvent(new CustomEvent('ledger:workspace-resource-route', {
         detail: {
           route: {
@@ -7902,6 +7801,23 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       if (!bulkSidebarSelectionRef.current) {
         setSelectedNoteIds([note.id]);
         selectionAnchorNoteIdRef.current = note.id;
+      }
+      // The notes list is intentionally summary-only and some callers can
+      // provide a legacy row with plain-text `content`. Custom Lexical nodes
+      // (including callouts) only survive in `content_html`, so opening a row
+      // without that canonical field must always hydrate by id first.
+      if (needsDetailHydration) {
+        try {
+          noteToOpen = (await api.getNoteById(note.id)) as NoteRow;
+          if (navigationRequest !== noteNavigationRequestRef.current) return;
+          setNotes((prev) => prev.map((row) => (row.id === noteToOpen.id ? noteToOpen : row)));
+        } catch (error) {
+          hydrationNoteIdRef.current = null;
+          setIsHydratingNote(false);
+          setHasHydratedNote(false);
+          setError(error instanceof Error ? error.message : 'Could not load note.');
+          return;
+        }
       }
       syncDraftFromNote(noteToOpen);
       recordNoteOpened(note.id);
@@ -8547,6 +8463,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   );
 
   useEffect(() => {
+    if (!isActive) return;
     void loadNotes();
     const poll = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
@@ -8563,7 +8480,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         window.clearTimeout(savingIndicatorTimerRef.current);
       }
     };
-  }, [loadNotes, activeWorkspaceId]);
+  }, [loadNotes, activeWorkspaceId, isActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -10106,6 +10023,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
               </div>
             ) : selectedNote ? (
               <div className="notes-document-canvas relative flex flex-1 flex-col min-h-0">
+                {isHydratingNote && (
+                  <div className="absolute inset-0 z-40 flex items-center justify-center bg-[var(--ledger-surface)]/80 backdrop-blur-[2px]" role="status" aria-live="polite">
+                    <div className="flex items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-sm">
+                      <Loader2 size={13} className="animate-spin" />
+                      Loading note…
+                    </div>
+                  </div>
+                )}
                 <div className="bg-[var(--ledger-surface)] px-6 pb-2 pt-6 sm:px-10 sm:pt-8">
                   <div className="mx-auto max-w-[800px]">
                     <div className="flex items-center justify-between gap-4">

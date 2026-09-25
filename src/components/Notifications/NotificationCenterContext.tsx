@@ -43,6 +43,7 @@ type NotificationCenterContextValue = {
   error: string | null;
   activeCount: number;
   unreadCount: number;
+  inboxCount: number;
   loadNotifications: (options?: { force?: boolean; background?: boolean }) => Promise<void>;
   applyAction: (item: NotificationCenterItem, action: NotificationAction) => Promise<void>;
   markAsRead: (item: NotificationCenterItem) => Promise<void>;
@@ -64,6 +65,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const [error, setError] = useState<string | null>(null);
   const [activeCount, setActiveCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [inboxCount, setInboxCount] = useState(0);
   const notificationLoadInFlightRef = useRef(false);
   const notificationLoadRequestRef = useRef(0);
   const notificationLoadAtRef = useRef(0);
@@ -71,6 +73,90 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const notificationLoadCooldownMs = 15_000;
   const retryAfterMs = 30_000;
   const defaultSnoozeMinutes = 10;
+
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      setInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadInboxCount = async () => {
+      try {
+        const payload = (await api.getInboxCount()) as { count?: number };
+        if (!cancelled) setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+      } catch {
+        if (!cancelled) setInboxCount(0);
+      }
+    };
+
+    void loadInboxCount();
+    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
+      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
+        setInboxCount((current) => Math.max(0, current + payload.delta!));
+      } else if (document.visibilityState === 'visible') {
+        void loadInboxCount();
+      }
+    };
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void loadInboxCount();
+    };
+
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadInboxCount();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [activeWorkspaceId, api, user]);
+
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      setUnreadCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadNotificationSummary = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { unread?: number; active?: number };
+        };
+        if (cancelled) return;
+        const nextUnreadCount = Number(payload?.counts?.unread ?? payload?.counts?.active ?? 0);
+        setUnreadCount(nextUnreadCount);
+        window.dispatchEvent(
+          new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: nextUnreadCount } })
+        );
+      } catch {
+        if (!cancelled) setUnreadCount(0);
+      }
+    };
+
+    void loadNotificationSummary();
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void loadNotificationSummary();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadNotificationSummary();
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [activeWorkspaceId, api, user]);
 
   const isTooManyRequests = useCallback((nextError: unknown) => {
     const message = nextError instanceof Error ? nextError.message : String(nextError ?? '');
@@ -202,6 +288,13 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   }, [api, toast]);
 
   useEffect(() => {
+    // Do not carry the previous workspace's unread badge while the new scope
+    // is hydrating. That stale value is what makes the badge flash briefly.
+    setActive([]);
+    setEarlier([]);
+    setActiveCount(0);
+    setUnreadCount(0);
+    window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: 0 } }));
     void loadNotifications();
   }, [loadNotifications]);
 
@@ -293,8 +386,8 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   }, [activeCount, api, defaultSnoozeMinutes, loadNotifications, openTarget, toast, unreadCount]);
 
   const value = useMemo(
-    () => ({ active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead }),
-    [active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead]
+    () => ({ active, earlier, loading, error, activeCount, unreadCount, inboxCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead }),
+    [active, earlier, loading, error, activeCount, unreadCount, inboxCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead]
   );
 
   return <NotificationCenterContext.Provider value={value}>{children}</NotificationCenterContext.Provider>;

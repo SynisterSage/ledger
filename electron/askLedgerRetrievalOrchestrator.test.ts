@@ -147,6 +147,30 @@ test('keeps attachment follow-up questions on the selected PDF when answer choic
   await index.shutdown();
 });
 
+test('routes free-time planning through calendar and work objectives', async () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const scheduledDay = new Date(today);
+  scheduledDay.setDate(scheduledDay.getDate() + 1);
+  const iso = (value: Date) => value.toISOString();
+  const eventStart = new Date(scheduledDay);
+  eventStart.setHours(10, 0, 0, 0);
+  const eventEnd = new Date(scheduledDay);
+  eventEnd.setHours(11, 0, 0, 0);
+  const event = item({ resourceType: 'event', resourceId: 'event-class', title: 'Class', content: 'Scheduled class.', timestamp: iso(eventStart), endAt: iso(eventEnd) });
+  const task = item({ resourceType: 'task', resourceId: 'task-design', title: 'Continue design work', content: 'Open project work.', dueAt: iso(scheduledDay), status: 'open', projectId: 'project-design' });
+  const project = item({ resourceType: 'project', resourceId: 'project-design', title: 'Design project', content: 'Project context.', status: 'in progress' });
+  const documents = [event, task, project];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'I need two hours of free time three days this week. What days and times work?', [], 32, { documents });
+
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'week-events' && objective.status === 'found'));
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'week-open-tasks' && objective.status === 'found'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'event-class'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-design'), true);
+  await index.shutdown();
+});
+
 test('keeps narrow questions on the quick retrieval path', async () => {
   assert.equal(classifyAskLedgerRetrievalMode('When is Alfa due?'), 'quick');
   assert.equal(classifyAskLedgerRetrievalMode('Show my today tasks.'), 'quick');
@@ -274,6 +298,34 @@ test('custom skills retrieve their declared workspace scope instead of parsing i
   assert.ok(result.items.some((entry) => entry.resourceId === 'team-design'));
   assert.ok(result.items.some((entry) => entry.resourceId === 'event-design'));
   assert.ok(result.items.some((entry) => entry.resourceId === 'note-design'));
+  await index.shutdown();
+});
+
+test('day-planning custom skills prioritize open today work and tomorrow preparation', async () => {
+  const today = new Date();
+  const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const todayKey = dateKey(today);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = dateKey(tomorrow);
+  const project = item({ resourceType: 'project', resourceId: 'project-photo', title: 'Digital Photo', content: 'Photography project.', status: 'In Progress' });
+  const todayTask = item({ resourceType: 'task', resourceId: 'task-today', title: 'Be ready to import to LRC', content: 'Prepare the import.', projectId: 'project-photo', projectName: 'Digital Photo', horizon: 'today', taskHorizon: 'today', dueAt: `${todayKey}T09:00:00`, status: 'Open' });
+  const tomorrowTask = item({ resourceType: 'task', resourceId: 'task-tomorrow', title: 'Prepare logo redesign', content: 'Prepare the logo deliverable.', projectId: 'project-photo', projectName: 'Digital Photo', dueAt: `${tomorrowKey}T12:00:00`, status: 'Open' });
+  const completed = item({ resourceType: 'task', resourceId: 'task-done', title: 'Old completed work', content: 'Already finished.', status: 'Completed' });
+  const documents = [project, todayTask, tomorrowTask, completed];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'Plan my day using projects, tasks, and things due today or tomorrow.', [], 20, {
+    documents,
+    skillId: 'custom-day-plan' as never,
+    customSkillInstructions: 'Plan my day using projects, tasks, and things due today or tomorrow.',
+    customSkillResourceTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder'],
+  });
+
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'day-today-tasks'));
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'day-tomorrow-tasks'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-today'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-tomorrow'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-done'), false);
   await index.shutdown();
 });
 

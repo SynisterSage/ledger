@@ -39,6 +39,7 @@ import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { UserAvatar } from '../Common/UserAvatar';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { useWorkspacePanePreferences } from '../../hooks/useWorkspacePanePreferences';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 
 type SlackWindowProps = { routeWorkspaceId?: string | null };
 type CaptureFilter = 'all' | 'in_intake' | 'converted' | 'failed';
@@ -183,6 +184,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { unreadCount: notificationCount } = useNotificationCenter();
   const { preferences: workspacePanePreferences } = useWorkspacePanePreferences(activeWorkspaceId);
   const platform = usePlatform();
   const workspaceId = routeWorkspaceId || activeWorkspaceId;
@@ -232,7 +234,6 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const [linkActivity, setLinkActivity] = useState<SlackActivity | null>(null);
   const [linkTargets, setLinkTargets] = useState<Array<{ id: string; targetType: string; title: string }>>([]);
   const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
   const [pageView, setPageView] = useState<'activity' | 'watched' | 'captures'>('activity');
 
   const loadStatus = useCallback(async () => {
@@ -339,15 +340,12 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const loadCounts = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      const [inbox, notifications] = await Promise.all([
+      const [inbox] = await Promise.all([
         api.getInboxCount() as Promise<{ count?: number }>,
-        api.getNotificationCenterSummary() as Promise<{ counts?: { unread?: number } }>,
       ]);
       setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
-      setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
     } catch {
       setInboxCount(0);
-      setNotificationCount(0);
     }
   }, [api, workspaceId]);
 

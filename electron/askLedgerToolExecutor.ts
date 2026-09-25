@@ -11,6 +11,7 @@ export type AskLedgerToolExecutionContext = {
   workspaceId: string;
   items: AskLedgerContextItem[];
   now?: Date;
+  timeZone?: string;
 };
 
 export type AskLedgerToolExecutionResult = {
@@ -36,6 +37,14 @@ export const resolveDeterministicAskLedgerToolCall = (
     ) ||
     (/\btoday\b/i.test(value) && /\b(?:plan|priorit(?:y|ies)|focus|next actions?)\b/i.test(value));
   if (asksForTodayPlan) return { name: 'compute_daily_plan', arguments: { maxFocusItems: 3 } };
+
+  if (/\b(?:free time|free slots?|open slots?|available time|availability|when can i fit|where can i fit|make room for|block out)\b/i.test(value)) {
+    const duration = value.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:hours?|hrs?)\b/i);
+    const days = value.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+days?\b/i);
+    const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const parse = (match: RegExpMatchArray | null, fallback: number) => match ? words[match[1].toLowerCase()] ?? Number(match[1]) : fallback;
+    return { name: 'find_weekly_availability', arguments: { durationMinutes: parse(duration, 2) * 60, days: parse(days, 1) } };
+  }
 
   const projectId =
     explicitContext?.resourceType === 'project'
@@ -163,6 +172,83 @@ const findProjectBlockers = (
   };
 };
 
+const localParts = (value: Date, timeZone?: string) => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(value);
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour') % 24, minute: get('minute') };
+};
+
+const dateKey = (parts: { year: number; month: number; day: number }) => `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+const addDays = (date: Date, amount: number) => { const result = new Date(date); result.setDate(result.getDate() + amount); return result; };
+const formatClock = (minutes: number) => {
+  const hour = Math.floor(minutes / 60);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  return `${hour % 12 || 12}:${String(minutes % 60).padStart(2, '0')} ${suffix}`;
+};
+
+const findWeeklyAvailability = (args: Record<string, unknown>, context: AskLedgerToolExecutionContext): AskLedgerToolExecutionResult => {
+  const durationMinutes = Math.max(30, Math.min(480, Number(args.durationMinutes) || 120));
+  const requestedDays = Math.max(1, Math.min(7, Number(args.days) || 1));
+  const now = context.now ?? new Date();
+  const today = localParts(now, context.timeZone);
+  const todayKey = dateKey(today);
+  const currentMinutes = today.hour * 60 + today.minute;
+  const sunday = new Date(today.year, today.month - 1, today.day);
+  sunday.setDate(sunday.getDate() - sunday.getDay());
+  const weekKeys = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(sunday, index);
+    return dateKey({ year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() });
+  });
+  const futureKeys = new Set(weekKeys.filter((key) => key >= todayKey));
+  const blockers = new Map<string, Array<{ start: number; end: number }>>();
+  const sourceItems: AskLedgerContextItem[] = [];
+  for (const item of context.items) {
+    if (!['event', 'reminder'].includes(item.resourceType) || (!item.timestamp && !item.dueAt)) continue;
+    const parsed = Date.parse(item.timestamp ?? item.dueAt ?? '');
+    if (!Number.isFinite(parsed)) continue;
+    const startParts = localParts(new Date(parsed), context.timeZone);
+    const key = dateKey(startParts);
+    if (!futureKeys.has(key)) continue;
+    const start = startParts.hour * 60 + startParts.minute;
+    const endParsed = item.endAt ? Date.parse(item.endAt) : Number.NaN;
+    const endParts = Number.isFinite(endParsed) ? localParts(new Date(endParsed), context.timeZone) : undefined;
+    const end = endParts && dateKey(endParts) === key ? endParts.hour * 60 + endParts.minute : start + (item.timestamp ? 60 : 30);
+    const entries = blockers.get(key) ?? [];
+    entries.push({ start, end: Math.max(start + 1, end) });
+    blockers.set(key, entries);
+    sourceItems.push(item);
+  }
+  const slots: Array<{ date: string; day: string; start: string; end: string; durationMinutes: number }> = [];
+  for (const key of weekKeys) {
+    const [year, month, day] = key.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (date.getDay() === 0 || date.getDay() === 6 || !futureKeys.has(key)) continue;
+    const dayStart = key === todayKey ? Math.min(1020, Math.max(540, Math.ceil(currentMinutes / 30) * 30)) : 540;
+    const intervals = (blockers.get(key) ?? []).map(({ start, end }) => ({ start: Math.max(dayStart, start), end: Math.min(1020, end) })).filter(({ start, end }) => end > start).sort((a, b) => a.start - b.start);
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const interval of intervals) {
+      const previous = merged[merged.length - 1];
+      if (previous && interval.start <= previous.end) previous.end = Math.max(previous.end, interval.end);
+      else merged.push(interval);
+    }
+    const occupied = [{ start: dayStart, end: dayStart }, ...merged, { start: 1020, end: 1020 }];
+    for (let index = 0; index < occupied.length - 1; index += 1) {
+      const start = occupied[index].end;
+      const end = occupied[index + 1].start;
+      if (end - start >= durationMinutes) {
+        slots.push({ date: key, day: date.toLocaleDateString('en-US', { weekday: 'long' }), start: formatClock(start), end: formatClock(start + durationMinutes), durationMinutes });
+        break;
+      }
+    }
+  }
+  return {
+    toolName: 'find_weekly_availability',
+    kind: 'compute',
+    data: { requestedDurationMinutes: durationMinutes, requestedDays, workingHoursAssumption: 'Weekdays, 9:00 AM–5:00 PM', slots: slots.slice(0, requestedDays), foundRequestedDays: slots.length >= requestedDays, consideredCalendarItems: sourceItems.length },
+    sourceRefs: sourceItems.map(sourceRef),
+  };
+};
+
 export const executeDeterministicAskLedgerTool = (
   call: AskLedgerDeterministicToolCall,
   context: AskLedgerToolExecutionContext
@@ -174,6 +260,7 @@ export const executeDeterministicAskLedgerTool = (
     throw new Error(`Tool ${call.name} is not available to the deterministic executor.`);
   const args = ensureArguments(call);
   if (call.name === 'compute_daily_plan') return computeDailyPlan(args, context);
+  if (call.name === 'find_weekly_availability') return findWeeklyAvailability(args, context);
   if (call.name === 'find_project_blockers') return findProjectBlockers(args, context);
   throw new Error(`No deterministic executor is registered for ${call.name}.`);
 };

@@ -181,7 +181,7 @@ export default function TodayScreen() {
   }, []);
 
   const loadToday = useCallback(
-    async ({ silent = false }: { silent?: boolean } = {}) => {
+    async ({ silent = false, force = false }: { silent?: boolean; force?: boolean } = {}) => {
       const loadToken = ++loadTokenRef.current;
       const isFirstLoad = !hasLoadedRef.current;
 
@@ -197,7 +197,7 @@ export default function TodayScreen() {
         const response = await getMobileResource(
           todayCacheKey(workspaceState.selectedWorkspaceId),
           () => getMobileToday({ workspaceId: workspaceState.selectedWorkspaceId }),
-          { force: !isFirstLoad && !silent },
+          { force: force || (!isFirstLoad && !silent) },
         );
         if (loadToken !== loadTokenRef.current) return;
         setToday(response);
@@ -336,7 +336,7 @@ export default function TodayScreen() {
       source: 'mobile_quick_focus',
       sourcePlatform: 'mobile',
     });
-    await loadToday({ silent: true });
+    await loadToday({ silent: true, force: true });
   };
 
   const openCalendarDay = () => {
@@ -555,7 +555,7 @@ export default function TodayScreen() {
           sourceId: 'source' in item ? null : item.sourceId,
           sourceLabel,
           onSaved: () => {
-            void loadToday({ silent: true });
+            void loadToday({ silent: true, force: true });
           },
         });
         return;
@@ -567,7 +567,7 @@ export default function TodayScreen() {
           sourceLabel: `From event · ${item.title}`,
           workspaceId: item.workspaceId,
           onSaved: () => {
-            void loadToday({ silent: true });
+            void loadToday({ silent: true, force: true });
           },
         });
         return;
@@ -591,7 +591,7 @@ export default function TodayScreen() {
         const result = await performMobileTodayAction({ actionId, item });
         const canStayOptimistic = 'source' in item && (actionId === 'archive' || actionId === 'delete');
         if (result.refresh && !canStayOptimistic) {
-          await loadToday({ silent: true });
+          await loadToday({ silent: true, force: true });
         }
       } catch (err) {
         if (previousSnapshot) {
@@ -906,7 +906,7 @@ export default function TodayScreen() {
                 item={selectedItem}
                 mode={sheetMode}
                 onClose={closeItemSheet}
-                onSaved={() => void loadToday({ silent: true })}
+                onSaved={() => void loadToday({ silent: true, force: true })}
               />
             ) : null}
           </>

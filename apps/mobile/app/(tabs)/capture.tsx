@@ -86,6 +86,10 @@ export default function CaptureScreen() {
           showsVerticalScrollIndicator={false}>
           <View style={styles.captureContent}>
             <AppText variant="meta" style={styles.sectionLabel}>Create</AppText>
+            <Pressable accessibilityRole="button" accessibilityLabel="Ask Ledger" onPress={() => router.push('/ask-ledger' as never)} style={({ pressed }) => [styles.actionRow, { backgroundColor: pressed ? theme.colors.surfaceMuted : 'transparent' }]}>
+              <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={17} tintColor={theme.colors.accent} />
+              <View style={{ gap: 1 }}><AppText variant="bodyStrong">Ask Ledger</AppText><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>Ask about your day and work</AppText></View>
+            </Pressable>
             <View style={styles.actionList}>
               {structuredOptions.map((option) => (
                 <Pressable key={option.id} accessibilityRole="button" accessibilityLabel={`Create ${option.title}`} onPress={() => { setCreateType(option.id === 'project-action' ? 'project_action' : option.id); setCreateSheetOpen(true); }} style={({ pressed }) => [styles.actionRow, { backgroundColor: pressed ? theme.colors.surfaceMuted : 'transparent' }]}>

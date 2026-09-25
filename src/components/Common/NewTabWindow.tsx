@@ -6,6 +6,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useSidebar } from '../../context/SidebarContext';
+import { useNotificationCenter } from '../Notifications/NotificationCenterContext';
 import type { AskLedgerSession } from './AskLedgerPanel';
 import { WebSearchNewTab } from './WebSearchNewTab';
 import { usePlatform } from '../../platform';
@@ -46,9 +47,10 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
+  const { unreadCount: sharedNotificationCount } = useNotificationCenter();
   const api = useApi();
   const [inboxCount, setInboxCount] = useState(0);
-  const [notificationCount, setNotificationCount] = useState(0);
+  const notificationCount = sharedNotificationCount;
   const [askConversationActive, setAskConversationActive] = useState(false);
   const [askResetKey, setAskResetKey] = useState(0);
   const [askSessionTitle, setAskSessionTitle] = useState('Ask Ledger');
@@ -114,24 +116,20 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
       setInboxCount(0);
-      setNotificationCount(0);
       return;
     }
 
     let cancelled = false;
     const loadCounts = async () => {
       try {
-        const [inbox, notifications] = await Promise.all([
+        const [inbox] = await Promise.all([
           api.getInboxCount() as Promise<{ count?: number }>,
-          api.getNotificationCenterSummary() as Promise<{ counts?: { unread?: number } }>,
         ]);
         if (cancelled) return;
         setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
-        setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
       } catch {
         if (!cancelled) {
           setInboxCount(0);
-          setNotificationCount(0);
         }
       }
     };

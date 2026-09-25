@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { AppShell } from '../App';
 import { NotificationCenterProvider } from '../components/Notifications/NotificationCenterContext';
@@ -12,13 +12,14 @@ import { WebShellLayout } from './WebSidebar';
 import { WebModuleHost } from './WebModuleHost';
 import { parseWebLocation, useWebRouteState } from './webRouteState';
 import { QuickCaptureWindow } from '../components/Common/QuickCaptureWindow';
-import SettingsWindow from '../components/Settings/SettingsWindow';
 import { WebReliabilityProvider } from './WebReliabilityProvider';
 import {
   NotificationTray,
   NOTIFICATION_TRAY_TOGGLE_EVENT,
 } from '../components/Notifications/NotificationTray';
 import { runtimeConfig } from '../config/runtime';
+
+const SettingsWindow = lazy(() => import('../components/Settings/SettingsWindow'));
 
 const WEB_DOWNLOAD_TOAST_DISMISSED = 'ledger:web-download-toast-dismissed:v1';
 
@@ -201,11 +202,13 @@ const WebAuthenticatedContent = () => {
   if (locationState.kind === 'app-settings') {
     return (
       <WebShellLayout>
-        <SettingsWindow
-          initialSection={
-            locationState.section === 'browser-extension' ? 'integrations' : locationState.section
-          }
-        />
+        <Suspense fallback={<LoadingScreen />}>
+          <SettingsWindow
+            initialSection={
+              locationState.section === 'browser-extension' ? 'integrations' : locationState.section
+            }
+          />
+        </Suspense>
       </WebShellLayout>
     );
   }
@@ -247,7 +250,9 @@ const WebAuthenticatedContent = () => {
         : locationState.route.entityId;
     return (
       <WebShellLayout>
-        <WebModuleHost route={backgroundRoute} />
+        <Suspense fallback={<LoadingScreen />}>
+          <WebModuleHost route={backgroundRoute} />
+        </Suspense>
         <div className="absolute inset-0 z-50 flex min-h-0 items-center justify-center bg-[var(--ledger-backdrop)] p-6">
           <div className="flex max-h-[calc(100vh-48px)] min-h-0 w-full max-w-xl overflow-hidden rounded-[var(--ledger-window-radius)]">
             <QuickCaptureWindow
@@ -296,7 +301,9 @@ const WebAuthenticatedContent = () => {
 
   return (
     <WebShellLayout>
-      <WebModuleHost route={route} />
+      <Suspense fallback={<LoadingScreen />}>
+        <WebModuleHost route={route} />
+      </Suspense>
     </WebShellLayout>
   );
 };

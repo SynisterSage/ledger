@@ -1,19 +1,24 @@
-import { useEffect } from 'react';
+import { lazy, useEffect } from 'react';
 import { useSearch } from '../context/SearchContext';
 import { usePlatform } from '../platform';
 import type { LedgerWorkspaceRoute } from '../platform';
 import { DashboardContent } from '../App';
 import { NewTabWindow } from '../components/Common/NewTabWindow';
-import { CircleWindow } from '../components/Circle/CircleWindow';
-import CalendarWindow from '../components/Calendar/CalendarWindow';
-import { NotesWindow } from '../components/Notes/NotesWindow';
-import ProjectsWindow from '../components/Projects/ProjectsWindow';
-import TeamsWindow from '../components/Teams/TeamsWindow';
-import TeamSettingsWindow from '../components/Teams/TeamSettingsWindow';
-import IntakeWindow from '../components/Inbox/InboxWindow';
-import SlackWindow from '../components/Slack/SlackWindow';
-import { NotificationCenterWindow } from '../components/Notifications/NotificationCenterWindow';
-import SettingsWindow from '../components/Settings/SettingsWindow';
+
+const CircleWindow = lazy(() => import('../components/Circle/CircleWindow'));
+const CalendarWindow = lazy(() => import('../components/Calendar/CalendarWindow'));
+const NotesWindow = lazy(() => import('../components/Notes/NotesWindow'));
+const ProjectsWindow = lazy(() => import('../components/Projects/ProjectsWindow'));
+const TeamsWindow = lazy(() => import('../components/Teams/TeamsWindow'));
+const TeamSettingsWindow = lazy(() => import('../components/Teams/TeamSettingsWindow'));
+const IntakeWindow = lazy(() => import('../components/Inbox/InboxWindow'));
+const SlackWindow = lazy(() => import('../components/Slack/SlackWindow'));
+const NotificationCenterWindow = lazy(() =>
+  import('../components/Notifications/NotificationCenterWindow').then((module) => ({
+    default: module.NotificationCenterWindow,
+  }))
+);
+const SettingsWindow = lazy(() => import('../components/Settings/SettingsWindow'));
 
 const NotMounted = ({ label }: { label: string }) => (
   <div className="flex h-full items-center justify-center bg-[var(--ledger-background)] px-6 text-sm text-[var(--ledger-text-muted)]">
