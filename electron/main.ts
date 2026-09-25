@@ -157,6 +157,7 @@ type LedgerUpdateState = {
   currentVersion: string;
   version?: string;
   releaseName?: string;
+  installOnNextLaunch?: boolean;
   percent?: number;
   transferred?: number;
   total?: number;
@@ -168,6 +169,8 @@ let ledgerUpdateState: LedgerUpdateState = {
   currentVersion: app.getVersion(),
 };
 let ledgerUpdateCheckPromise: Promise<LedgerUpdateState> | null = null;
+let ledgerUpdatePromptPromise: Promise<void> | null = null;
+let ledgerUpdatePromptedVersion: string | null = null;
 
 const sendLedgerUpdateState = () => {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -196,12 +199,16 @@ const configureLedgerUpdater = () => {
     setLedgerUpdateState({ status: 'checking', error: undefined })
   );
   autoUpdater.on('update-available', (info) =>
-    setLedgerUpdateState({
-      status: 'available',
-      version: info.version,
-      releaseName: typeof info.releaseName === 'string' ? info.releaseName : undefined,
-      error: undefined,
-    })
+    (() => {
+      setLedgerUpdateState({
+        status: 'available',
+        version: info.version,
+        releaseName: typeof info.releaseName === 'string' ? info.releaseName : undefined,
+        installOnNextLaunch: false,
+        error: undefined,
+      });
+      void promptForLedgerUpdate();
+    })()
   );
   autoUpdater.on('update-not-available', () =>
     setLedgerUpdateState({
@@ -226,6 +233,7 @@ const configureLedgerUpdater = () => {
       status: 'downloaded',
       version: info.version,
       releaseName: typeof info.releaseName === 'string' ? info.releaseName : undefined,
+      installOnNextLaunch: false,
       percent: 100,
       error: undefined,
     })
@@ -280,9 +288,63 @@ const downloadLedgerUpdate = async () => {
   return ledgerUpdateState;
 };
 
+const promptForLedgerUpdate = async () => {
+  const version = ledgerUpdateState.version;
+  if (!version || ledgerUpdatePromptedVersion === version || ledgerUpdatePromptPromise) return;
+
+  ledgerUpdatePromptedVersion = version;
+  ledgerUpdatePromptPromise = (async () => {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Ledger update available',
+      message: `Ledger ${version} is ready to install.`,
+      detail: 'Install now, or download it and apply it the next time Ledger launches.',
+      buttons: ['Install now', 'Install on next launch', 'Not now'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+
+    if (result.response === 2) return;
+
+    try {
+      setLedgerUpdateState({
+        status: 'downloading',
+        percent: 0,
+        installOnNextLaunch: result.response === 1,
+        error: undefined,
+      });
+      await autoUpdater.downloadUpdate();
+
+      if (result.response === 1) {
+        autoUpdater.autoInstallOnAppQuit = true;
+        setLedgerUpdateState({ installOnNextLaunch: true });
+        return;
+      }
+
+      if (ledgerUpdateState.status === 'downloaded') {
+        installLedgerUpdate();
+      }
+    } catch (error) {
+      setLedgerUpdateState({
+        status: 'error',
+        installOnNextLaunch: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+
+  try {
+    await ledgerUpdatePromptPromise;
+  } finally {
+    ledgerUpdatePromptPromise = null;
+  }
+};
+
 const installLedgerUpdate = () => {
   if (ledgerUpdateState.status !== 'downloaded') return false;
   isQuittingApp = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.quitAndInstall(false, true);
   return true;
 };

@@ -56,15 +56,20 @@ async function readState(): Promise<StoredState> {
     const raw = await SecureStore.getItemAsync(STORAGE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw) as Partial<StoredState>;
-    const selected: MobileAISelection = (parsed.selected as string | undefined) === 'local'
+    const providers = parsed.providers && typeof parsed.providers === 'object' ? parsed.providers : {};
+    const storedSelected = (parsed.selected as string | undefined) === 'local'
       ? null
-      : MOBILE_AI_PROVIDERS.some((item) => item.id === parsed.selected)
+      : MOBILE_AI_PROVIDERS.some((item) => item.id === parsed.selected) && providers[parsed.selected as MobileAIProvider]?.apiKey
       ? parsed.selected as MobileAISelection
       : null;
+    // A provider key may have been connected before an active provider was
+    // persisted. Make the first connected BYOP provider active so the active
+    // provider control never incorrectly reads “Not configured”.
+    const selected = storedSelected ?? MOBILE_AI_PROVIDERS.find((item) => providers[item.id]?.apiKey)?.id ?? null;
     return {
       selected,
       cloudConsent: parsed.cloudConsent === true,
-      providers: parsed.providers && typeof parsed.providers === 'object' ? parsed.providers : {},
+      providers,
     };
   } catch {
     return emptyState();
@@ -249,7 +254,27 @@ export async function generateMobileAIResponse(
   const entry = state.providers[provider];
   if (!entry?.apiKey) throw new Error(`Connect ${provider} in Settings before asking Ledger.`);
   const model = entry.model || defaultModelFor(provider);
-  const prompt = `You are Ask Ledger, a calm accountability assistant. Answer only from the Ledger context below. If the context does not support an answer, say so clearly. Do not invent tasks, dates, projects, or events. This is a read-only conversation; do not claim to have changed Ledger data.\n\nLedger context:\n${context}\n\nUser question:\n${question.trim()}`;
+  // Keep this compact mobile contract aligned with the presentation and
+  // grounding rules in electron/askLedgerAnswerStyle.ts and askLedgerPrompt.ts.
+  const prompt = `You are Ask Ledger, a calm accountability assistant. Answer the user's question from the supplied Ledger facts. Do not invent tasks, dates, priorities, durations, or events, and do not claim to have changed Ledger data.
+
+ANSWER STYLE
+- Lead with the useful answer. Be clear, concise, conversational, and actionable.
+- Use short paragraphs, bullets for related items, and numbered steps when order matters. Use 2–4 short sections only when they help scanning. Bold key items sparingly.
+- Use plain Markdown: ## headings, **bold**, bullets, numbered lists, and paragraphs. No tables or complex formatting.
+- Group related work; do not repeat every record or offer to regroup a list you have already given.
+- Speak to the user directly. Do not mention "the Ledger context", retrieval, evidence, prompts, or why an exact schedule cannot be made unless the user specifically asks for one.
+- The Today list mixes statuses. Check each item's explicit status before placing it under Overdue, Due today, or Active; never put an active item in an Overdue section. Do not infer a due date from an undated item.
+- If asked to plan a day, propose a practical order and 1–3 focus items from the supplied work. Make the recommendation clear without claiming a task is quickest, most overdue, or unblocks something unless the supplied facts establish it. Without durations or priorities, do not invent clock times.
+- Do not claim counts, project rankings, or dependencies that are not directly supported. Keep section headings accurate for every item beneath them.
+- Avoid a routine closing disclaimer about missing durations or priorities. Ask for a missing detail only when it would materially change the next decision.
+- If relevant facts are missing, make the best useful answer from what is present and state the specific gap briefly. If no relevant facts are supplied at all, say you do not have enough Ledger information to answer.
+
+LEDGER FACTS
+${context}
+
+USER QUESTION
+${question.trim()}`;
   const endpoint = provider === 'openai'
     ? 'https://api.openai.com/v1/chat/completions'
     : provider === 'anthropic'
@@ -270,52 +295,90 @@ export async function generateMobileAIResponse(
   const body = provider === 'google'
     ? { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 512 } }
     : provider === 'anthropic'
-    ? { model, max_tokens: 512, messages: [{ role: 'user', content: prompt }] }
-    : { model, messages: [{ role: 'user', content: prompt }], max_completion_tokens: 512 };
+    ? { model, max_tokens: 512, stream: true, messages: [{ role: 'user', content: prompt }] }
+    : {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+      ...(provider === 'openai' ? { max_completion_tokens: 512 } : { max_tokens: provider === 'deepseek' ? 2048 : 512 }),
+      ...(provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}),
+    };
   const response = await fetchProvider(endpoint, { method: 'POST', headers, body: JSON.stringify(body) }, 120_000, options.signal);
   if (!response.ok) throw new Error(await providerError(response, provider, model));
   let answer = '';
+  let finishReason: string | null = null;
+  let receivedReasoningOnly = false;
   const readPayloadAnswer = (payload: any) => provider === 'google'
     ? payload.candidates?.[0]?.content?.parts?.map((part: { text?: unknown }) => typeof part.text === 'string' ? part.text : '').join('')
     : provider === 'anthropic'
     ? payload.content?.map((part: { text?: unknown }) => typeof part.text === 'string' ? part.text : '').join('')
     : payload.choices?.[0]?.message?.content;
 
-  if (provider !== 'google' && response.body?.getReader) {
+  const consumeJson = (raw: string) => {
+    let payload: any;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      throw new Error(`${provider} returned a response Ledger could not read (HTTP ${response.status}).`);
+    }
+    finishReason = payload.choices?.[0]?.finish_reason ?? payload.candidates?.[0]?.finishReason ?? payload.stop_reason ?? null;
+    receivedReasoningOnly = Boolean(payload.choices?.[0]?.message?.reasoning_content);
+    answer = readPayloadAnswer(payload) ?? '';
+    if (answer) options.onDelta?.(answer);
+  };
+
+  const consume = (line: string) => {
+    if (!line.startsWith('data:')) return;
+    const value = line.slice(5).trim();
+    if (!value || value === '[DONE]') return;
+    try {
+      const payload = JSON.parse(value) as any;
+      finishReason = payload.choices?.[0]?.finish_reason ?? payload.stop_reason ?? finishReason;
+      if (typeof payload.choices?.[0]?.delta?.reasoning_content === 'string' && payload.choices[0].delta.reasoning_content) receivedReasoningOnly = true;
+      const text = provider === 'anthropic'
+        ? payload.delta?.text
+        : payload.choices?.[0]?.delta?.content;
+      if (typeof text === 'string' && text) {
+        answer += text;
+        options.onDelta?.(text);
+      }
+    } catch {
+      // Ignore provider keepalive frames.
+    }
+  };
+
+  if (provider !== 'google' && response.body?.getReader && !response.headers.get('content-type')?.includes('application/json')) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    const consume = (line: string) => {
-      if (!line.startsWith('data:')) return;
-      const value = line.slice(5).trim();
-      if (!value || value === '[DONE]') return;
-      try {
-        const payload = JSON.parse(value) as any;
-        const text = provider === 'anthropic'
-          ? payload.delta?.text
-          : payload.choices?.[0]?.delta?.content;
-        if (typeof text === 'string' && text) {
-          answer += text;
-          options.onDelta?.(text);
-        }
-      } catch {
-        // Ignore keepalive or incomplete frames.
-      }
-    };
+    let rawBody = '';
     while (true) {
       const next = await reader.read();
       if (next.done) break;
-      buffer += decoder.decode(next.value, { stream: true });
+      const chunk = decoder.decode(next.value, { stream: true });
+      if (rawBody.length < 131072) rawBody += chunk;
+      buffer += chunk;
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
       lines.forEach(consume);
     }
+    buffer += decoder.decode();
     if (buffer) consume(buffer);
+    if (!answer && rawBody.trimStart().startsWith('{')) consumeJson(rawBody);
   } else {
-    const payload = await response.json() as any;
-    answer = readPayloadAnswer(payload);
-    if (answer) options.onDelta?.(answer);
+    const rawBody = await response.text();
+    if (provider !== 'google' && rawBody.trimStart().startsWith('data:')) rawBody.split(/\r?\n/).forEach(consume);
+    else consumeJson(rawBody);
   }
-  if (typeof answer !== 'string' || !answer.trim()) throw new Error('The provider returned an empty answer.');
+  if (typeof answer !== 'string' || !answer.trim()) {
+    const detail = finishReason === 'length'
+      ? 'The response hit its output limit before producing visible text.'
+      : finishReason === 'content_filter'
+      ? 'The response was filtered by the provider.'
+      : receivedReasoningOnly
+      ? 'The provider returned reasoning but no visible answer.'
+      : `No text was included${finishReason ? ` (finish reason: ${finishReason})` : ''}.`;
+    throw new Error(`${MOBILE_AI_PROVIDERS.find((item) => item.id === provider)?.label ?? provider} returned an empty answer for ${model}. ${detail}`);
+  }
   return answer.trim();
 }

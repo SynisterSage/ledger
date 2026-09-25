@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { AppButton } from '@/components/AppButton';
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
-import { MobilePageHeader } from '@/components/MobilePageHeader';
+import { Screen } from '@/components/Screen';
 import { Section } from '@/components/Section';
 import { SettingsChoiceSheet } from '@/features/settings/SettingsChoiceSheet';
 import {
@@ -24,12 +24,11 @@ import {
   type MobileAIProviderState,
   type MobileAISelection,
 } from '@/features/askLedger/mobileAIProvider';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 
 export default function AskLedgerSettingsScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
-  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<MobileAISelection>(null);
   const [cloudConsent, setCloudConsent] = useState(false);
   const [providers, setProviders] = useState<MobileAIProviderState[]>([]);
@@ -41,7 +40,6 @@ export default function AskLedgerSettingsScreen() {
   const [modelSheetProvider, setModelSheetProvider] = useState<MobileAIProvider | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const scrollY = useRef(new Animated.Value(0)).current;
 
   const provider = useMemo(() => providers.find((item) => item.provider === editingProvider) ?? null, [editingProvider, providers]);
   const selectedLabel = selected
@@ -53,6 +51,18 @@ export default function AskLedgerSettingsScreen() {
     setSelected(settings.selected);
     setCloudConsent(settings.cloudConsent);
     setProviders(settings.providers);
+  };
+
+  const toggleCloudConsent = async (enabled: boolean) => {
+    try {
+      const settings = await setMobileAICloudConsent(enabled);
+      setSelected(settings.selected);
+      setCloudConsent(settings.cloudConsent);
+      setProviders(settings.providers);
+      setStatus(null);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not update cloud AI consent.');
+    }
   };
 
   useEffect(() => { void refresh(); }, []);
@@ -95,11 +105,27 @@ export default function AskLedgerSettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <MobilePageHeader title="Ask Ledger" showBack onBackPress={() => router.back()} scrollY={scrollY} showSettings={false} />
-      <Animated.ScrollView contentContainerStyle={{ paddingTop: 112, paddingHorizontal: theme.spacing.screenX, paddingBottom: insets.bottom + 32 }} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16}>
-        <View style={{ gap: theme.spacing.xs, marginBottom: theme.spacing.xl }}>
-          <AppText variant="screenTitle">AI settings</AppText>
-          <AppText variant="body" style={{ color: theme.colors.textSecondary }}>Choose where Ask Ledger runs and manage providers on this device.</AppText>
+      <Screen scroll topFade={false} contentStyle={{ paddingTop: 18 }}>
+        <View style={styles.header}>
+          <Pressable
+            style={styles.headerBack}
+            onPress={() => router.back()}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <SymbolView
+              name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+              size={22}
+              tintColor={theme.colors.textPrimary}
+            />
+          </Pressable>
+          <View style={styles.headerCopy}>
+            <AppText variant="screenTitle">AI settings</AppText>
+            <AppText variant="caption" style={{ color: theme.colors.textSecondary }}>
+              Choose where Ask Ledger runs and manage providers on this device.
+            </AppText>
+          </View>
         </View>
 
         <View style={{ gap: 28 }}>
@@ -108,11 +134,19 @@ export default function AskLedgerSettingsScreen() {
               <AppText variant="body">{selectedLabel}</AppText>
               <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>Ask Ledger uses this provider for generation.</AppText>
             </Pressable>
-            <View style={{ padding: 16, gap: 4 }}>
+            <View style={{ padding: 16, gap: 12 }}>
               <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>Cloud providers send selected Ledger context to that provider. You control the API key and pay the provider directly.</AppText>
-              <Pressable onPress={() => void setMobileAICloudConsent(!cloudConsent)} accessibilityRole="switch" accessibilityState={{ checked: cloudConsent }}>
-                <AppText variant="body" style={{ color: cloudConsent ? theme.colors.accent : theme.colors.textPrimary }}>{cloudConsent ? 'Cloud provider consent enabled' : 'Enable cloud provider consent'}</AppText>
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <AppText variant="body" style={{ flex: 1 }}>{cloudConsent ? 'Cloud provider consent enabled' : 'Enable cloud provider consent'}</AppText>
+                <Switch
+                  value={cloudConsent}
+                  onValueChange={(value) => void toggleCloudConsent(value)}
+                  accessibilityLabel="Cloud provider consent"
+                  trackColor={{ false: theme.colors.borderSubtle, true: theme.colors.accent }}
+                  thumbColor={theme.colors.surface}
+                  ios_backgroundColor={theme.colors.borderSubtle}
+                />
+              </View>
             </View>
           </Section>
 
@@ -133,7 +167,7 @@ export default function AskLedgerSettingsScreen() {
 
           {status ? <AppText variant="meta" style={{ color: status.includes('connected') ? theme.colors.accent : theme.colors.danger }}>{status}</AppText> : null}
         </View>
-      </Animated.ScrollView>
+      </Screen>
 
       <SettingsChoiceSheet visible={providerSheetVisible} title="Active provider" subtitle="Choose a connected BYOP provider. Ledger sends only the selected context to it." selectedValue={selected ?? ''} options={providers.filter((item) => item.connected).map((item) => ({ value: item.provider, title: MOBILE_AI_PROVIDERS.find((entry) => entry.id === item.provider)?.label ?? item.provider }))} onSelect={(value) => void selectMobileAIProvider(value as MobileAIProvider).then(refresh).catch((error) => setStatus(error instanceof Error ? error.message : 'Could not select the provider.'))} onClose={() => setProviderSheetVisible(false)} />
 
@@ -151,14 +185,27 @@ export default function AskLedgerSettingsScreen() {
         maxHeight={640}
       />
 
-      <AppBottomSheet visible={Boolean(editingProvider)} onClose={() => setEditingProvider(null)} title={provider?.connected ? 'Replace API key' : 'Connect provider'} snapPoints={['48%', '64%']} initialSnapPointIndex={0} avoidKeyboard>
+      <AppBottomSheet visible={Boolean(editingProvider)} onClose={() => setEditingProvider(null)} title={provider?.connected ? 'Replace API key' : 'Connect provider'} snapPoints={['68%', '90%']} initialSnapPointIndex={1} avoidKeyboard>
         {editingProvider ? (
-        <View style={{ gap: 14 }}>
-          <AppTextInput label="API key" placeholder="Paste your provider key" value={apiKey} onChangeText={setApiKey} secureTextEntry autoCapitalize="none" autoCorrect={false} />
-          <AppButton title={busy ? 'Saving…' : 'Save key'} onPress={() => void saveKey()} disabled={busy || !apiKey.trim()} />
+        <View style={{ gap: 18 }}>
+          <View style={{ gap: 6 }}>
+            <AppText variant="caption" style={{ color: theme.colors.textSecondary }}>
+              Your key stays on this device and is used only for your selected provider.
+            </AppText>
+          </View>
+          <View style={{ backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg), padding: 16 }}>
+            <AppTextInput label="API key" placeholder="Paste your provider key" value={apiKey} onChangeText={setApiKey} secureTextEntry autoCapitalize="none" autoCorrect={false} style={{ borderBottomWidth: 0, marginVertical: 0 }} />
+          </View>
+          <AppButton title={busy ? 'Saving…' : 'Save key'} onPress={() => void saveKey()} disabled={busy || !apiKey.trim()} size="lg" />
         </View>
         ) : null}
       </AppBottomSheet>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 24 },
+  headerBack: { marginTop: 7 },
+  headerCopy: { flex: 1, gap: 4 },
+});

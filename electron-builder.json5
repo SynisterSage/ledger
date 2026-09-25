@@ -39,7 +39,8 @@
     },
   ],
   mac: {
-    target: ['dmg'],
+    // DMG is for first install; zip is required by Squirrel.Mac/electron-updater.
+    target: ['dmg', 'zip'],
     identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
     // Use the shared opaque white rounded artwork so Finder/Dock do not add a
     // gray backing to the transparent logo.

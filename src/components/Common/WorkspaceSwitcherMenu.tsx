@@ -41,6 +41,7 @@ type SidebarMenuStyle = CSSProperties & {
 type LedgerUpdateState = {
   status?: string;
   version?: string;
+  installOnNextLaunch?: boolean;
   percent?: number;
   error?: string;
 };
@@ -631,7 +632,9 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
                       <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--ledger-text-secondary)]">
                         {ledgerUpdateState.status === 'downloaded'
-                          ? 'Update ready'
+                          ? ledgerUpdateState.installOnNextLaunch
+                            ? 'Update ready for next launch'
+                            : 'Update ready'
                           : ledgerUpdateState.status === 'downloading'
                             ? `Downloading ${Math.round(ledgerUpdateState.percent ?? 0)}%`
                             : `Ledger ${ledgerUpdateState.version ?? 'update'} available`}
@@ -647,7 +650,11 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                           onClick={handleUpdateAction}
                           className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
                         >
-                          {ledgerUpdateState.status === 'downloaded' ? 'Restart' : 'Download'}
+                          {ledgerUpdateState.status === 'downloaded'
+                            ? ledgerUpdateState.installOnNextLaunch
+                              ? 'Restart now'
+                              : 'Restart'
+                            : 'Download'}
                         </button>
                       )}
                     </div>

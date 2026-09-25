@@ -1753,6 +1753,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                   </p>
                 </div>
 
+                <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--ledger-text-muted)]">
+                  <span>Add context when it becomes useful.</span>
+                  <button type="button" onClick={() => void importLocalFiles()} className="font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-text-primary)]"><Plus size={13} className="mr-1 inline" />Import local file</button>
+                  <button type="button" onClick={() => { setIsLeftPaneCollapsed(false); startNewFolder(); }} className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"><FolderPlus size={13} className="mr-1 inline" />New folder</button>
+                </div>
+
                 <div className="mt-8">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
@@ -1775,11 +1781,6 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                   </div>
                 </div>
 
-                <div className="mt-9 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--ledger-text-muted)]">
-                  <span>Add context when it becomes useful.</span>
-                  <button type="button" onClick={() => void importLocalFiles()} className="font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-text-primary)]"><Plus size={13} className="mr-1 inline" />Import local file</button>
-                  <button type="button" onClick={() => { setIsLeftPaneCollapsed(false); startNewFolder(); }} className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"><FolderPlus size={13} className="mr-1 inline" />New folder</button>
-                </div>
               </div>
             </div>
           )}
