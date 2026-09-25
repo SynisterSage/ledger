@@ -4177,19 +4177,21 @@ function isLedgerWindowDockTarget(target: FloatingDockTarget | null = currentFlo
   return Boolean(target?.isLedgerWindow);
 }
 
-function isExternalFloatingDockTarget() {
-  return currentSidebarPosition === 'floating' && Boolean(currentFloatingDockTarget) && !isLedgerWindowDockTarget();
+function isFloatingDockTarget() {
+  return currentSidebarPosition === 'floating' && Boolean(currentFloatingDockTarget);
 }
 
 function syncSidebarDockFocusability() {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
   if (process.platform !== 'darwin' && process.platform !== 'win32') return;
 
-  // A sidebar attached to another app must not keep Ledger as the active app
-  // after the user clicks back into that app. Keep it non-activating once it
-  // has blurred, while allowing an intentional pointer-down in the sidebar to
-  // opt back into focus for keyboard interaction.
-  if (isExternalFloatingDockTarget()) {
+  // A docked sidebar must not keep Ledger as the active app after the user
+  // clicks back into the app underneath it. Keep it non-activating once it
+  // has blurred, while allowing an intentional pointer-down in the sidebar
+  // to opt back into focus for keyboard interaction. This applies to both
+  // third-party app docks and Ledger module docks: the latter are still a
+  // separate native window on macOS and can otherwise reactivate Ledger.
+  if (isFloatingDockTarget()) {
     sidebarWin.setFocusable(sidebarWin.isFocused());
     return;
   }
@@ -10567,7 +10569,7 @@ ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
 ipcMain.on('window:allow-sidebar-focus', (event) => {
   event.returnValue = false;
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
-  if (!senderWindow || senderWindow !== sidebarWin || !isExternalFloatingDockTarget()) return;
+  if (!senderWindow || senderWindow !== sidebarWin || !isFloatingDockTarget()) return;
   senderWindow.setFocusable(true);
   event.returnValue = true;
 });

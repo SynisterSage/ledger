@@ -215,8 +215,20 @@ const SettingsWindow = lazy(() => import('./components/Settings/SettingsWindow')
 const FilesWindow = lazy(() => import('./components/Files/FilesWindow'));
 
 const ModuleLoadingFallback = () => (
-  <div className="flex h-full min-h-0 items-center justify-center bg-[var(--ledger-background)] p-6">
-    <div className="h-2 w-20 animate-pulse rounded-full bg-[var(--ledger-border-subtle)]" aria-label="Loading module" />
+  <div className="flex h-full min-h-0 flex-col bg-[var(--ledger-background)]" aria-busy="true">
+    <div className="flex h-10 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4">
+      <div className="flex items-center gap-2">
+        <div className="h-5 w-16 animate-pulse rounded-md bg-[var(--ledger-border-subtle)]" />
+        <div className="h-5 w-5 animate-pulse rounded-md bg-[var(--ledger-border-subtle)]" />
+      </div>
+      <div className="h-5 w-28 animate-pulse rounded-md bg-[var(--ledger-border-subtle)]" />
+    </div>
+    <div className="relative flex h-8 shrink-0 items-end border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3">
+      <div className="h-6 w-28 animate-pulse rounded-t-md border border-b-0 border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]" />
+    </div>
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <div className="h-2 w-20 animate-pulse rounded-full bg-[var(--ledger-border-subtle)]" aria-label="Loading module" />
+    </div>
   </div>
 );
 

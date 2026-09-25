@@ -57,6 +57,13 @@ test('floating mode does not add a desktop blur filter', () => {
   assert.doesNotMatch(css, /(?<!backdrop-)filter:\s*blur\(/);
 });
 
+test('docked sidebar does not reactivate Ledger when clicking the app underneath', () => {
+  assert.match(main, /function isFloatingDockTarget\(\)/);
+  assert.match(main, /if \(isFloatingDockTarget\(\)/);
+  assert.match(main, /sidebarWin\.setFocusable\(sidebarWin\.isFocused\(\)/);
+  assert.match(main, /senderWindow !== sidebarWin \|\| !isFloatingDockTarget\(\)/);
+});
+
 test('sidebar material has one clipped layer and centralized renderer tokens', () => {
   assert.match(css, /--sidebar-material-rgb: 22 22 24/);
   assert.match(css, /--sidebar-solid-rgb: 24 24 26/);
