@@ -206,6 +206,7 @@ interface Window {
     >;
     commands?: Record<string, (payload?: any) => Promise<unknown> | void> & {
       setTouchBarContext?: (context: LedgerTouchBarContextBridgePayload) => void;
+      publishMacWidgetSnapshot?: (payload?: Record<string, unknown>) => Promise<unknown>;
     };
   };
   __LEDGER_RUNTIME__?: {

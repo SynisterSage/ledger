@@ -709,6 +709,8 @@ const ledgerCommands = {
   updatesDownload: () => ipcRenderer.invoke('updates:download'),
   updatesInstall: () => ipcRenderer.invoke('updates:install'),
   setTouchBarContext: (context: unknown) => ipcRenderer.send('touchbar:set-context', context),
+  publishMacWidgetSnapshot: (payload?: unknown) =>
+    ipcRenderer.invoke('mac-widget:publish', payload),
 };
 
 contextBridge.exposeInMainWorld('ledgerIpc', { events: ledgerEvents, commands: ledgerCommands });

@@ -177,7 +177,7 @@ const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerReso
   // folder or collection query.
   if (/\b(?:through|in|from|within|inside)\s+(?:my\s+)?(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/i.test(question)) return undefined;
   const explicitFolder = question.match(
-    /\bfolder\s+(?:called\s+|named\s+)?([a-z0-9][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*){0,4})(?=\s*(?:[,.;?]|\band\b|\bhow\s+many\b|\b(?:last|latest|newest|recent|first|oldest|past)\b|$))/i
+    /\bfolder\s+(?:called\s+|named\s+)?([a-z0-9][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*){0,4}?)(?=\s*(?:[,.;?]|\band\b|\bwith\b|\bhow\s+many\b|\b(?:last|latest|newest|recent|first|oldest|past)\b|$))/i
   );
   if (explicitFolder?.[1]) {
     const candidate = explicitFolder[1].trim();
@@ -230,8 +230,9 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     if (goingOnProject?.[1]) return goingOnProject[1].trim();
     const summaryProject = question.match(/\b(?:summarize|summary of|review|assess)\s+(?:my|the)?\s*(.+?)(?:[?.!]|$)/i);
     if (summaryProject?.[1]) return summaryProject[1].trim();
-    const namedProject = question.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/i);
-    if (namedProject?.[1]) return namedProject[1].trim();
+    const namedProject = question.match(/\bin\s+the\s+(.+?)\s+projects?\b/i)
+      ?? question.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/i);
+    if (namedProject?.[1] && !/[\n,]/.test(namedProject[1]) && !/\band\b/i.test(namedProject[1])) return namedProject[1].trim();
     const match = question.match(/\bproject\s+(.+?)(?=\s+(?:and|to|that|where|what|is|has)\b|[,?.]|$)/i);
     return match?.[1]?.trim();
   }
@@ -243,7 +244,7 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
   // though the authoritative entity is the named project.
   if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
     const searchEntity = question.match(/\b(?:with|containing|contains|mentions?|about)\s+([A-Za-z][\w-]*)\b/i);
-    if (searchEntity?.[1] && !/^(?:my|our|the|this|that|its|their)$/i.test(searchEntity[1])) return searchEntity[1].trim();
+    if (searchEntity?.[1] && !/^(?:my|our|the|this|that|its|their|note|notes|folder|folders)$/i.test(searchEntity[1])) return searchEntity[1].trim();
     const namedProject = question.match(/\b(?:for|about|on)\s+(?:my|the)\s+(.+?)\s+projects?\b/i);
     if (namedProject?.[1]) return namedProject[1].trim();
   }
@@ -252,7 +253,7 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     if (typedEntity?.[1]) return typedEntity[1].trim();
   }
   const withMatch = question.match(/\b(?:with|about|for)\s+([A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)/);
-  return withMatch?.[1]?.trim();
+  return withMatch?.[1] && !/^(?:note|notes|folder|folders)$/i.test(withMatch[1]) ? withMatch[1].trim() : undefined;
 };
 
 export const buildRetrievalPlan = (question: string, now = new Date(), canonicalPlan?: AskLedgerQueryPlan): RetrievalPlan => {

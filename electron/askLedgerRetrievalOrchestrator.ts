@@ -157,11 +157,17 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
     ?? [...normalized.matchAll(/\b(?:for|about)\s+(?:the|my)\s+(.+?)\s+projects?\b/g)].at(-1)?.[1]?.trim();
   const explicitProjectQueryCandidate = contextualProjectQueryCandidate
     ?? normalized.match(/\bproject\s+(.+?)(?=\s+(?:what|and|for|where|when|how|is|has)\b|[,?.]|$)/)?.[1]?.trim();
-  const explicitProjectQuery = explicitProjectQueryCandidate
-    && !/^(?:work|context|management|planning)$/i.test(explicitProjectQueryCandidate)
-    && !/\b(?:what|are|next|actions?|does|say)\b/i.test(explicitProjectQueryCandidate)
-    ? explicitProjectQueryCandidate
-    : undefined;
+  const namedProjectReference = normalized.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/)?.[1]?.trim();
+  const inTheProjectReference = normalized.match(/\bin\s+the\s+(.+?)\s+projects?\b/)?.[1]?.trim();
+  const isUsableProjectQuery = (candidate?: string) => Boolean(
+    candidate
+      && !/[\n,]/.test(candidate)
+      && !/\band\b/i.test(candidate)
+      && !/\b(?:meetings?|tasks?|milestones?|reminders?|actions?)\b/i.test(candidate)
+      && !/^(?:work|context|management|planning)$/i.test(candidate)
+      && !/\b(?:what|are|next|actions?|does|say)\b/i.test(candidate)
+  );
+  const explicitProjectQuery = [inTheProjectReference, namedProjectReference, explicitProjectQueryCandidate].find(isUsableProjectQuery);
   const namedProjectQuery = queryPlan.entity?.name?.replace(/^(?:with|for|about|on)\s+/i, '').trim() ?? explicitProjectQuery;
   const hasExplicitProjectAnchor = Boolean(namedProjectQuery && namedProjectQuery.length >= 3);
   const projectWorkIntent = includesProjectContext && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|stuck|needs? to happen|needs? attention)\b/.test(normalized);
@@ -287,7 +293,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   if (hasAttention) {
     addObjective(objectives, { id: 'attention-tasks', purpose: 'Find overdue, blocked, and today work requiring attention', resourceTypes: ['task', 'milestone'], constraints: { ...base.structuredConstraints, attentionOnly: true }, expandRelationships: false, dependsOn: projectDependency });
   }
-  if (hasNotes && !meetingEvidenceRequest && !hasTeamLinkedContext) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
+  if (hasNotes && !meetingEvidenceRequest && !hasTeamLinkedContext) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.containerQuery ? undefined : base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
   if (!objectives.length) addObjective(objectives, { id: 'primary', purpose: 'Retrieve the primary workspace evidence', resourceTypes: base.primaryResourceTypes, entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: base.expandRelatedContext, dependsOn: [] });
   return objectives;
 };
@@ -298,6 +304,10 @@ const buildObjectivePlan = (question: string, objective: RetrievalObjective, pro
     ...base,
     primaryResourceTypes: objective.resourceTypes,
     entityQuery: objective.entityQuery,
+    // Container names belong to note/file objectives. Do not carry a notes
+    // folder constraint into the independent project objective of a compound
+    // question.
+    containerQuery: objective.resourceTypes.includes('note') ? base.containerQuery : undefined,
     structuredConstraints: {
       ...objective.constraints,
       ...(projectIds.length ? { projectIds } : {}),
@@ -555,7 +565,10 @@ export class AskLedgerRetrievalOrchestrator {
           completed.add(objective.id);
           continue;
         }
-        const plan = buildObjectivePlan(searchQuestion, objective, projectIds, teamIds, assigneeIds, buildAskLedgerQueryPlan(orchestrationQuestion));
+        // Keep objective scoping tied to the user's question. `searchQuestion`
+        // may include injected grounding instructions, which can contain words
+        // such as "project" or "notes" and accidentally become entity names.
+        const plan = buildObjectivePlan(orchestrationQuestion, objective, projectIds, teamIds, assigneeIds, buildAskLedgerQueryPlan(orchestrationQuestion));
         const objectiveStartedAt = Date.now();
         const provider = objective.id.startsWith('integration-') ? objective.id.slice('integration-'.length) : null;
         const integrationBoostKeys: string[] = [];

@@ -67,6 +67,24 @@ test('resolves a project named in a natural "in the project" phrase', async () =
   await index.shutdown();
 });
 
+test('retrieves a named project and its explicitly named notes folder', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-ind-study', title: 'Ind Study', content: 'Independent study project about visual research.' });
+  const task = item({ resourceType: 'task', resourceId: 'task-ind-study', title: 'Review research direction', content: 'Choose the strongest direction.', projectId: 'project-ind-study', projectName: 'Ind Study', status: 'Open' });
+  const note = item({ resourceType: 'note', resourceId: 'note-ind-study', title: 'Ind Study notes', content: 'Folder: Ind Study. Research notes about the project direction.', containerName: 'Ind Study' });
+  const unrelatedNote = item({ resourceType: 'note', resourceId: 'note-personal', title: 'Personal notes', content: 'Folder: Personal. Unrelated material.', containerName: 'Personal' });
+  const documents = [project, task, note, unrelatedNote];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'can you look at my ind study project, tell me what its about, we also have a notes folder called ind study with notes from it', [], 20, { documents });
+
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'projects' && objective.status === 'found'));
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'notes' && objective.status === 'found'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'project-ind-study'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-ind-study'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'note-ind-study'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'note-personal'), false);
+  await index.shutdown();
+});
+
 test('scopes named syllabus questions away from unrelated PDFs', async () => {
   const syllabus = item({ resourceType: 'attachment', resourceId: 'attachment-syllabus', title: 'Dzenko HistoryOfPhotography syllabus.pdf', content: 'Week 2 syllabus quiz and discussion introductions are due.' });
   const unrelated = item({ resourceType: 'attachment', resourceId: 'attachment-motion', title: 'AR390 Motion-26-FALL.pdf', content: 'Library orientation and evaluating sources.' });

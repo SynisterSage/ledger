@@ -16,5 +16,10 @@
   <true/>
   <key>com.apple.security.personal-information.reminders</key>
   <true/>
+  <!-- Shared with the native WidgetKit extension for the workspace-safe Today snapshot. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>group.com.ledger.desktop.shared</string>
+  </array>
 </dict>
 </plist>

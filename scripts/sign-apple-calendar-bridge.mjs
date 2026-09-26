@@ -19,4 +19,16 @@ export default async function signAppleCalendarBridge(context) {
   // --deep alone can leave the nested helper with an incomplete signature.
   execFileSync('codesign', ['--force', '--options', 'runtime', '--entitlements', entitlements, '--sign', identity, bridgeExecutable], { stdio: 'inherit' });
   execFileSync('codesign', ['--force', '--options', 'runtime', '--entitlements', entitlements, '--sign', identity, bridgeBundle], { stdio: 'inherit' });
+
+  const widgetBundle = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`,
+    'Contents',
+    'PlugIns',
+    'LedgerWidget.appex',
+  );
+  const widgetExecutable = path.join(widgetBundle, 'Contents', 'MacOS', 'LedgerWidget');
+  const widgetEntitlements = path.join(context.packager.projectDir, 'native', 'LedgerWidget', 'LedgerWidget.entitlements');
+  execFileSync('codesign', ['--force', '--options', 'runtime', '--entitlements', widgetEntitlements, '--sign', identity, widgetExecutable], { stdio: 'inherit' });
+  execFileSync('codesign', ['--force', '--options', 'runtime', '--entitlements', widgetEntitlements, '--sign', identity, widgetBundle], { stdio: 'inherit' });
 }

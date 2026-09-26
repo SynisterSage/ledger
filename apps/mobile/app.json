@@ -2,13 +2,13 @@
   "expo": {
     "name": "Ledger",
     "slug": "ledger",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/images/icon2.png",
     "scheme": "ledger",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "buildNumber": "15",
+      "buildNumber": "16",
       "supportsTablet": true
     },
     "android": {

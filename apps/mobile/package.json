@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "dependencies": {
     "@ledger/ledger-calendar": "file:modules/ledger-calendar",
     "@ledger/ledger-note-ocr": "file:modules/ledger-note-ocr",

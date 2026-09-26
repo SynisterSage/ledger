@@ -3126,7 +3126,16 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                         description={searchQuery.trim() ? 'Try another keyword or clear the search to return to this tab.' : 'Captured notes, imports, and suggested actions appear here before they enter the workspace.'}
                         icon={Inbox}
                         testId="intake-empty"
-                        primaryAction={searchQuery.trim() ? { label: 'Clear search', onClick: () => setSearchQuery('') } : activeStatus === 'unprocessed' && activeWorkspaceId ? { label: 'Capture something', onClick: () => platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: 'note' }) } : undefined}
+                        primaryAction={searchQuery.trim() ? { label: 'Clear search', onClick: () => setSearchQuery('') } : activeStatus === 'unprocessed' && activeWorkspaceId ? { label: 'Capture something', onClick: () => {
+                          if (platform.kind === 'desktop' && window.desktopWindow?.openModule) {
+                            void window.desktopWindow.openModule('dashboard', {
+                              kind: 'dashboard',
+                              focusContext: 'create-task:focus',
+                            });
+                            return;
+                          }
+                          platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: 'note' });
+                        } } : undefined}
                         className="h-full min-h-[280px]"
                       />
                     )}

@@ -2187,6 +2187,66 @@ export function DashboardContent({
   }, [overviewFocusSnapshot]);
   overviewFocusSnapshotKeyRef.current = overviewFocusSnapshotKey;
 
+  useEffect(() => {
+    const publish = window.ledgerIpc?.commands?.publishMacWidgetSnapshot;
+    if (!publish) return;
+
+    if (!user || !activeWorkspaceId || !hasLoadedDashboardRef.current || isLoadingDashboard) {
+      if (!user || !activeWorkspaceId) {
+        void publish({ workspaceId: null, hasData: false });
+      }
+      return;
+    }
+
+    const focusTitle =
+      daily.focusItems.find((item) => !item.done)?.text?.trim() ||
+      todayTasks.find((item) => item.is_today_focus && item.status !== 'completed')?.title?.trim() ||
+      null;
+
+    const upcomingCandidates = [
+      ...upcoming.map((item) => ({
+        title: item.title,
+        at: item.start_at,
+        meta: item.start_at ? new Date(item.start_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : null,
+      })),
+      ...upcomingReminders.map((item) => ({
+        title: item.title,
+        at: item.remind_at || item.due_date || '',
+        meta: item.due_date || item.remind_at || null,
+      })),
+    ]
+      .filter((item) => item.title?.trim())
+      .sort((left, right) => {
+        const leftTime = left.at ? Date.parse(left.at) : Number.POSITIVE_INFINITY;
+        const rightTime = right.at ? Date.parse(right.at) : Number.POSITIVE_INFINITY;
+        return leftTime - rightTime;
+      });
+    const next = upcomingCandidates[0] ?? null;
+    const openTodayCount = todayTasks.filter(
+      (item) => item.status !== 'completed' && item.status !== 'done' && !item.is_today_focus
+    ).length;
+
+    void publish({
+      workspaceId: activeWorkspaceId,
+      workspaceName: activeWorkspace?.name ?? null,
+      focusTitle,
+      nextTitle: next?.title ?? null,
+      nextMeta: next?.meta ?? null,
+      todayCount: openTodayCount,
+      upcomingCount: upcomingCandidates.length,
+      hasData: true,
+    });
+  }, [
+    activeWorkspace?.name,
+    activeWorkspaceId,
+    daily.focusItems,
+    isLoadingDashboard,
+    todayTasks,
+    upcoming,
+    upcomingReminders,
+    user,
+  ]);
+
   const refreshOverviewFocus = useCallback(() => {
     if (activeWorkspaceId) overviewLensCache.invalidate(`${activeWorkspaceId}:overview`);
     setOverviewFocusRefreshToken((current) => current + 1);
@@ -3457,6 +3517,29 @@ export function DashboardContent({
     setOverviewTaskDueDate('');
     setOverviewTaskMode('focus');
   }, [isSavingOverviewTask]);
+
+  useEffect(() => {
+    const openTaskModalFromFocusContext = (focusContext: string | null | undefined) => {
+      const match = String(focusContext ?? '').trim().match(/^create-task:(focus|today|long_term)$/);
+      if (!match) return;
+      openOverviewTaskModal(match[1] as 'focus' | 'today' | 'long_term');
+    };
+
+    openTaskModalFromFocusContext(moduleFocusContext);
+
+    const focusContextListener = (
+      _event: unknown,
+      payload: { kind?: string; focusContext?: string | null }
+    ) => {
+      if (payload?.kind !== 'dashboard') return;
+      openTaskModalFromFocusContext(payload.focusContext);
+    };
+
+    window.ledgerIpc?.events?.onModuleFocusContext(focusContextListener);
+    return () => {
+      window.ledgerIpc?.events?.offModuleFocusContext(focusContextListener);
+    };
+  }, [openOverviewTaskModal]);
 
   useEffect(() => {
     if (!isOverviewTaskModalOpen) return;

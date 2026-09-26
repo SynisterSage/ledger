@@ -66,6 +66,7 @@ import { ProjectLensService } from './projectLensService';
 import { MeetingRecapService } from './meetingRecapService.ts';
 import { MeetingPeopleService } from './meetingPeopleService.ts';
 import { MeetingPrepService } from './meetingPrepService.ts';
+import { writeMacWidgetSnapshot } from './macWidgetSnapshot.ts';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
@@ -586,6 +587,22 @@ ipcMain.handle('updates:status', () => ledgerUpdateState);
 ipcMain.handle('updates:check', () => checkForLedgerUpdate());
 ipcMain.handle('updates:download', () => downloadLedgerUpdate());
 ipcMain.handle('updates:install', () => installLedgerUpdate());
+ipcMain.handle('mac-widget:publish', (_event, payload: unknown) => {
+  if (process.platform !== 'darwin') return { ok: false, error: 'macOS widgets are unavailable on this platform.' };
+  return writeMacWidgetSnapshot(app.getPath('home'), payload).then((result) => {
+    if (!result.ok) return result;
+
+    const refreshBridge = app.isPackaged
+      ? path.join(process.resourcesPath, 'LedgerWidgetRefreshBridge')
+      : path.join(app.getAppPath(), 'native', '.build', 'LedgerWidgetRefreshBridge');
+    if (fs.existsSync(refreshBridge)) {
+      execFile(refreshBridge, [], (error) => {
+        if (error) console.warn('[mac-widget] WidgetKit refresh failed:', error.message);
+      });
+    }
+    return result;
+  });
+});
 
 const getOrCreateDesktopDeviceId = (legacyDeviceId?: string) => {
   const filePath = desktopDeviceIdPath();

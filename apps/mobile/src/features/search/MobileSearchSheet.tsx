@@ -277,12 +277,13 @@ function SearchSheetShell({
             <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
           </View>
 
-          <View style={styles.header}>
+          <View style={[styles.header, { backgroundColor: theme.colors.background }]}>
             <View style={styles.headerText}>{title}</View>
             {headerAccessory ? <View>{headerAccessory}</View> : null}
           </View>
 
           <ScrollView
+            style={styles.scrollView}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[
@@ -359,8 +360,10 @@ function SearchDetailSheet({
       title={currentResult.title}
       subtitle={getSearchResultSubtitle(currentResult)}
       meta={getSearchResultMetaRows(currentResult)}
+      metaInCard
       body={body}
       actions={getSearchResultActions(currentResult)}
+      actionsInCard
       onClose={onClose}
       onAction={(actionId) => {
         onAction?.(actionId, currentResult, body ?? null);
@@ -734,6 +737,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+    zIndex: 1,
+  },
+  scrollView: {
+    flex: 1,
+    minHeight: 0,
   },
   headerText: {
     flex: 1,

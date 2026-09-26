@@ -48,7 +48,10 @@ const categoriesFor = (question: string): AskLedgerQueryCategory[] => {
   if (/\b(events?|meetings?|calendar)\b|\bnext\s+(?:class|meeting)\b|\bupcoming\s+(?:class|meeting|event)\b/.test(normalized)) categories.push('events');
   if (/\bnotes?|transcripts?\b/.test(normalized)) categories.push('notes');
   if (/\breminders?\b/.test(normalized)) categories.push('reminders');
-  if (/\b(files?|pdfs?|documents?|attachments?|folders?)\b/.test(normalized)) categories.push('attachments');
+  // A notes folder is a note container, not a local-file inventory request.
+  // Keep standalone folder questions on the attachment/inventory path.
+  if (/\b(files?|pdfs?|documents?|attachments?)\b/.test(normalized)
+    || (/\bfolders?\b/.test(normalized) && !/\bnotes?\s+folders?\b/.test(normalized))) categories.push('attachments');
   if (/\b(slack|github|figma|drive|integration|circle)\b/.test(normalized)) categories.push('integrations');
   if (/\b(activity|what changed|changes|happening)\b/.test(normalized)) categories.push('activity');
   if (/\bnotifications?|alerts?\b/.test(normalized)) categories.push('notifications');

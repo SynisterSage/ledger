@@ -50,10 +50,18 @@
     notarize: {
       teamId: 'CAY3N8J725',
     },
-    binaries: ['native/LedgerAudioCaptureBridge', 'native/ZoomAccessibilityBridge'],
+    binaries: [
+      'native/LedgerAudioCaptureBridge',
+      'native/ZoomAccessibilityBridge',
+      'native/.build/LedgerWidgetRefreshBridge',
+    ],
     extraResources: [
       { from: 'native', to: '.', filter: ['AppleCalendarBridge.app/**/*', 'LedgerAudioCaptureBridge', 'ZoomAccessibilityBridge', 'whisper-cli', 'whisper-server'] },
       { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
+      { from: 'native/.build/LedgerWidgetRefreshBridge', to: 'LedgerWidgetRefreshBridge' },
+    ],
+    extraFiles: [
+      { from: 'native/.build/LedgerWidget.appex', to: 'PlugIns/LedgerWidget.appex' },
     ],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
     extendInfo: {

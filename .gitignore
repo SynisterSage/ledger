@@ -59,3 +59,4 @@ scripts/tests/sidebar-preferences-regressions.mjs
 native/local-ocr-runtime/build/
 native/local-ocr-runtime/darwin-arm64/
 native/local-ocr-runtime/win32-x64/
+native/.build/

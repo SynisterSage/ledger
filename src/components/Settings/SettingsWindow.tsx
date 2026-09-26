@@ -2082,7 +2082,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     setDefaultState(defaultSidebarPreferences.defaultState);
     setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop);
     setAutoHide(defaultSidebarPreferences.autoHide);
-    updateWorkspacePanePreferences({ left: true, right: false });
+    updateWorkspacePanePreferences({ left: true, right: true });
     setSaveStatus('Sidebar and module pane settings reset to defaults.');
   };
 

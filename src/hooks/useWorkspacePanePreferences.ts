@@ -7,7 +7,7 @@ export type WorkspacePanePreferences = {
 
 const DEFAULT_WORKSPACE_PANE_PREFERENCES: WorkspacePanePreferences = {
   left: true,
-  right: false,
+  right: true,
 };
 
 const STORAGE_KEY_PREFIX = 'ledger:workspace-pane-preferences:v1:';

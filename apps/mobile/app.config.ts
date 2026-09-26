@@ -11,14 +11,14 @@ const config: ExpoConfig = {
   name: 'Ledger',
   slug: 'ledger',
   owner: 'synastrr',
-  version: '1.0.0',
+  version: '1.0.1',
   orientation: 'default',
   icon: './assets/images/icon2.png',
   scheme: 'ledger',
   userInterfaceStyle: 'automatic',
   ios: {
     bundleIdentifier: iosBundleIdentifier,
-    buildNumber: '15',
+    buildNumber: '16',
     supportsTablet: true,
     entitlements: {
       'com.apple.security.application-groups': ['group.com.ledger.mobile.shared'],

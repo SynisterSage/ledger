@@ -15,9 +15,12 @@ function verifyDeploymentTarget(executable) {
 
 export default async function verifyAppleCalendarBridge(context) {
   if (context.packager.platform.name !== 'mac') return;
-  const bridgeBundle = path.join(
+  const appBundle = path.join(
     context.appOutDir,
     `${context.packager.appInfo.productFilename}.app`,
+  );
+  const bridgeBundle = path.join(
+    appBundle,
     'Contents',
     'Resources',
     'AppleCalendarBridge.app',
@@ -25,4 +28,24 @@ export default async function verifyAppleCalendarBridge(context) {
   verifyDeploymentTarget(path.join(bridgeBundle, 'Contents', 'MacOS', 'AppleCalendarBridge'));
   execFileSync('codesign', ['--verify', '--deep', '--strict', bridgeBundle], { stdio: 'inherit' });
   execFileSync('codesign', ['-d', '--entitlements', '-', bridgeBundle], { stdio: 'inherit' });
+
+  const widgetBundle = path.join(
+    appBundle,
+    'Contents',
+    'PlugIns',
+    'LedgerWidget.appex',
+  );
+  // afterPack signs the nested extension before Electron Builder signs and
+  // notarizes the outer app. Verify the final result without modifying it.
+  execFileSync('codesign', ['--verify', '--deep', '--strict', appBundle], { stdio: 'inherit' });
+  execFileSync('codesign', ['--verify', '--deep', '--strict', widgetBundle], { stdio: 'inherit' });
+  const widgetEntitlementsOutput = execFileSync(
+    'codesign',
+    ['-d', '--entitlements', '-', widgetBundle],
+    { encoding: 'utf8' },
+  );
+  if (!widgetEntitlementsOutput.includes('com.apple.security.app-sandbox') ||
+      !widgetEntitlementsOutput.includes('group.com.ledger.desktop.shared')) {
+    throw new Error('LedgerWidget.appex is missing its sandbox or App Group entitlement.');
+  }
 }
